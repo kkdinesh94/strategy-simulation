@@ -1,5 +1,8 @@
 import fs from "fs";
 import path from "path";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
 
 let dbInstance: any = null;
 
@@ -12,17 +15,21 @@ export function getD1Database() {
   try {
     // Attempt to load Node.js native sqlite DatabaseSync (Node 22+)
     // @ts-ignore
-    const { DatabaseSync } = require("node:sqlite");
-    dbInstance = new DatabaseSync(DB_FILE_PATH);
-    console.log("Connected to Cloudflare D1 Local SQLite Engine (node:sqlite) at:", DB_FILE_PATH);
-    initD1Tables(dbInstance);
-    return dbInstance;
-  } catch (err) {
-    console.warn("Native node:sqlite not available, using resilient memory/file engine:", err);
-    // In-memory / file-backed fallback store
-    dbInstance = createFallbackD1Engine();
-    return dbInstance;
+    const sqliteModule = require("node:sqlite");
+    if (sqliteModule && sqliteModule.DatabaseSync) {
+      dbInstance = new sqliteModule.DatabaseSync(DB_FILE_PATH);
+      console.log("Connected to Cloudflare D1 Local SQLite Engine (node:sqlite) at:", DB_FILE_PATH);
+      initD1Tables(dbInstance);
+      return dbInstance;
+    }
+  } catch (_err) {
+    // Gracefully fall back to local persistent store if node:sqlite is not exposed
   }
+
+  // Resilient JSON-backed local SQLite engine
+  dbInstance = createFallbackD1Engine();
+  console.log("Using resilient Cloudflare D1 local persistence engine");
+  return dbInstance;
 }
 
 function initD1Tables(db: any) {
