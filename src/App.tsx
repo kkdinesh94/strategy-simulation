@@ -43,6 +43,7 @@ import { AdminDatabaseTab } from "./components/tabs/AdminDatabaseTab";
 import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
+import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 
 export default function App() {
@@ -62,6 +63,7 @@ export default function App() {
   const [isInstructorMode, setIsInstructorMode] = useState<boolean>(false);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
   const [showPreSubmissionModal, setShowPreSubmissionModal] = useState<boolean>(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [auditErrors, setAuditErrors] = useState<string[]>([]);
 
@@ -466,6 +468,7 @@ export default function App() {
         onLogout={handleLogout}
         onOpenRoster={() => setActiveTab("roster")}
         onUpdateDeadline={handleUpdateDeadline}
+        onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
 
       {/* Navigation Bar */}
@@ -638,6 +641,20 @@ export default function App() {
         team={currentTeam}
         gameState={gameState}
       />
+
+      {/* Change Password Modal */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordOpen}
+          currentUser={currentUser}
+          onClose={() => setIsChangePasswordOpen(false)}
+          onSuccess={(updated) => {
+            setCurrentUser(updated);
+            setAllUsers(loadUsers());
+          }}
+          onNotify={showNotification}
+        />
+      )}
 
       {/* Footer */}
       <footer className="bg-[#F3F0EA] border-t border-[#E5E1D8] text-[#7A7C80] text-xs py-4 px-6 text-center font-mono">

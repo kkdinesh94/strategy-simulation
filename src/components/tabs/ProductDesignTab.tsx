@@ -29,6 +29,16 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
 
   const currentModel = team.models[activeModelIdx] || team.models[0];
 
+  // Editable price text state to allow seamless typing and backspacing
+  const [priceInput, setPriceInput] = useState<string>(() => String(currentModel?.price || 110000));
+
+  // Sync priceInput when active model changes or on external model updates
+  React.useEffect(() => {
+    if (currentModel) {
+      setPriceInput(String(currentModel.price));
+    }
+  }, [activeModelIdx, currentModel?.id, currentModel?.price]);
+
   const handleCfgChange = (cat: string, val: string) => {
     if (isLocked) return;
     setFocusedCategory(cat);
@@ -82,12 +92,56 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
     onChange({ ...team, models: updatedModels });
   };
 
-  const handlePriceChange = (val: number) => {
+  const handlePriceInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (isLocked) return;
+    const raw = e.target.value;
+    setPriceInput(raw);
+
+    const num = parseInt(raw.replace(/[^0-9]/g, ""), 10);
+    if (!isNaN(num) && num > 0) {
+      const updatedModels = [...team.models];
+      updatedModels[activeModelIdx] = {
+        ...updatedModels[activeModelIdx],
+        price: num
+      };
+      onChange({ ...team, models: updatedModels });
+    }
+  };
+
+  const handlePriceInputBlur = () => {
+    if (isLocked || !currentModel) return;
+    const num = parseInt(priceInput.replace(/[^0-9]/g, ""), 10);
+    let finalPrice = isNaN(num) ? 110000 : num;
+
+    if (finalPrice < 55000) {
+      finalPrice = 55000;
+      onNotify("Minimum allowed Retail Selling Price is Rs. 55,000.");
+    } else if (finalPrice > 200000) {
+      finalPrice = 200000;
+      onNotify("Maximum allowed Retail Selling Price is Rs. 2,00,000.");
+    } else {
+      // Round to nearest Rs. 500 for clean market pricing
+      finalPrice = Math.round(finalPrice / 500) * 500;
+    }
+
+    setPriceInput(String(finalPrice));
     const updatedModels = [...team.models];
     updatedModels[activeModelIdx] = {
       ...updatedModels[activeModelIdx],
-      price: Math.max(55000, Math.min(200000, Math.round(val / 500) * 500))
+      price: finalPrice
+    };
+    onChange({ ...team, models: updatedModels });
+  };
+
+  const handlePriceStep = (delta: number) => {
+    if (isLocked || !currentModel) return;
+    const current = currentModel.price || 110000;
+    const next = Math.max(55000, Math.min(200000, current + delta));
+    setPriceInput(String(next));
+    const updatedModels = [...team.models];
+    updatedModels[activeModelIdx] = {
+      ...updatedModels[activeModelIdx],
+      price: next
     };
     onChange({ ...team, models: updatedModels });
   };
@@ -463,20 +517,55 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
                   <span className="font-bold text-[#1F2022]">{fmtRs(currentCost)}</span>
                 </div>
 
-                <div className="flex justify-between items-center py-1 border-b border-[#E0DCD3]">
-                  <span className="text-[#5A5C60]">Retail Selling Price:</span>
-                  <div className="flex items-center gap-1">
-                    <span>Rs.</span>
+                <div className="flex justify-between items-center py-2 border-b border-[#E0DCD3]">
+                  <div>
+                    <span className="text-[#5A5C60] font-semibold">Retail Selling Price:</span>
+                    <div className="text-[10px] text-[#8A8C90]">Type price directly or use ±500</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#5A5C60] font-mono text-xs">Rs.</span>
                     <input
-                      type="number"
-                      value={currentModel.price}
-                      min={55000}
-                      max={200000}
-                      step={500}
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={priceInput}
                       disabled={isLocked}
-                      onChange={(e) => handlePriceChange(+e.target.value)}
-                      className="w-24 p-1 text-right border border-[#E0DCD3] rounded font-bold bg-[#FAF8F5] text-[#1F2022]"
+                      onChange={handlePriceInputChange}
+                      onBlur={handlePriceInputBlur}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          handlePriceStep(500);
+                        } else if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          handlePriceStep(-500);
+                        }
+                      }}
+                      placeholder="110000"
+                      className="w-24 px-2 py-1 text-right border border-[#E0DCD3] rounded-lg font-bold font-mono bg-white text-[#1F2022] focus:outline-none focus:ring-2 focus:ring-[#C83E2B]/30 focus:border-[#C83E2B] transition shadow-2xs"
                     />
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        disabled={isLocked || currentModel.price >= 200000}
+                        onClick={() => handlePriceStep(500)}
+                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
+                        title="Increase price by Rs. 500 (or press Up arrow)"
+                      >
+                        +500
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLocked || currentModel.price <= 55000}
+                        onClick={() => handlePriceStep(-500)}
+                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
+                        title="Decrease price by Rs. 500 (or press Down arrow)"
+                      >
+                        -500
+                      </button>
+                    </div>
                   </div>
                 </div>
 

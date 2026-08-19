@@ -22,7 +22,8 @@ import {
   Pencil,
   X,
   Check,
-  Globe
+  Globe,
+  KeyRound
 } from "lucide-react";
 
 interface ExecutiveHeaderProps {
@@ -39,6 +40,7 @@ interface ExecutiveHeaderProps {
   onLogout: () => void;
   onOpenRoster?: () => void;
   onUpdateDeadline?: (deadlineISO: string | null) => void;
+  onOpenChangePassword?: () => void;
 }
 
 export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
@@ -54,7 +56,8 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
   onOpenAdvisor,
   onLogout,
   onOpenRoster,
-  onUpdateDeadline
+  onUpdateDeadline,
+  onOpenChangePassword
 }) => {
   const equity = equityOf(team);
   const bsc = cumBSC(team);
@@ -262,16 +265,28 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
           {isManagementRole && onOpenRoster && (
             <button
               onClick={onOpenRoster}
-              className="text-[11px] font-mono text-slate-700 hover:text-slate-900 flex items-center gap-1 bg-white px-2.5 py-1 rounded border border-[#E0DCD3] transition"
+              className="text-[11px] font-mono text-slate-700 hover:text-slate-900 flex items-center gap-1 bg-white px-2.5 py-1 rounded border border-[#E0DCD3] transition cursor-pointer"
             >
               <Users className="w-3.5 h-3.5 text-slate-600" /> 10-Team Roster
+            </button>
+          )}
+
+          {/* Change Password Button */}
+          {onOpenChangePassword && (
+            <button
+              onClick={onOpenChangePassword}
+              title="Change your account password"
+              className="text-[11px] font-mono text-[#5A5C60] hover:text-[#1F2022] flex items-center gap-1 bg-white hover:bg-[#F3F0EA] px-2.5 py-1 rounded border border-[#E0DCD3] transition shadow-2xs font-medium cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-slate-600" />
+              <span>Password</span>
             </button>
           )}
 
           {/* Logout */}
           <button
             onClick={onLogout}
-            className="text-[11px] font-mono text-[#C83E2B] hover:text-[#9A2D1E] flex items-center gap-1 transition ml-2 font-medium"
+            className="text-[11px] font-mono text-[#C83E2B] hover:text-[#9A2D1E] flex items-center gap-1 transition ml-1 font-medium cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" /> Exit
           </button>
