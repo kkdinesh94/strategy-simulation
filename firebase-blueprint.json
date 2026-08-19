@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "User": {
+      "collectionName": "users",
+      "fields": {
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full name of the user"
+        },
+        "role": {
+          "type": "string",
+          "description": "Role: player, instructor, admin"
+        },
+        "institution": {
+          "type": "string",
+          "description": "Institution name"
+        },
+        "universeId": {
+          "type": "string",
+          "description": "ID of the universe/cohort"
+        },
+        "teamI": {
+          "type": "number",
+          "description": "Assigned team index (0-9) or -1 for unassigned"
+        },
+        "password": {
+          "type": "string",
+          "description": "User account password"
+        }
+      }
+    },
+    "Universe": {
+      "collectionName": "universes",
+      "fields": {
+        "name": {
+          "type": "string",
+          "description": "Name of the cohort universe"
+        },
+        "code": {
+          "type": "string",
+          "description": "Unique access code"
+        },
+        "instructorEmail": {
+          "type": "string",
+          "description": "Instructor email"
+        },
+        "maxTeams": {
+          "type": "number",
+          "description": "Maximum teams allowed (default 10)"
+        },
+        "maxMembersPerTeam": {
+          "type": "number",
+          "description": "Maximum members per team (default 8)"
+        },
+        "gameState": {
+          "type": "map",
+          "description": "Complete simulation game state"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp when created"
+        }
+      }
+    }
+  }
+}
