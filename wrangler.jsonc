@@ -10,8 +10,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "ev-venture-league-d1",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "database_name": "strategy-sim-db",
+      "database_id": "41cead96-9092-4981-ad43-393fafa53a25",
       "migrations_dir": "d1/migrations"
     }
   ],
