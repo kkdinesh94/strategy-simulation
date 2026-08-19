@@ -1,7 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ev-venture-league-simulation",
-  "main": "functions/api/[[route]].ts",
   "compatibility_date": "2024-09-23",
   "compatibility_flags": [
     "nodejs_compat"
