@@ -161,6 +161,12 @@ function createFallbackD1Engine() {
           return null;
         },
         run: (...params: any[]) => {
+          if (lower.includes("delete from universes where id =") && params[0]) {
+            memoryStore.universes.delete(params[0]);
+          }
+          if (lower.includes("delete from users where id =") && params[0]) {
+            memoryStore.users.delete(params[0]);
+          }
           persist();
           return { changes: 1 };
         }

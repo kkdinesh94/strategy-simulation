@@ -4,7 +4,7 @@ import { Universe, User } from "../../types/auth";
 import { fmtL } from "../../engine/catalog";
 import { simulateQuarter, cumBSC, equityOf, newState } from "../../engine/simulationEngine";
 import { loadUsers, saveActiveUniverse, saveUniverses, getAccessibleUniverses, DEFAULT_10_TEAMS } from "../../lib/authStore";
-import { saveUniverseToFirestore } from "../../lib/firebase";
+import { saveUniverseUnified } from "../../lib/dbProvider";
 import { isUserOnline, formatLastActive, getFullTimestamp, formatActiveTime } from "../../lib/presence";
 import {
   Play,
@@ -96,7 +96,7 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
     };
 
     try {
-      await saveUniverseToFirestore(newUniv);
+      await saveUniverseUnified(newUniv);
       const updatedList = [...allUniverses.filter((u) => u.id !== newUnivId), newUniv];
       saveUniverses(updatedList);
       setShowCreateUnivModal(false);

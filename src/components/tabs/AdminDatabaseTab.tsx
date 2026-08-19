@@ -159,7 +159,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       instructorEmail: newEmail.trim().toLowerCase()
     };
     try {
-      await saveUniverseToFirestore(updated);
+      await saveUniverseUnified(updated);
       const updatedList = allUniverses.map((u) => (u.id === updated.id ? updated : u));
       saveUniverses(updatedList);
       if (activeUniverse.id === updated.id) {
@@ -212,7 +212,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     };
 
     try {
-      await saveUniverseToFirestore(updatedUniv);
+      await saveUniverseUnified(updatedUniv);
       const updatedList = allUniverses.map((u) => (u.id === updatedUniv.id ? updatedUniv : u));
       saveUniverses(updatedList);
       if (activeUniverse.id === updatedUniv.id) {
@@ -237,8 +237,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     saveUsers(updatedUsers);
     onNotify(`Reassigned ${user.name} to ${newTeamI === -1 ? "Unassigned Pool" : "Team " + (newTeamI + 1)}`);
 
-    saveUserToFirestore(updatedUser).catch((err) => {
-      console.warn("Firestore reassign sync error:", err);
+    saveUserUnified(updatedUser).catch((err) => {
+      console.warn("Unified reassign sync error:", err);
     });
   };
 
@@ -270,12 +270,12 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     };
 
     try {
-      await saveUniverseToFirestore(newUniv);
+      await saveUniverseUnified(newUniv);
       const updatedList = [...allUniverses.filter((u) => u.id !== newUnivId), newUniv];
       saveUniverses(updatedList);
       setIsUniverseModalOpen(false);
       setSelectedUnivId(newUnivId);
-      onNotify(`Universe '${newUniv.name}' created and synchronized to Firestore!`);
+      onNotify(`Universe '${newUniv.name}' created and saved!`);
       onRefreshAll();
     } catch (err: any) {
       alert("Failed to create universe: " + err.message);
@@ -310,8 +310,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     setIsAddUserModalOpen(false);
     onNotify(`User '${createdUser.name}' saved successfully!`);
 
-    saveUserToFirestore(createdUser).catch((err) => {
-      console.warn("Firestore save user error:", err);
+    saveUserUnified(createdUser).catch((err) => {
+      console.warn("Unified save user error:", err);
     });
   };
 
@@ -341,8 +341,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     });
 
     saveUsers(updatedUsers);
-    saveUsersBatchToFirestore(updatedUsers).catch((err) => {
-      console.warn("Firestore batch sync error:", err);
+    saveUsersBatchUnified(updatedUsers).catch((err) => {
+      console.warn("Unified batch sync error:", err);
     });
     onNotify(`Auto-distributed ${unassigned.length} unassigned students evenly across available teams!`);
   };
@@ -369,9 +369,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     }
 
     try {
-      for (const u of created) {
-        await saveUserToFirestore(u);
-      }
+      await saveUsersBatchUnified(created);
       const combined = [...allUsers, ...created];
       saveUsers(combined);
       onNotify(`Generated ${batchCount} student accounts across competing teams!`);
@@ -1501,8 +1499,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   const remaining = allUsers.filter((u) => u.id !== targetId);
                   saveUsers(remaining);
                   onNotify(`User '${targetName}' deleted.`);
-                  deleteUserFromFirestore(targetId).catch((err) => {
-                    console.warn("Firestore delete user error:", err);
+                  deleteUserUnified(targetId).catch((err) => {
+                    console.warn("Unified delete user error:", err);
                   });
                 }}
                 className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition"
@@ -1528,7 +1526,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
               </div>
             </div>
             <p className="text-xs text-[#5A5C60]">
-              PERMANENT ACTION: Delete universe and clear associated team states from Firestore? This cannot be undone.
+              PERMANENT ACTION: Delete universe and clear associated team states from Cloudflare D1 & database? This cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
               <button
@@ -1538,24 +1536,35 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 Cancel
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const targetId = deletingUniverse.id;
                   const targetName = deletingUniverse.name;
                   setDeletingUniverse(null);
-                  deleteUniverseFromFirestore(targetId)
-                    .then(() => {
-                      const remaining = allUniverses.filter((u) => u.id !== targetId);
-                      saveUniverses(remaining);
-                      if (activeUniverse.id === targetId && remaining.length > 0) {
-                        saveActiveUniverse(remaining[0]);
-                        onSelectActiveUniverse(remaining[0]);
-                      }
-                      onNotify(`Universe '${targetName}' deleted.`);
-                      onRefreshAll();
-                    })
-                    .catch((err) => {
-                      alert("Error deleting universe: " + err.message);
-                    });
+                  try {
+                    await deleteUniverseUnified(targetId);
+                    let remaining = allUniverses.filter((u) => u.id !== targetId);
+                    if (remaining.length === 0) {
+                      const fallbackUniv = createInitialUniverse(
+                        "univ_main_" + Date.now().toString().slice(-4),
+                        "EV Venture League Cohort",
+                        "COHORT1"
+                      );
+                      remaining = [fallbackUniv];
+                      await saveUniverseUnified(fallbackUniv);
+                    }
+                    saveUniverses(remaining);
+                    if (activeUniverse.id === targetId) {
+                      saveActiveUniverse(remaining[0]);
+                      onSelectActiveUniverse(remaining[0]);
+                    }
+                    if (selectedUnivId === targetId) {
+                      setSelectedUnivId(remaining[0].id);
+                    }
+                    onNotify(`Universe '${targetName}' successfully deleted.`);
+                    onRefreshAll();
+                  } catch (err: any) {
+                    alert("Error deleting universe: " + err.message);
+                  }
                 }}
                 className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition"
               >

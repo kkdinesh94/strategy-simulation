@@ -143,41 +143,74 @@ export default function App() {
   }, [currentUser?.id]);
 
   const refreshAllDataFromFirestore = async () => {
-    const remoteUsers = await fetchUsersUnified();
-    if (remoteUsers && remoteUsers.length > 0) {
-      setAllUsers(remoteUsers);
-      saveUsers(remoteUsers);
-    }
+    try {
+      const remoteUsers = await fetchUsersUnified();
+      if (remoteUsers && remoteUsers.length > 0) {
+        setAllUsers(remoteUsers);
+        saveUsers(remoteUsers);
+      }
 
-    const remoteUniverses = await fetchUniversesUnified();
-    if (remoteUniverses && remoteUniverses.length > 0) {
-      setAllUniverses(remoteUniverses);
-      saveUniverses(remoteUniverses);
-      const found = remoteUniverses.find((u) => u.id === universe.id) || remoteUniverses[0];
-      setUniverse(found);
-      setGameState(found.gameState);
+      const remoteUniverses = await fetchUniversesUnified();
+      if (remoteUniverses && remoteUniverses.length > 0) {
+        setAllUniverses(remoteUniverses);
+        saveUniverses(remoteUniverses);
+        // Only update active universe if current universe is missing or needs refresh
+        setUniverse((prev) => {
+          if (!prev) return remoteUniverses[0];
+          const found = remoteUniverses.find((u) => u.id === prev.id);
+          if (found) {
+            return found;
+          }
+          const fallback = remoteUniverses[0];
+          saveActiveUniverse(fallback);
+          return fallback;
+        });
+      }
+    } catch (e) {
+      console.warn("Error refreshing unified database data:", e);
     }
   };
 
-  // Initial cloud fetch and realtime Firestore sync
+  // Initial cloud fetch on mount
   useEffect(() => {
     refreshAllDataFromFirestore();
+  }, []);
 
-    // Real-time Firestore universe listener
+  // Real-time Firestore active universe listener
+  useEffect(() => {
+    if (!universe?.id) return;
+
     const unsubscribeUniv = subscribeUniverse(universe.id, (updatedUniv) => {
-      setUniverse(updatedUniv);
-      setGameState(updatedUniv.gameState);
+      if (updatedUniv && updatedUniv.id === universe.id) {
+        setUniverse(updatedUniv);
+      }
     });
 
-    // Real-time Firestore all universes listener
+    return () => {
+      unsubscribeUniv();
+    };
+  }, [universe?.id]);
+
+  // Real-time Firestore global listeners
+  useEffect(() => {
     const unsubscribeAllUnivs = subscribeAllUniverses((updatedUnivs) => {
       if (updatedUnivs && updatedUnivs.length > 0) {
         setAllUniverses(updatedUnivs);
         saveUniverses(updatedUnivs);
+        // If current active universe is no longer in the list (e.g. was deleted remotely), switch cleanly
+        setUniverse((prev) => {
+          if (!prev) return updatedUnivs[0];
+          const exists = updatedUnivs.find((u) => u.id === prev.id);
+          if (!exists) {
+            const fallback = updatedUnivs[0];
+            saveActiveUniverse(fallback);
+            return fallback;
+          }
+          return prev;
+        });
       }
     });
 
-    // Real-time Firestore users listener
     const unsubscribeUsers = subscribeUsers((updatedUsers) => {
       if (updatedUsers && updatedUsers.length > 0) {
         setAllUsers(updatedUsers);
@@ -186,11 +219,10 @@ export default function App() {
     });
 
     return () => {
-      unsubscribeUniv();
       unsubscribeAllUnivs();
       unsubscribeUsers();
     };
-  }, [universe.id]);
+  }, []);
 
   // Update GameState when Universe changes
   useEffect(() => {
@@ -272,7 +304,7 @@ export default function App() {
       const updatedUser: User = { ...currentUser, universeId: selectedUniv.id };
       setCurrentUser(updatedUser);
       saveCurrentUser(updatedUser);
-      saveUserToFirestore(updatedUser);
+      saveUserUnified(updatedUser).catch(() => {});
     }
     showNotification(`Switched active universe cohort to '${selectedUniv.name}' (${selectedUniv.code})`);
   };
@@ -304,7 +336,7 @@ export default function App() {
         isOnline: false,
         lastActiveAt: new Date().toISOString()
       };
-      saveUserToFirestore(offlineUser).catch(() => {});
+      saveUserUnified(offlineUser).catch(() => {});
     }
     saveCurrentUser(null);
     setCurrentUser(null);

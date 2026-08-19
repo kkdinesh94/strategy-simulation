@@ -170,7 +170,11 @@ export function loadActiveUniverse(): Universe {
     const found = universes.find((u) => u.id === activeId);
     if (found) return found;
   }
-  return universes[0] || createInitialUniverse();
+  const fallback = universes[0] || createInitialUniverse();
+  try {
+    localStorage.setItem(ACTIVE_UNIVERSE_ID_KEY, fallback.id);
+  } catch (_e) {}
+  return fallback;
 }
 
 export function saveActiveUniverse(universe: Universe) {

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { User, Universe } from "../types/auth";
 import { loadUsers, saveUsers, saveActiveUniverse, getTeamMembersCount, createInitialUniverse } from "../lib/authStore";
-import { saveUserToFirestore, deleteUserFromFirestore, saveUsersBatchToFirestore } from "../lib/firebase";
+import { saveUserUnified, deleteUserUnified, saveUsersBatchUnified } from "../lib/dbProvider";
 import { ExcelUserUploader } from "./ExcelUserUploader";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../lib/presence";
 import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock } from "lucide-react";
@@ -73,6 +73,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = [...users, newStudent];
     setUsers(updated);
     saveUsers(updated);
+    saveUserUnified(newStudent).catch((e) => console.warn("Unified save student error:", e));
 
     setNewStudentName("");
     setNewStudentEmail("");
@@ -88,7 +89,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = [...users, ...importedUsers];
     setUsers(updated);
     saveUsers(updated);
-    saveUsersBatchToFirestore(importedUsers);
+    saveUsersBatchUnified(importedUsers);
     setMsg({
       text: `Successfully imported ${importedUsers.length} users with team assignments synced!`,
       type: "success"
@@ -111,7 +112,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = users.map((u) => (u.id === userId ? updatedStudent : u));
     setUsers(updated);
     saveUsers(updated);
-    saveUserToFirestore(updatedStudent).catch((e) => console.warn("Firestore team update error:", e));
+    saveUserUnified(updatedStudent).catch((e) => console.warn("Unified team update error:", e));
   };
 
   const handleAutoDistributeUnassigned = () => {
@@ -146,7 +147,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
 
     setUsers(updatedUsers);
     saveUsers(updatedUsers);
-    saveUsersBatchToFirestore(updatedUsers).catch((e) => console.warn("Firestore batch sync error:", e));
+    saveUsersBatchUnified(updatedUsers).catch((e) => console.warn("Unified batch sync error:", e));
     setMsg({ text: "Auto-distributed unassigned students evenly across available teams!", type: "success" });
   };
 
@@ -155,7 +156,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
       const updated = users.filter((u) => u.id !== userId);
       setUsers(updated);
       saveUsers(updated);
-      deleteUserFromFirestore(userId).catch((e) => console.warn("Firestore delete user error:", e));
+      deleteUserUnified(userId).catch((e) => console.warn("Unified delete user error:", e));
     }
   };
 
