@@ -23,6 +23,14 @@ import {
   testConnection
 } from "../../lib/firebase";
 import {
+  saveUniverseUnified,
+  saveUserUnified,
+  deleteUniverseUnified,
+  deleteUserUnified,
+  saveUsersBatchUnified
+} from "../../lib/dbProvider";
+import { CloudflareD1Console } from "./CloudflareD1Console";
+import {
   Database,
   Server,
   Users,
@@ -55,7 +63,8 @@ import {
   Bot,
   UserCheck,
   ChevronRight,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Cloud
 } from "lucide-react";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../../lib/presence";
 
@@ -78,7 +87,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   onSelectActiveUniverse,
   onNotify
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"universes" | "users" | "batch" | "explorer" | "schema">("universes");
+  const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "schema">("cloudflare");
 
   // Selected Universe for Visual Editing
   const [selectedUnivId, setSelectedUnivId] = useState<string>(activeUniverse?.id || allUniverses[0]?.id || "univ_nitw_2026");
@@ -453,6 +462,21 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       {/* Admin Sub-navigation Bar */}
       <div className="flex border-b border-[#E5E1D8] gap-2 overflow-x-auto">
         <button
+          onClick={() => setActiveSubTab("cloudflare")}
+          className={`px-4 py-2.5 rounded-t-lg text-xs font-semibold transition flex items-center gap-2 ${
+            activeSubTab === "cloudflare"
+              ? "bg-[#FAF8F5] text-orange-900 border-t-2 border-t-orange-500 border-x border-[#E5E1D8] shadow-2xs font-bold"
+              : "text-[#5A5C60] hover:text-orange-900 hover:bg-orange-50/50"
+          }`}
+        >
+          <Cloud className="w-4 h-4 text-orange-600" />
+          <span>Cloudflare D1 Center</span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+            SQL
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab("universes")}
           className={`px-4 py-2.5 rounded-t-lg text-xs font-semibold transition flex items-center gap-2 ${
             activeSubTab === "universes"
@@ -512,6 +536,16 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           <span>Blueprint & Rules</span>
         </button>
       </div>
+
+      {/* SUB-TAB 0: CLOUDFLARE D1 CENTER */}
+      {activeSubTab === "cloudflare" && (
+        <CloudflareD1Console
+          allUsers={allUsers}
+          allUniverses={allUniverses}
+          onRefreshAll={onRefreshAll}
+          onNotify={onNotify}
+        />
+      )}
 
       {/* SUB-TAB 1: VISUAL UNIVERSE & TEAMS MANAGER */}
       {activeSubTab === "universes" && (

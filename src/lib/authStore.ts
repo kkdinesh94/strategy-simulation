@@ -7,6 +7,11 @@ import {
   fetchUsersFromFirestore,
   fetchUniversesFromFirestore
 } from "./firebase";
+import {
+  saveUniverseUnified,
+  saveUserUnified,
+  saveUsersBatchUnified
+} from "./dbProvider";
 
 const USERS_STORAGE_KEY = "ev_venture_league_users_v2";
 const UNIVERSES_STORAGE_KEY = "ev_venture_league_universes_v2";
@@ -178,8 +183,8 @@ export function saveActiveUniverse(universe: Universe) {
   }
   saveUniverses(universes);
   localStorage.setItem(ACTIVE_UNIVERSE_ID_KEY, universe.id);
-  // Sync to Firestore
-  saveUniverseToFirestore(universe);
+  // Sync to Cloudflare D1 and Firestore
+  saveUniverseUnified(universe);
 }
 
 export function loadCurrentUser(): User | null {

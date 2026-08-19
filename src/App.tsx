@@ -20,6 +20,11 @@ import {
   fetchUniversesFromFirestore,
   saveUserToFirestore
 } from "./lib/firebase";
+import {
+  fetchUsersUnified,
+  fetchUniversesUnified,
+  saveUserUnified
+} from "./lib/dbProvider";
 import { newState, auditTeam, simulateQuarter } from "./engine/simulationEngine";
 import { LoginPage } from "./components/LoginPage";
 import { ExecutiveHeader } from "./components/ExecutiveHeader";
@@ -77,7 +82,7 @@ export default function App() {
       };
       saveCurrentUser(updatedUser);
       setCurrentUser(updatedUser);
-      saveUserToFirestore(updatedUser).catch((e) => console.warn("Firestore presence ping error:", e));
+      saveUserUnified(updatedUser).catch((e) => console.warn("Presence ping error:", e));
     };
 
     pingPresence(false);
@@ -112,7 +117,7 @@ export default function App() {
           isOnline: false
         };
         saveCurrentUser(offlineUser);
-        saveUserToFirestore(offlineUser).catch(() => {});
+        saveUserUnified(offlineUser).catch(() => {});
       } else if (document.visibilityState === "visible") {
         const onlineUser: User = {
           ...stored,
@@ -121,7 +126,7 @@ export default function App() {
         };
         saveCurrentUser(onlineUser);
         setCurrentUser(onlineUser);
-        saveUserToFirestore(onlineUser).catch(() => {});
+        saveUserUnified(onlineUser).catch(() => {});
       }
     };
 
@@ -136,13 +141,13 @@ export default function App() {
   }, [currentUser?.id]);
 
   const refreshAllDataFromFirestore = async () => {
-    const remoteUsers = await fetchUsersFromFirestore();
+    const remoteUsers = await fetchUsersUnified();
     if (remoteUsers && remoteUsers.length > 0) {
       setAllUsers(remoteUsers);
       saveUsers(remoteUsers);
     }
 
-    const remoteUniverses = await fetchUniversesFromFirestore();
+    const remoteUniverses = await fetchUniversesUnified();
     if (remoteUniverses && remoteUniverses.length > 0) {
       setAllUniverses(remoteUniverses);
       saveUniverses(remoteUniverses);

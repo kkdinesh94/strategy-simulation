@@ -1,0 +1,14 @@
+name = "ev-venture-league-simulation"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
+
+[vars]
+NODE_ENV = "production"
+APP_TITLE = "EV Venture League Simulation"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ev-venture-league-d1"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "d1/migrations"
