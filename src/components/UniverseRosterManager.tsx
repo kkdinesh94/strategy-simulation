@@ -1,10 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { User, Universe } from "../types/auth";
 import { loadUsers, saveUsers, saveActiveUniverse, getTeamMembersCount, createInitialUniverse } from "../lib/authStore";
-import { saveUserUnified, deleteUserUnified, saveUsersBatchUnified, saveUniverseUnified } from "../lib/dbProvider";
+import { saveUserUnified, deleteUserUnified, removeUserFromUniverseUnified, saveUsersBatchUnified, saveUniverseUnified } from "../lib/dbProvider";
 import { ExcelUserUploader } from "./ExcelUserUploader";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../lib/presence";
-import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock, X } from "lucide-react";
+import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock, X, UserMinus } from "lucide-react";
 import { ARCHETYPES, TEAM_COLORS, SEGMENTS } from "../engine/catalog";
 import { mkModel, botDecide } from "../engine/simulationEngine";
 import { TeamState } from "../types/simulation";
@@ -12,16 +12,39 @@ import { TeamState } from "../types/simulation";
 interface UniverseRosterManagerProps {
   universe: Universe;
   currentUser: User;
+  allUsers?: User[];
+  allUniverses?: Universe[];
   onUniverseUpdate: (updatedUniv: Universe) => void;
+  onUsersUpdate?: (updatedUsers: User[]) => void;
+  onRefreshAll?: () => void;
 }
 
 export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
   universe,
   currentUser,
-  onUniverseUpdate
+  allUsers,
+  allUniverses,
+  onUniverseUpdate,
+  onUsersUpdate,
+  onRefreshAll
 }) => {
-  const [users, setUsers] = useState<User[]>(() => loadUsers());
+  const [users, setUsers] = useState<User[]>(() => {
+    if (allUsers && allUsers.length > 0) return allUsers;
+    return loadUsers();
+  });
   const [activeUniv, setActiveUniv] = useState<Universe>(universe);
+
+  // Sync users with parent state
+  useEffect(() => {
+    if (allUsers && allUsers.length > 0) {
+      setUsers(allUsers);
+    }
+  }, [allUsers]);
+
+  // Sync activeUniv with parent state
+  useEffect(() => {
+    setActiveUniv(universe);
+  }, [universe]);
 
   // New Student Modal / Form
   const [newStudentName, setNewStudentName] = useState("");
@@ -41,6 +64,14 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
   const [newTeamArch, setNewTeamArch] = useState("commuter");
   const [newTeamColor, setNewTeamColor] = useState("#0B9E63");
   const [newTeamIsBot, setNewTeamIsBot] = useState(false);
+
+  // Student Removal / Deletion Modal State
+  const [deletingStudent, setDeletingStudent] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    teamI: number;
+  } | null>(null);
 
   const teams = activeUniv.gameState.teams;
   const universeUsers = users.filter((u) => u.universeId === activeUniv.id && u.role === "player");
@@ -84,6 +115,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = [...users, newStudent];
     setUsers(updated);
     saveUsers(updated);
+    onUsersUpdate?.(updated);
     saveUserUnified(newStudent).catch((e) => console.warn("Unified save student error:", e));
 
     setNewStudentName("");
@@ -100,7 +132,8 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = [...users, ...importedUsers];
     setUsers(updated);
     saveUsers(updated);
-    saveUsersBatchUnified(importedUsers);
+    onUsersUpdate?.(updated);
+    saveUsersBatchUnified(importedUsers).catch((e) => console.warn("Unified batch sync error:", e));
     setMsg({
       text: `Successfully imported ${importedUsers.length} users with team assignments synced!`,
       type: "success"
@@ -111,7 +144,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     if (newTeamI >= 0) {
       const currentCount = getTeamMembersCount(users, activeUniv.id, newTeamI);
       if (currentCount >= 8) {
-        alert(`Target Team ${newTeamI + 1} is full (8/8 members limit).`);
+        setMsg({ text: `Target Team ${newTeamI + 1} is full (8/8 members limit).`, type: "error" });
         return;
       }
     }
@@ -123,6 +156,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const updated = users.map((u) => (u.id === userId ? updatedStudent : u));
     setUsers(updated);
     saveUsers(updated);
+    onUsersUpdate?.(updated);
     saveUserUnified(updatedStudent).catch((e) => console.warn("Unified team update error:", e));
   };
 
@@ -151,23 +185,70 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
       }
 
       if (currentTeamI >= 10) {
-        alert("All 10 teams have reached the 8-member capacity limit.");
+        setMsg({ text: "All 10 teams have reached the 8-member capacity limit.", type: "error" });
         break;
       }
     }
 
     setUsers(updatedUsers);
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     saveUsersBatchUnified(updatedUsers).catch((e) => console.warn("Unified batch sync error:", e));
     setMsg({ text: "Auto-distributed unassigned students evenly across available teams!", type: "success" });
   };
 
-  const handleRemoveStudent = (userId: string, name: string) => {
-    if (confirm(`Remove student '${name}' from universe roster?`)) {
-      const updated = users.filter((u) => u.id !== userId);
-      setUsers(updated);
-      saveUsers(updated);
-      deleteUserUnified(userId).catch((e) => console.warn("Unified delete user error:", e));
+  const handleTriggerRemoveStudent = (userId: string, name: string, email: string, teamI: number) => {
+    setDeletingStudent({ id: userId, name, email, teamI });
+  };
+
+  const handleConfirmDetachStudent = async () => {
+    if (!deletingStudent) return;
+    const target = users.find((u) => u.id === deletingStudent.id);
+    if (!target) {
+      setDeletingStudent(null);
+      return;
+    }
+
+    const updated = users.map((u) =>
+      u.id === deletingStudent.id ? { ...u, universeId: "", teamI: -1 } : u
+    );
+
+    setUsers(updated);
+    saveUsers(updated);
+    onUsersUpdate?.(updated);
+    setDeletingStudent(null);
+
+    try {
+      await removeUserFromUniverseUnified(target);
+      setMsg({
+        text: `Student '${target.name}' detached from this universe and moved to General Unassigned Pool. Account preserved.`,
+        type: "success"
+      });
+    } catch (err: any) {
+      setMsg({ text: "Error updating student: " + err.message, type: "error" });
+    }
+  };
+
+  const handleConfirmDeleteStudent = async () => {
+    if (!deletingStudent) return;
+    const targetId = deletingStudent.id;
+    const targetName = deletingStudent.name;
+
+    const updated = users.filter((u) => u.id !== targetId);
+
+    setUsers(updated);
+    saveUsers(updated);
+    onUsersUpdate?.(updated);
+    setDeletingStudent(null);
+
+    try {
+      await deleteUserUnified(targetId);
+      setMsg({
+        text: `Student account '${targetName}' permanently deleted from database.`,
+        type: "success"
+      });
+    } catch (err: any) {
+      setMsg({ text: "Error deleting student: " + err.message, type: "error" });
     }
   };
 
@@ -225,6 +306,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
 
     setUsers(updatedUsers);
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
 
     const updatedUniv: Universe = {
       ...activeUniv,
@@ -626,9 +708,9 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
 
                     <button
                       type="button"
-                      onClick={() => handleRemoveStudent(st.id, st.name)}
+                      onClick={() => handleTriggerRemoveStudent(st.id, st.name, st.email, st.teamI)}
                       className="p-1 text-[#5A5C60] hover:text-red-600 transition"
-                      title="Remove user"
+                      title="Remove or delete student"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -937,9 +1019,9 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
                             {/* Delete Student */}
                             <button
                               type="button"
-                              onClick={() => handleRemoveStudent(st.id, st.name)}
+                              onClick={() => handleTriggerRemoveStudent(st.id, st.name, st.email, st.teamI)}
                               className="p-1 text-[#5A5C60] hover:text-red-600 transition"
-                              title="Remove student"
+                              title="Remove or delete student"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1102,6 +1184,85 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REMOVE OR DELETE STUDENT */}
+      {deletingStudent && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-md w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <div className="flex items-center gap-2.5 text-amber-700">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                  <UserMinus className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#1F2022]">Manage Student Removal</h3>
+                  <p className="text-xs text-[#5A5C60] font-mono truncate max-w-[260px]">{deletingStudent.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDeletingStudent(null)}
+                className="p-1 text-[#8A8C90] hover:text-[#1F2022]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-white rounded-xl border border-[#E0DCD3] space-y-1">
+              <div className="text-xs font-bold text-[#1F2022]">{deletingStudent.name}</div>
+              <div className="text-xs text-[#5A5C60] font-mono">{deletingStudent.email}</div>
+              <div className="text-[11px] text-[#8A8C90] font-mono mt-1">
+                Current Assignment: {deletingStudent.teamI >= 0 ? `Team ${deletingStudent.teamI + 1}` : "Unassigned Pool"}
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-900 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Option A: Detach from Universe (Recommended)
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Removes the student from this cohort/universe and moves them into the unassigned pool. All other students, universes, and accounts remain completely safe and untouched.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConfirmDetachStudent}
+                  className="w-full mt-2 py-2 px-3 bg-amber-700 hover:bg-amber-800 text-white rounded-lg font-bold text-xs shadow-xs transition"
+                >
+                  Detach Student (Keep Account Safe)
+                </button>
+              </div>
+
+              <div className="p-3 rounded-xl bg-red-50/70 border border-red-200 text-xs text-red-900 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-red-900">
+                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                  Option B: Permanently Delete Student Account
+                </div>
+                <p className="text-[11px] text-red-800 leading-relaxed">
+                  Deletes this student's login credential and profile entirely from the database. Only this individual student will be deleted.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteStudent}
+                  className="w-full mt-2 py-2 px-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-xs shadow-xs transition"
+                >
+                  Permanently Delete Student Account
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-[#E5E1D8]">
+              <button
+                type="button"
+                onClick={() => setDeletingStudent(null)}
+                className="px-4 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#5A5C60] hover:text-[#1F2022] hover:bg-[#F3F0EA] transition"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

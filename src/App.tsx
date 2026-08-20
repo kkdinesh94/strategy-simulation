@@ -23,7 +23,8 @@ import {
 import {
   fetchUsersUnified,
   fetchUniversesUnified,
-  saveUserUnified
+  saveUserUnified,
+  getActiveDatabaseProvider
 } from "./lib/dbProvider";
 import { newState, auditTeam, simulateQuarter } from "./engine/simulationEngine";
 import { LoginPage } from "./components/LoginPage";
@@ -176,9 +177,10 @@ export default function App() {
     refreshAllDataFromFirestore();
   }, []);
 
-  // Real-time Firestore active universe listener
+  // Real-time Firestore active universe listener (only when explicitly in Firebase mode)
   useEffect(() => {
     if (!universe?.id) return;
+    if (getActiveDatabaseProvider() !== "firebase") return;
 
     const unsubscribeUniv = subscribeUniverse(universe.id, (updatedUniv) => {
       if (updatedUniv && updatedUniv.id === universe.id) {
@@ -191,8 +193,10 @@ export default function App() {
     };
   }, [universe?.id]);
 
-  // Real-time Firestore global listeners
+  // Real-time Firestore global listeners (only when explicitly in Firebase mode)
   useEffect(() => {
+    if (getActiveDatabaseProvider() !== "firebase") return;
+
     const unsubscribeAllUnivs = subscribeAllUniverses((updatedUnivs) => {
       if (updatedUnivs && updatedUnivs.length > 0) {
         setAllUniverses(updatedUnivs);

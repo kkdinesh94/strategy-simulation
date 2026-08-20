@@ -106,6 +106,7 @@ function createFallbackD1Engine() {
   };
 
   const backupFile = path.join(process.cwd(), "ev_venture_d1_fallback.json");
+  let fileLoaded = false;
   if (fs.existsSync(backupFile)) {
     try {
       const data = JSON.parse(fs.readFileSync(backupFile, "utf-8"));
@@ -115,9 +116,89 @@ function createFallbackD1Engine() {
       if (data.users) {
         Object.entries(data.users).forEach(([k, v]) => memoryStore.users.set(k, v));
       }
+      fileLoaded = true;
     } catch (e) {
       console.warn("Fallback backup load error:", e);
     }
+  }
+
+  // Auto-seed default initial users only on very first cold start if no backup file exists
+  if (!fileLoaded && memoryStore.users.size === 0) {
+    const defaultUnivId = "univ_nitw_2026";
+    const initialUsers = [
+      {
+        id: "usr_admin",
+        email: "admin@evleague.edu",
+        name: "Dr. System Administrator",
+        role: "admin",
+        institution: "NIT Warangal",
+        universe_id: defaultUnivId,
+        universeId: defaultUnivId,
+        team_i: -1,
+        teamI: -1,
+        password: "admin123",
+        active_minutes: 10,
+        is_online: 0
+      },
+      {
+        id: "usr_prof",
+        email: "instructor@nitw.ac.in",
+        name: "Dr. Kamala Kannan Dinesh",
+        role: "instructor",
+        institution: "Department of Management Studies, NITW",
+        universe_id: defaultUnivId,
+        universeId: defaultUnivId,
+        team_i: -1,
+        teamI: -1,
+        password: "prof123",
+        active_minutes: 25,
+        is_online: 0
+      },
+      {
+        id: "usr_std1",
+        email: "student1@nitw.ac.in",
+        name: "Rahul Sharma (Team Lead)",
+        role: "player",
+        institution: "NIT Warangal MBA '26",
+        universe_id: defaultUnivId,
+        universeId: defaultUnivId,
+        team_i: 0,
+        teamI: 0,
+        password: "student123",
+        active_minutes: 15,
+        is_online: 0
+      },
+      {
+        id: "usr_std2",
+        email: "student2@nitw.ac.in",
+        name: "Priya Patel",
+        role: "player",
+        institution: "NIT Warangal MBA '26",
+        universe_id: defaultUnivId,
+        universeId: defaultUnivId,
+        team_i: 1,
+        teamI: 1,
+        password: "student123",
+        active_minutes: 8,
+        is_online: 0
+      },
+      {
+        id: "usr_std3",
+        email: "student3@nitw.ac.in",
+        name: "Ananya Roy",
+        role: "player",
+        institution: "NIT Warangal MBA '26",
+        universe_id: defaultUnivId,
+        universeId: defaultUnivId,
+        team_i: 2,
+        teamI: 2,
+        password: "student123",
+        active_minutes: 5,
+        is_online: 0
+      }
+    ];
+
+    initialUsers.forEach((u) => memoryStore.users.set(u.id, u));
   }
 
   const persist = () => {

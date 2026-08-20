@@ -810,37 +810,37 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-100 border border-emerald-300 text-emerald-950 rounded-lg shadow-2xs">
-              <Database className="w-6 h-6 text-emerald-700" />
+            <div className="p-2.5 bg-orange-100 border border-orange-300 text-orange-950 rounded-lg shadow-2xs">
+              <Cloud className="w-6 h-6 text-orange-600" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold tracking-tight text-[#1F2022]">
                   Super Admin Database & Systems Console
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-mono font-bold uppercase tracking-wider">
-                  Live Firestore Active
+                <span className="px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-900 border border-orange-300 text-[10px] font-mono font-bold uppercase tracking-wider">
+                  Cloudflare D1 Primary Engine
                 </span>
               </div>
               <p className="text-xs text-[#5A5C60] mt-0.5 font-mono">
-                Cloud Firestore Database: <strong className="text-[#1F2022]">ai-studio-evventureleague-1e6a6938...</strong>
+                Authoritative Edge Database: <strong className="text-[#1F2022]">Cloudflare D1 SQL (ev-venture-league-d1)</strong>
               </p>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Firestore Connection Badge */}
+          {/* Cloudflare D1 Connection Badge */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-[#E0DCD3] text-xs font-mono">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`}></span>
-            <span>{isConnected ? "Firestore Connected" : "Checking Connection..."}</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>Cloudflare D1 Online</span>
           </div>
 
           <button
             onClick={onRefreshAll}
             className="px-3.5 py-1.5 bg-white hover:bg-[#F3F0EA] border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] transition flex items-center gap-1.5 shadow-2xs"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-slate-600" /> Sync Cloud
+            <RefreshCw className="w-3.5 h-3.5 text-slate-600" /> Sync D1 Database
           </button>
         </div>
       </div>
