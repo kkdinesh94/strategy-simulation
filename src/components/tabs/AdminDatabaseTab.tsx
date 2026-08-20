@@ -27,7 +27,9 @@ import {
   saveUserUnified,
   deleteUniverseUnified,
   deleteUserUnified,
-  saveUsersBatchUnified
+  removeUserFromUniverseUnified,
+  saveUsersBatchUnified,
+  getActiveDatabaseProvider
 } from "../../lib/dbProvider";
 import { CloudflareD1Console } from "./CloudflareD1Console";
 import {
@@ -59,12 +61,15 @@ import {
   Settings,
   Code,
   UserPlus,
+  UserMinus,
   Shuffle,
   Bot,
   UserCheck,
   ChevronRight,
   ArrowRightLeft,
-  Cloud
+  Cloud,
+  KeyRound,
+  Lock
 } from "lucide-react";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../../lib/presence";
 
@@ -139,6 +144,74 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     universeId: selectedUnivId,
     teamI: 0
   });
+
+  // User Password Reset Modal State
+  const [passwordResetUser, setPasswordResetUser] = useState<User | null>(null);
+  const [newPasswordInput, setNewPasswordInput] = useState<string>("");
+
+  // Reassign user to another universe
+  const handleReassignUniverse = async (user: User, newUnivId: string) => {
+    const updatedUser: User = {
+      ...user,
+      universeId: newUnivId,
+      teamI: -1
+    };
+    const updatedUsers = allUsers.map((u) => (u.id === user.id ? updatedUser : u));
+    saveUsers(updatedUsers);
+    const targetUnivName = allUniverses.find((u) => u.id === newUnivId)?.name || "Unassigned Pool";
+    onNotify(`Reassigned ${user.name} to cohort '${targetUnivName}' (team position reset to unassigned pool)`);
+
+    try {
+      await saveUserUnified(updatedUser);
+      onRefreshAll();
+    } catch (err: any) {
+      console.warn("Unified reassign universe error:", err);
+    }
+  };
+
+  // Remove user from universe cohort
+  const handleRemoveUserFromUniverse = async (user: User) => {
+    const updatedUser: User = {
+      ...user,
+      universeId: "",
+      teamI: -1
+    };
+    const updatedUsers = allUsers.map((u) => (u.id === user.id ? updatedUser : u));
+    saveUsers(updatedUsers);
+    onNotify(`Removed ${user.name} from universe cohort. Student moved to Unassigned Pool.`);
+
+    try {
+      await removeUserFromUniverseUnified(user);
+      onRefreshAll();
+    } catch (err: any) {
+      console.warn("Unified remove user from universe error:", err);
+    }
+  };
+
+  // Reset User Password submit
+  const handleResetPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordResetUser || !newPasswordInput.trim()) return;
+
+    const updatedUser: User = {
+      ...passwordResetUser,
+      password: newPasswordInput.trim()
+    };
+
+    const updatedUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
+    saveUsers(updatedUsers);
+    const targetName = updatedUser.name;
+    setPasswordResetUser(null);
+    setNewPasswordInput("");
+    onNotify(`Password for '${targetName}' updated successfully in Cloudflare D1 & database!`);
+
+    try {
+      await saveUserUnified(updatedUser);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Error updating password: " + err.message);
+    }
+  };
 
   // Custom confirmation modal states (replaces iframe-blocked native dialogs)
   const [deletingUser, setDeletingUser] = useState<{ id: string; name: string } | null>(null);
@@ -393,7 +466,12 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       instStr.includes(searchLower);
 
     const matchesRole = userRoleFilter === "all" || u.role === userRoleFilter;
-    const matchesUniv = userUnivFilter === "all" || u.universeId === userUnivFilter;
+    const matchesUniv =
+      userUnivFilter === "all"
+        ? true
+        : userUnivFilter === "unassigned"
+        ? !u.universeId || u.universeId === ""
+        : u.universeId === userUnivFilter;
 
     return matchesSearch && matchesRole && matchesUniv;
   });
@@ -548,64 +626,86 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       {/* SUB-TAB 1: VISUAL UNIVERSE & TEAMS MANAGER */}
       {activeSubTab === "universes" && (
         <div className="space-y-6">
-          {/* Selector & Actions Card */}
-          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-5 shadow-2xs flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div>
-                <label className="block text-[11px] uppercase tracking-wider font-semibold text-[#5A5C60] mb-1">
-                  Select Universe Cohort
-                </label>
-                <select
-                  value={selectedUnivId}
-                  onChange={(e) => setSelectedUnivId(e.target.value)}
-                  className="px-3.5 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-bold font-mono text-[#1F2022] focus:outline-none focus:border-purple-600 shadow-2xs"
-                >
-                  {allUniverses.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.code}) - Q{u.gameState?.quarter || 1}
-                    </option>
-                  ))}
-                </select>
+          {allUniverses.length === 0 ? (
+            <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl p-12 text-center space-y-4 shadow-2xs">
+              <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-700">
+                <Globe className="w-6 h-6" />
               </div>
-
-              {targetUniv && (
-                <div className="flex items-center gap-2 text-xs font-mono text-[#5A5C60] pt-4">
-                  <span className="px-2 py-0.5 bg-white border border-[#E0DCD3] rounded">ID: {targetUniv.id}</span>
-                  <span className="px-2 py-0.5 bg-white border border-[#E0DCD3] rounded flex items-center gap-1.5">
-                    <span>Instructor:</span>
-                    <strong className="text-[#1F2022]">{targetUniv.instructorEmail || "Unassigned"}</strong>
-                    <button
-                      onClick={() => {
-                        setInstructorEmailInput(targetUniv.instructorEmail || "");
-                        setEditingInstructorUniv(targetUniv);
-                      }}
-                      className="ml-1 text-[10px] text-purple-700 hover:text-purple-900 underline font-semibold cursor-pointer"
-                    >
-                      Change
-                    </button>
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
+              <div>
+                <h3 className="font-bold text-base text-[#1F2022]">No Universe Cohorts Found in Database</h3>
+                <p className="text-xs text-[#5A5C60] max-w-md mx-auto mt-1">
+                  Your Cloudflare D1 database currently contains zero active universes. Create your first competition universe cohort below.
+                </p>
+              </div>
               <button
                 onClick={() => setIsUniverseModalOpen(true)}
-                className="px-3.5 py-2 bg-[#1F2022] hover:bg-[#343538] text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                className="px-4 py-2.5 bg-[#1F2022] hover:bg-[#343538] text-white rounded-xl text-xs font-semibold shadow-sm transition inline-flex items-center gap-2"
               >
-                <Plus className="w-4 h-4" /> Create New Universe
+                <Plus className="w-4 h-4" /> Create New Universe Cohort
               </button>
-
-              {targetUniv && (
-                <button
-                  onClick={() => handleDeleteUniverse(targetUniv.id, targetUniv.name)}
-                  className="px-3.5 py-2 bg-white text-[#C83E2B] hover:bg-red-50 border border-[#E0DCD3] rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete Universe
-                </button>
-              )}
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Selector & Actions Card */}
+              <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-5 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-wider font-semibold text-[#5A5C60] mb-1">
+                      Select Universe Cohort
+                    </label>
+                    <select
+                      value={selectedUnivId}
+                      onChange={(e) => setSelectedUnivId(e.target.value)}
+                      className="px-3.5 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-bold font-mono text-[#1F2022] focus:outline-none focus:border-purple-600 shadow-2xs"
+                    >
+                      {allUniverses.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.code}) - Q{u.gameState?.quarter || 1}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {targetUniv && (
+                    <div className="flex items-center gap-2 text-xs font-mono text-[#5A5C60] pt-4">
+                      <span className="px-2 py-0.5 bg-white border border-[#E0DCD3] rounded">ID: {targetUniv.id}</span>
+                      <span className="px-2 py-0.5 bg-white border border-[#E0DCD3] rounded flex items-center gap-1.5">
+                        <span>Instructor:</span>
+                        <strong className="text-[#1F2022]">{targetUniv.instructorEmail || "Unassigned"}</strong>
+                        <button
+                          onClick={() => {
+                            setInstructorEmailInput(targetUniv.instructorEmail || "");
+                            setEditingInstructorUniv(targetUniv);
+                          }}
+                          className="ml-1 text-[10px] text-purple-700 hover:text-purple-900 underline font-semibold cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsUniverseModalOpen(true)}
+                    className="px-3.5 py-2 bg-[#1F2022] hover:bg-[#343538] text-white rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" /> Create New Universe
+                  </button>
+
+                  {targetUniv && (
+                    <button
+                      onClick={() => handleDeleteUniverse(targetUniv.id, targetUniv.name)}
+                      className="px-3.5 py-2 bg-white text-[#C83E2B] hover:bg-red-50 border border-[#E0DCD3] rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete Universe
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Teams Visual Management Grid */}
           {targetUniv && targetUniv.gameState && (
@@ -886,7 +986,9 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                     <th className="px-4 py-3">Role</th>
                     <th className="px-4 py-3">Presence & Activity</th>
                     <th className="px-4 py-3">Institution</th>
-                    <th className="px-4 py-3">Universe & Team Assignment</th>
+                    <th className="px-4 py-3">Universe Cohort</th>
+                    <th className="px-4 py-3">Team Assignment</th>
+                    <th className="px-4 py-3">Password / Security</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -953,50 +1055,122 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                           </div>
                         </td>
                         <td className="px-4 py-3 text-[#5A5C60]">{u.institution || "NIT Warangal"}</td>
+                        
+                        {/* UNIVERSE COHORT COLUMN WITH REMOVE FROM UNIVERSE ACTION */}
                         <td className="px-4 py-3 font-mono text-xs">
                           {u.role === "player" ? (
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-[#1F2022]">{univ?.code || u.universeId}</span>
+                            <div className="flex items-center gap-1.5">
                               <select
-                                value={u.teamI ?? -1}
-                                onChange={(e) => handleReassignStudent(u, Number(e.target.value))}
+                                value={u.universeId || ""}
+                                onChange={(e) => handleReassignUniverse(u, e.target.value)}
                                 className={`px-2 py-1 rounded text-xs border font-sans font-medium focus:outline-none transition ${
-                                  u.teamI === -1 || u.teamI === undefined || u.teamI === null
+                                  !u.universeId
                                     ? "bg-amber-50 border-amber-300 text-amber-900 font-bold"
                                     : "bg-white border-[#E0DCD3] text-[#1F2022] hover:border-[#1F2022]"
                                 }`}
                               >
-                                <option value={-1}>⚠️ Unassigned Pool</option>
-                                {teamsList.map((t, idx) => (
-                                  <option key={idx} value={idx}>
-                                    Team {idx + 1}: {t.name}
+                                <option value="">⚠️ None (Unassigned)</option>
+                                {allUniverses.map((un) => (
+                                  <option key={un.id} value={un.id}>
+                                    {un.code} - {un.name}
                                   </option>
                                 ))}
                               </select>
+                              {u.universeId && (
+                                <button
+                                  onClick={() => handleRemoveUserFromUniverse(u)}
+                                  className="p-1 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded transition"
+                                  title="Remove student from this universe cohort (move to unassigned pool)"
+                                >
+                                  <UserMinus className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
                           ) : (
-                            <div>
-                              <span className="font-bold text-[#1F2022]">{univ?.code || u.universeId}</span>
-                              <span className="text-[#8A8C90] ml-2">({teamName})</span>
+                            <div className="text-[#5A5C60] font-sans">
+                              {univ?.code || u.universeId || "All Universes"}
                             </div>
                           )}
                         </td>
+
+                        {/* TEAM ASSIGNMENT COLUMN */}
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {u.role === "player" ? (
+                            u.universeId ? (
+                              <div className="flex items-center gap-2">
+                                <select
+                                  value={u.teamI ?? -1}
+                                  onChange={(e) => handleReassignStudent(u, Number(e.target.value))}
+                                  className={`px-2 py-1 rounded text-xs border font-sans font-medium focus:outline-none transition ${
+                                    u.teamI === -1 || u.teamI === undefined || u.teamI === null
+                                      ? "bg-amber-50 border-amber-300 text-amber-900 font-bold"
+                                      : "bg-white border-[#E0DCD3] text-[#1F2022] hover:border-[#1F2022]"
+                                  }`}
+                                >
+                                  <option value={-1}>⚠️ Unassigned Pool</option>
+                                  {teamsList.map((t, idx) => (
+                                    <option key={idx} value={idx}>
+                                      Team {idx + 1}: {t.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600 font-sans text-[11px]">
+                                Unassigned Pool
+                              </span>
+                            )
+                          ) : (
+                            <div>
+                              <span className="text-[#8A8C90] text-[11px] font-sans">({teamName})</span>
+                            </div>
+                          )}
+                        </td>
+
+                        {/* PASSWORD / SECURITY COLUMN */}
+                        <td className="px-4 py-3 font-mono text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[#7A7C80] select-none tracking-widest text-[11px]">••••••••</span>
+                            <button
+                              onClick={() => {
+                                setPasswordResetUser(u);
+                                setNewPasswordInput(u.password || "student123");
+                              }}
+                              className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-sans font-medium flex items-center gap-1 transition"
+                              title="Reset or change password for this account"
+                            >
+                              <KeyRound className="w-3 h-3 text-amber-600" />
+                              Reset
+                            </button>
+                          </div>
+                        </td>
+
+                        {/* ACTIONS COLUMN */}
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {u.role === "player" && u.universeId && (
+                              <button
+                                onClick={() => handleRemoveUserFromUniverse(u)}
+                                className="p-1.5 text-amber-700 hover:bg-amber-50 rounded transition"
+                                title="Remove User from Universe"
+                              >
+                                <UserMinus className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setNewUser(u);
                                 setIsAddUserModalOpen(true);
                               }}
-                              className="p-1 text-[#5A5C60] hover:text-[#1F2022] hover:bg-[#F3F0EA] rounded transition"
-                              title="Edit User"
+                              className="p-1.5 text-[#5A5C60] hover:text-[#1F2022] hover:bg-[#F3F0EA] rounded transition"
+                              title="Edit User Details"
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteUser(u.id, u.name)}
-                              className="p-1 text-[#C83E2B] hover:bg-red-50 rounded transition"
-                              title="Delete User"
+                              className="p-1.5 text-[#C83E2B] hover:bg-red-50 rounded transition"
+                              title="Delete User Permanently"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1468,6 +1642,67 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
         </div>
       )}
 
+      {/* MODAL: RESET USER PASSWORD */}
+      {passwordResetUser && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-sm w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-100 text-amber-900">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-[#1F2022]">Reset Account Password</h3>
+                  <p className="text-xs text-[#5A5C60] font-mono">{passwordResetUser.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setPasswordResetUser(null)} className="p-1 text-[#8A8C90] hover:text-[#1F2022]">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleResetPasswordSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                  New Password for {passwordResetUser.email}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="Enter new password (e.g. secret123)"
+                    className="w-full px-3 py-2.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-mono text-[#1F2022] focus:outline-none focus:border-amber-600"
+                  />
+                </div>
+                <p className="text-[11px] text-[#7A7C80] mt-1.5">
+                  The new password will be immediately committed to Cloudflare D1 & database.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+                <button
+                  type="button"
+                  onClick={() => setPasswordResetUser(null)}
+                  className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Save New Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: DELETE USER CONFIRMATION */}
       {deletingUser && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -1482,7 +1717,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
               </div>
             </div>
             <p className="text-xs text-[#5A5C60]">
-              Are you sure you want to permanently delete this user account? The student or manager will lose access.
+              Are you sure you want to permanently delete this user account from Cloudflare D1 & database?
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
               <button
@@ -1492,16 +1727,19 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 Cancel
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const targetId = deletingUser.id;
                   const targetName = deletingUser.name;
                   setDeletingUser(null);
-                  const remaining = allUsers.filter((u) => u.id !== targetId);
-                  saveUsers(remaining);
-                  onNotify(`User '${targetName}' deleted.`);
-                  deleteUserUnified(targetId).catch((err) => {
-                    console.warn("Unified delete user error:", err);
-                  });
+                  try {
+                    await deleteUserUnified(targetId);
+                    const remaining = allUsers.filter((u) => u.id !== targetId);
+                    saveUsers(remaining);
+                    onNotify(`User '${targetName}' permanently deleted from Cloudflare D1.`);
+                    onRefreshAll();
+                  } catch (err: any) {
+                    alert("Error deleting user: " + err.message);
+                  }
                 }}
                 className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition"
               >
@@ -1526,7 +1764,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
               </div>
             </div>
             <p className="text-xs text-[#5A5C60]">
-              PERMANENT ACTION: Delete universe and clear associated team states from Cloudflare D1 & database? This cannot be undone.
+              PERMANENT ACTION: Delete universe from Cloudflare D1? All students in this universe will be moved to the Unassigned Pool.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
               <button
@@ -1542,25 +1780,29 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   setDeletingUniverse(null);
                   try {
                     await deleteUniverseUnified(targetId);
-                    let remaining = allUniverses.filter((u) => u.id !== targetId);
-                    if (remaining.length === 0) {
-                      const fallbackUniv = createInitialUniverse(
-                        "univ_main_" + Date.now().toString().slice(-4),
-                        "EV Venture League Cohort",
-                        "COHORT1"
-                      );
-                      remaining = [fallbackUniv];
-                      await saveUniverseUnified(fallbackUniv);
-                    }
+                    
+                    // Detach users belonging to this universe into unassigned pool
+                    const updatedUsers = allUsers.map((u) => {
+                      if (u.universeId === targetId) {
+                        return { ...u, universeId: "", teamI: -1 };
+                      }
+                      return u;
+                    });
+                    saveUsers(updatedUsers);
+
+                    const remaining = allUniverses.filter((u) => u.id !== targetId);
                     saveUniverses(remaining);
+                    
                     if (activeUniverse.id === targetId) {
-                      saveActiveUniverse(remaining[0]);
-                      onSelectActiveUniverse(remaining[0]);
+                      if (remaining.length > 0) {
+                        saveActiveUniverse(remaining[0]);
+                        onSelectActiveUniverse(remaining[0]);
+                      }
                     }
                     if (selectedUnivId === targetId) {
-                      setSelectedUnivId(remaining[0].id);
+                      setSelectedUnivId(remaining[0]?.id || "");
                     }
-                    onNotify(`Universe '${targetName}' successfully deleted.`);
+                    onNotify(`Universe '${targetName}' successfully deleted from Cloudflare D1.`);
                     onRefreshAll();
                   } catch (err: any) {
                     alert("Error deleting universe: " + err.message);

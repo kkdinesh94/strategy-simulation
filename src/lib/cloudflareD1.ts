@@ -189,6 +189,21 @@ export async function deleteUserFromD1(userId: string): Promise<boolean> {
 }
 
 /**
+ * Remove / Detach a User from Universe in Cloudflare D1
+ */
+export async function removeUserFromUniverseInD1(userId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/d1/users/${userId}/remove-from-universe`, {
+      method: "POST"
+    });
+    return res.ok;
+  } catch (err) {
+    console.error("Error removing user from universe in Cloudflare D1:", err);
+    return false;
+  }
+}
+
+/**
  * Batch Save Users to Cloudflare D1
  */
 export async function saveUsersBatchToD1(users: User[]): Promise<boolean> {

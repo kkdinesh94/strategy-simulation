@@ -15,6 +15,7 @@ import {
   fetchUsersFromD1,
   saveUserToD1,
   deleteUserFromD1,
+  removeUserFromUniverseInD1,
   saveUsersBatchToD1,
   fetchUniversesFromD1,
   saveUniverseToD1,
@@ -35,7 +36,7 @@ export function getActiveDatabaseProvider(): DatabaseProviderType {
   } catch (e) {
     console.error("Error reading db provider:", e);
   }
-  // Default to cloudflare_d1 with fallback
+  // Default to cloudflare_d1
   return "cloudflare_d1";
 }
 
@@ -48,7 +49,7 @@ export function setActiveDatabaseProvider(provider: DatabaseProviderType) {
 }
 
 /**
- * Fetch all users using active provider with intelligent fallback
+ * Fetch all users using active provider with clean error handling
  */
 export async function fetchUsersUnified(): Promise<User[]> {
   const provider = getActiveDatabaseProvider();
@@ -56,26 +57,22 @@ export async function fetchUsersUnified(): Promise<User[]> {
   if (provider === "cloudflare_d1" || provider === "hybrid") {
     try {
       const d1Users = await fetchUsersFromD1();
-      if (d1Users && d1Users.length > 0) {
+      // If D1 responded (even if empty []), return D1 state directly
+      if (Array.isArray(d1Users)) {
         return d1Users;
       }
     } catch (e) {
-      console.warn("D1 users fetch failed, trying Firestore fallback:", e);
+      console.warn("D1 users fetch error:", e);
     }
   }
 
-  // Fallback to Firestore
-  try {
-    const firestoreUsers = await fetchUsersFromFirestore();
-    if (firestoreUsers && firestoreUsers.length > 0) {
-      // If in hybrid or D1 mode, background-sync to D1
-      if (provider === "hybrid" || provider === "cloudflare_d1") {
-        saveUsersBatchToD1(firestoreUsers).catch(() => {});
-      }
-      return firestoreUsers;
+  if (provider === "firebase") {
+    try {
+      const firestoreUsers = await fetchUsersFromFirestore();
+      return firestoreUsers || [];
+    } catch (e) {
+      console.warn("Firestore users fetch failed:", e);
     }
-  } catch (e) {
-    console.warn("Firestore users fetch failed:", e);
   }
 
   return [];
@@ -103,16 +100,28 @@ export async function saveUserUnified(user: User): Promise<void> {
 }
 
 /**
- * Delete user unified
+ * Delete user unified across D1 and Firestore
  */
 export async function deleteUserUnified(userId: string): Promise<void> {
-  const provider = getActiveDatabaseProvider();
-  if (provider === "cloudflare_d1" || provider === "hybrid") {
-    await deleteUserFromD1(userId);
-  }
-  if (provider === "firebase" || provider === "hybrid") {
-    await deleteUserFromFirestore(userId);
-  }
+  await Promise.allSettled([
+    deleteUserFromD1(userId),
+    deleteUserFromFirestore(userId)
+  ]);
+}
+
+/**
+ * Remove / Detach user from universe
+ */
+export async function removeUserFromUniverseUnified(user: User): Promise<void> {
+  const detachedUser: User = {
+    ...user,
+    universeId: "",
+    teamI: -1
+  };
+  await Promise.allSettled([
+    removeUserFromUniverseInD1(user.id),
+    saveUserToFirestore(detachedUser)
+  ]);
 }
 
 /**
@@ -129,7 +138,7 @@ export async function saveUsersBatchUnified(users: User[]): Promise<void> {
 }
 
 /**
- * Fetch all universes using active provider with intelligent fallback
+ * Fetch all universes using active provider
  */
 export async function fetchUniversesUnified(): Promise<Universe[]> {
   const provider = getActiveDatabaseProvider();
@@ -137,25 +146,22 @@ export async function fetchUniversesUnified(): Promise<Universe[]> {
   if (provider === "cloudflare_d1" || provider === "hybrid") {
     try {
       const d1Universes = await fetchUniversesFromD1();
-      if (d1Universes && d1Universes.length > 0) {
+      // If D1 returned an array (even if 0 items), honor it directly
+      if (Array.isArray(d1Universes)) {
         return d1Universes;
       }
     } catch (e) {
-      console.warn("D1 universes fetch failed, trying Firestore fallback:", e);
+      console.warn("D1 universes fetch error:", e);
     }
   }
 
-  // Fallback to Firestore
-  try {
-    const firestoreUniverses = await fetchUniversesFromFirestore();
-    if (firestoreUniverses && firestoreUniverses.length > 0) {
-      if (provider === "hybrid" || provider === "cloudflare_d1") {
-        firestoreUniverses.forEach((u) => saveUniverseToD1(u).catch(() => {}));
-      }
-      return firestoreUniverses;
+  if (provider === "firebase") {
+    try {
+      const firestoreUniverses = await fetchUniversesFromFirestore();
+      return firestoreUniverses || [];
+    } catch (e) {
+      console.warn("Firestore universes fetch failed:", e);
     }
-  } catch (e) {
-    console.warn("Firestore universes fetch failed:", e);
   }
 
   return [];
@@ -183,14 +189,11 @@ export async function saveUniverseUnified(universe: Universe): Promise<void> {
 }
 
 /**
- * Delete universe unified
+ * Delete universe unified across both D1 and Firestore
  */
 export async function deleteUniverseUnified(universeId: string): Promise<void> {
-  const provider = getActiveDatabaseProvider();
-  if (provider === "cloudflare_d1" || provider === "hybrid") {
-    await deleteUniverseFromD1(universeId);
-  }
-  if (provider === "firebase" || provider === "hybrid") {
-    await deleteUniverseFromFirestore(universeId);
-  }
+  await Promise.allSettled([
+    deleteUniverseFromD1(universeId),
+    deleteUniverseFromFirestore(universeId)
+  ]);
 }

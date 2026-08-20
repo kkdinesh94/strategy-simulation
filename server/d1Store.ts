@@ -178,6 +178,18 @@ function createFallbackD1Engine() {
     },
     deleteUniverse: (id: string) => {
       memoryStore.universes.delete(id);
+      // Detach any users previously belonging to this universe
+      for (const [uid, user] of memoryStore.users.entries()) {
+        if (user.universeId === id || user.universe_id === id) {
+          memoryStore.users.set(uid, {
+            ...user,
+            universeId: "",
+            universe_id: "",
+            teamI: -1,
+            team_i: -1
+          });
+        }
+      }
       persist();
     },
     insertUser: (u: any) => {
@@ -187,6 +199,19 @@ function createFallbackD1Engine() {
     deleteUser: (id: string) => {
       memoryStore.users.delete(id);
       persist();
+    },
+    removeUserFromUniverse: (userId: string) => {
+      const u = memoryStore.users.get(userId);
+      if (u) {
+        memoryStore.users.set(userId, {
+          ...u,
+          universeId: "",
+          universe_id: "",
+          teamI: -1,
+          team_i: -1
+        });
+        persist();
+      }
     }
   };
 }

@@ -177,8 +177,26 @@ async function startServer() {
         d1.deleteUniverse(id);
       } else {
         d1.prepare("DELETE FROM universes WHERE id = ?").run(id);
+        try {
+          d1.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE universe_id = ?").run(id);
+        } catch (e) {}
       }
-      res.json({ success: true });
+      res.json({ success: true, universeId: id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove user from universe (sets universe_id = '', team_i = -1)
+  app.post("/api/d1/users/:id/remove-from-universe", (req, res) => {
+    try {
+      const id = req.params.id;
+      if (d1.removeUserFromUniverse) {
+        d1.removeUserFromUniverse(id);
+      } else {
+        d1.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE id = ?").run(id);
+      }
+      res.json({ success: true, userId: id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

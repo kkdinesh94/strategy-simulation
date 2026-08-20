@@ -143,9 +143,9 @@ export function saveUsers(users: User[]) {
 export function loadUniverses(): Universe[] {
   try {
     const data = localStorage.getItem(UNIVERSES_STORAGE_KEY);
-    if (data) {
-      const parsed: Universe[] = JSON.parse(data);
-      if (parsed.length > 0) return parsed;
+    if (data !== null) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error("Failed to load universes", e);
