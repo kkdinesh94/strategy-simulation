@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { User, Universe, UserRole } from "../../types/auth";
 import { GameState, TeamState } from "../../types/simulation";
-import { newState } from "../../engine/simulationEngine";
+import { newState, mkModel, botDecide } from "../../engine/simulationEngine";
+import { ARCHETYPES, TEAM_COLORS, SEGMENTS } from "../../engine/catalog";
 import {
   saveUsers,
   saveUniverses,
@@ -216,6 +217,12 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   // Custom confirmation modal states (replaces iframe-blocked native dialogs)
   const [deletingUser, setDeletingUser] = useState<{ id: string; name: string } | null>(null);
   const [deletingUniverse, setDeletingUniverse] = useState<{ id: string; name: string } | null>(null);
+  const [deletingTeam, setDeletingTeam] = useState<{ index: number; name: string; memberCount: number } | null>(null);
+  const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState<boolean>(false);
+  const [newTeamNameInput, setNewTeamNameInput] = useState<string>("");
+  const [newTeamArchInput, setNewTeamArchInput] = useState<string>("commuter");
+  const [newTeamColorInput, setNewTeamColorInput] = useState<string>("#0B9E63");
+  const [newTeamIsBotInput, setNewTeamIsBotInput] = useState<boolean>(false);
   const [editingInstructorUniv, setEditingInstructorUniv] = useState<Universe | null>(null);
   const [instructorEmailInput, setInstructorEmailInput] = useState<string>("");
 
@@ -296,6 +303,309 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       onRefreshAll();
     } catch (err: any) {
       alert("Failed to save team updates: " + err.message);
+    }
+  };
+
+  // Helper to construct a new valid TeamState
+  const createNewTeamState = (
+    teamIndex: number,
+    name: string,
+    archKey: string,
+    color: string,
+    isBot: boolean
+  ): TeamState => {
+    const archDef = ARCHETYPES[archKey] || ARCHETYPES["commuter"];
+    const m = mkModel(archDef.name, archDef.cfg, archDef.add, archDef.price);
+    m.launchedQ = 1;
+    const aw: Record<string, number> = {};
+    const base: Record<string, number> = {};
+    SEGMENTS.forEach((s) => {
+      aw[s.id] = 0.05;
+      base[s.id] = 0;
+    });
+
+    const newTeam: TeamState = {
+      i: teamIndex,
+      name: name.trim() || `Team ${teamIndex + 1} EV`,
+      color: color || TEAM_COLORS[teamIndex % TEAM_COLORS.length] || "#2563eb",
+      isBot,
+      arch: archKey,
+      vision: "",
+      mission: "",
+      goals: "",
+      prim: archDef.prim,
+      sec: archDef.sec,
+      charterDone: false,
+      cash: 1900,
+      paidIn: 2500,
+      rep: 0.5,
+      cumProfit: 0,
+      aw,
+      base,
+      models: [m],
+      capacity: 2500,
+      ppe: 600,
+      hr: { sales: 100, plant: 100 },
+      centres: 4,
+      staff: 20,
+      qualityCum: 0,
+      techs: [],
+      rnd: [],
+      debt: { bank: 0, lt: 0, ltLeft: 0, shark: 0 },
+      cumFuture: 0,
+      cumRevenue: 0,
+      equityVC: 0,
+      equityEm: 0,
+      vcRaised: 0,
+      bankrupt: false,
+      dec: {
+        ad: 180,
+        alloc: { ...archDef.alloc },
+        prod: { [m.id]: 1800 },
+        locked: false,
+        claims: [],
+        buyIntel: false,
+        buyClinic: false,
+        vc: null,
+        quality: 0,
+        expBlocks: 0,
+        newCentres: 0,
+        hire: 0,
+        bankTarget: 0,
+        ltIssue: 0,
+        devCost: 0
+      },
+      hist: []
+    };
+
+    if (isBot && targetUniv && targetUniv.gameState) {
+      botDecide(newTeam, targetUniv.gameState);
+    }
+    return newTeam;
+  };
+
+  // Delete team confirmation handler
+  const handleConfirmDeleteTeam = async () => {
+    if (!deletingTeam || !targetUniv) return;
+    const delIdx = deletingTeam.index;
+    const teamName = deletingTeam.name;
+
+    if (editableTeams.length <= 1) {
+      alert("A universe must contain at least 1 team. Cannot delete the only remaining team.");
+      setDeletingTeam(null);
+      return;
+    }
+
+    const updatedTeams = editableTeams
+      .filter((_, idx) => idx !== delIdx)
+      .map((t, newIdx) => ({
+        ...t,
+        i: newIdx
+      }));
+
+    setEditableTeams(updatedTeams);
+
+    // Update users in this universe
+    const updatedUsers = allUsers.map((u) => {
+      if (u.universeId === targetUniv.id && u.role === "player") {
+        if (u.teamI === delIdx) {
+          return { ...u, teamI: -1 }; // Moved to unassigned pool
+        } else if (u.teamI > delIdx) {
+          return { ...u, teamI: u.teamI - 1 }; // Re-indexed
+        }
+      }
+      return u;
+    });
+    saveUsers(updatedUsers);
+
+    // Update universe
+    const updatedUniv: Universe = {
+      ...targetUniv,
+      gameState: {
+        ...targetUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+    const updatedUniverses = allUniverses.map((u) => (u.id === targetUniv.id ? updatedUniv : u));
+    saveUniverses(updatedUniverses);
+    if (activeUniverse.id === targetUniv.id) {
+      onSelectActiveUniverse(updatedUniv);
+    }
+
+    setDeletingTeam(null);
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      await saveUsersBatchUnified(updatedUsers);
+      onNotify(`Team '${teamName}' deleted successfully. Remaining ${updatedTeams.length} teams re-indexed and synced.`);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Error deleting team: " + err.message);
+    }
+  };
+
+  // Delete all empty teams in the universe
+  const handleDeleteAllEmptyTeams = async () => {
+    if (!targetUniv) return;
+    const currentStudents = allUsers.filter((u) => u.universeId === targetUniv.id && u.role === "player");
+    const emptyIndices: number[] = [];
+
+    editableTeams.forEach((_, idx) => {
+      const memberCount = currentStudents.filter((u) => u.teamI === idx).length;
+      if (memberCount === 0) {
+        emptyIndices.push(idx);
+      }
+    });
+
+    if (emptyIndices.length === 0) {
+      onNotify("No empty teams found in this universe cohort.");
+      return;
+    }
+
+    if (emptyIndices.length === editableTeams.length) {
+      alert("Cannot delete all teams. At least 1 team must remain in the universe.");
+      return;
+    }
+
+    // Build old to new index mapping
+    const oldToNewMap = new Map<number, number>();
+    let newCounter = 0;
+    const updatedTeams: TeamState[] = [];
+
+    editableTeams.forEach((team, oldIdx) => {
+      if (!emptyIndices.includes(oldIdx)) {
+        updatedTeams.push({
+          ...team,
+          i: newCounter
+        });
+        oldToNewMap.set(oldIdx, newCounter);
+        newCounter++;
+      }
+    });
+
+    setEditableTeams(updatedTeams);
+
+    // Update users
+    const updatedUsers = allUsers.map((u) => {
+      if (u.universeId === targetUniv.id && u.role === "player") {
+        if (u.teamI >= 0) {
+          const newTeamI = oldToNewMap.has(u.teamI) ? oldToNewMap.get(u.teamI)! : -1;
+          return { ...u, teamI: newTeamI };
+        }
+      }
+      return u;
+    });
+    saveUsers(updatedUsers);
+
+    const updatedUniv: Universe = {
+      ...targetUniv,
+      gameState: {
+        ...targetUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+    const updatedUniverses = allUniverses.map((u) => (u.id === targetUniv.id ? updatedUniv : u));
+    saveUniverses(updatedUniverses);
+    if (activeUniverse.id === targetUniv.id) {
+      onSelectActiveUniverse(updatedUniv);
+    }
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      await saveUsersBatchUnified(updatedUsers);
+      onNotify(`Successfully deleted ${emptyIndices.length} empty team(s). Universe now has ${updatedTeams.length} active teams.`);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Error deleting empty teams: " + err.message);
+    }
+  };
+
+  // Switch all empty teams to AI Bot
+  const handleSwitchAllEmptyToBot = async () => {
+    if (!targetUniv) return;
+    const currentStudents = allUsers.filter((u) => u.universeId === targetUniv.id && u.role === "player");
+    let countChanged = 0;
+
+    const updatedTeams = editableTeams.map((team, idx) => {
+      const memberCount = currentStudents.filter((u) => u.teamI === idx).length;
+      if (memberCount === 0 && !team.isBot) {
+        countChanged++;
+        const botTeam = { ...team, isBot: true };
+        if (targetUniv.gameState) botDecide(botTeam, targetUniv.gameState);
+        return botTeam;
+      }
+      return team;
+    });
+
+    if (countChanged === 0) {
+      onNotify("All empty teams are already configured as AI Bots.");
+      return;
+    }
+
+    setEditableTeams(updatedTeams);
+
+    const updatedUniv: Universe = {
+      ...targetUniv,
+      gameState: {
+        ...targetUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+    const updatedUniverses = allUniverses.map((u) => (u.id === targetUniv.id ? updatedUniv : u));
+    saveUniverses(updatedUniverses);
+    if (activeUniverse.id === targetUniv.id) {
+      onSelectActiveUniverse(updatedUniv);
+    }
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      onNotify(`Switched ${countChanged} empty team(s) to AI Bot mode.`);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Error updating bot status: " + err.message);
+    }
+  };
+
+  // Add new team to universe
+  const handleAddNewTeamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetUniv) return;
+
+    const newIndex = editableTeams.length;
+    const newTeamName = newTeamNameInput.trim() || `Team ${newIndex + 1} Motors`;
+    const newTeam = createNewTeamState(
+      newIndex,
+      newTeamName,
+      newTeamArchInput,
+      newTeamColorInput,
+      newTeamIsBotInput
+    );
+
+    const updatedTeams = [...editableTeams, newTeam];
+    setEditableTeams(updatedTeams);
+
+    const updatedUniv: Universe = {
+      ...targetUniv,
+      gameState: {
+        ...targetUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+    const updatedUniverses = allUniverses.map((u) => (u.id === targetUniv.id ? updatedUniv : u));
+    saveUniverses(updatedUniverses);
+    if (activeUniverse.id === targetUniv.id) {
+      onSelectActiveUniverse(updatedUniv);
+    }
+
+    setIsAddTeamModalOpen(false);
+    setNewTeamNameInput("");
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      onNotify(`Added new team '${newTeamName}' (Position ${newIndex + 1}) to universe.`);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Error adding team: " + err.message);
     }
   };
 
@@ -710,23 +1020,58 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           {/* Teams Visual Management Grid */}
           {targetUniv && targetUniv.gameState && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-[#FAF8F5] p-4 rounded-xl border border-[#E5E1D8]">
                 <div>
                   <h2 className="text-base font-bold text-[#1F2022] flex items-center gap-2">
                     <Building className="w-5 h-5 text-blue-600" />
-                    <span>Visual Firm & Roster Manager ({targetUniv.gameState.teams.length} Competing Firms)</span>
+                    <span>Visual Firm & Roster Manager ({editableTeams.length} Competing Firms)</span>
                   </h2>
-                  <p className="text-xs text-[#6C6D70]">
-                    Directly edit team names, archetypes, bot/human control status, and student rosters without modifying raw JSON.
+                  <p className="text-xs text-[#6C6D70] mt-0.5">
+                    Manage teams, delete unused/empty teams, switch between AI Bot and Human control, and reassign student rosters.
                   </p>
                 </div>
 
-                <button
-                  onClick={handleSaveTeamsVisual}
-                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-sm transition flex items-center gap-1.5"
-                >
-                  <Save className="w-4 h-4" /> Save Universe Teams to Firestore
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewTeamNameInput(`Team ${editableTeams.length + 1} Mobility`);
+                      setNewTeamArchInput("commuter");
+                      setNewTeamColorInput(TEAM_COLORS[editableTeams.length % TEAM_COLORS.length] || "#2563eb");
+                      setNewTeamIsBotInput(false);
+                      setIsAddTeamModalOpen(true);
+                    }}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-50 text-[#1F2022] border border-[#E0DCD3] rounded-lg text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-blue-600" /> Add Team
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSwitchAllEmptyToBot}
+                    title="Switch all teams without human students to AI Bot control"
+                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-lg text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+                  >
+                    <Bot className="w-3.5 h-3.5 text-purple-700" /> Switch Empty to Bot
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDeleteAllEmptyTeams}
+                    title="Permanently remove all teams that have 0 human students assigned"
+                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-red-600" /> Delete All Empty Teams
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveTeamsVisual}
+                    className="px-4 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1.5"
+                  >
+                    <Save className="w-4 h-4" /> Save Teams
+                  </button>
+                </div>
               </div>
 
               {/* Unassigned Students Alert Box if any */}
@@ -751,7 +1096,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                           className="px-2 py-1 bg-[#FAF8F5] border border-[#E0DCD3] rounded text-[11px] font-mono text-[#1F2022] focus:outline-none focus:border-purple-600"
                         >
                           <option value="-1" disabled>Assign to Team...</option>
-                          {targetUniv.gameState.teams.map((tm, idx) => (
+                          {editableTeams.map((tm, idx) => (
                             <option key={idx} value={idx}>
                               Team {idx + 1}: {tm.name}
                             </option>
@@ -763,20 +1108,23 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 </div>
               )}
 
-              {/* 10 Teams Visual Cards Grid */}
+              {/* Teams Visual Cards Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {editableTeams.map((team, idx) => {
                   const assignedMembers = univStudents.filter((u) => u.teamI === idx);
+                  const isEmptyTeam = assignedMembers.length === 0;
 
                   return (
                     <div
                       key={idx}
-                      className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-4 shadow-2xs space-y-3 relative hover:border-[#D8D4CA] transition"
+                      className={`bg-[#FAF8F5] border rounded-xl p-4 shadow-2xs space-y-3 relative transition ${
+                        isEmptyTeam ? "border-amber-200/90" : "border-[#E5E1D8] hover:border-[#D8D4CA]"
+                      }`}
                     >
                       <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-2.5">
                         <div className="flex items-center gap-2.5">
                           <div
-                            className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs shadow-2xs"
+                            className="w-7 h-7 rounded-md flex items-center justify-center text-white font-bold text-xs shadow-2xs shrink-0"
                             style={{ backgroundColor: team.color || "#1F2022" }}
                           >
                             T{idx + 1}
@@ -793,38 +1141,56 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                                 newTeams[idx].name = e.target.value;
                                 setEditableTeams(newTeams);
                               }}
-                              className="font-bold text-sm text-[#1F2022] bg-white border border-[#E0DCD3] px-2 py-0.5 rounded focus:outline-none focus:border-purple-600 w-48 sm:w-56"
+                              className="font-bold text-sm text-[#1F2022] bg-white border border-[#E0DCD3] px-2 py-0.5 rounded focus:outline-none focus:border-purple-600 w-44 sm:w-52"
                             />
                           </div>
                         </div>
 
-                        {/* Bot Toggle */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newTeams = [...editableTeams];
-                            newTeams[idx].isBot = !newTeams[idx].isBot;
-                            setEditableTeams(newTeams);
-                          }}
-                          className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold transition flex items-center gap-1 ${
-                            team.isBot
-                              ? "bg-purple-100 text-purple-900 border border-purple-300"
-                              : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                          }`}
-                        >
-                          {team.isBot ? (
-                            <>
-                              <Bot className="w-3.5 h-3.5 text-purple-700" /> AI Bot
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="w-3.5 h-3.5 text-emerald-700" /> Human
-                            </>
-                          )}
-                        </button>
+                        {/* Actions: Bot Toggle & Delete Team */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newTeams = [...editableTeams];
+                              newTeams[idx].isBot = !newTeams[idx].isBot;
+                              setEditableTeams(newTeams);
+                            }}
+                            title="Toggle between Human student control and Simulated AI Bot"
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold transition flex items-center gap-1 ${
+                              team.isBot
+                                ? "bg-purple-100 text-purple-900 border border-purple-300"
+                                : "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                            }`}
+                          >
+                            {team.isBot ? (
+                              <>
+                                <Bot className="w-3.5 h-3.5 text-purple-700" /> AI Bot
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="w-3.5 h-3.5 text-emerald-700" /> Human
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeletingTeam({
+                                index: idx,
+                                name: team.name,
+                                memberCount: assignedMembers.length
+                              })
+                            }
+                            title="Delete this team from the universe"
+                            className="p-1.5 rounded-md bg-white hover:bg-red-50 text-[#8A8C90] hover:text-red-700 border border-[#E0DCD3] hover:border-red-200 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Archetype Selector */}
+                      {/* Archetype Selector & Team Color */}
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
                           <label className="block text-[10px] uppercase font-mono text-[#6C6D70] mb-0.5">
@@ -863,6 +1229,48 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                         </div>
                       </div>
 
+                      {/* Empty Team Dedicated Options Banner */}
+                      {isEmptyTeam && (
+                        <div className="p-2.5 rounded-lg bg-amber-50/90 border border-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-amber-900 font-medium">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                            <span>Empty Team (0 human students)</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newTeams = [...editableTeams];
+                                newTeams[idx].isBot = !newTeams[idx].isBot;
+                                setEditableTeams(newTeams);
+                              }}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 border ${
+                                team.isBot
+                                  ? "bg-purple-100 text-purple-900 border-purple-300"
+                                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                              }`}
+                            >
+                              <Bot className="w-3 h-3 text-purple-700" />
+                              {team.isBot ? "Bot Active" : "Switch to Bot"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDeletingTeam({
+                                  index: idx,
+                                  name: team.name,
+                                  memberCount: 0
+                                })
+                              }
+                              className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-600 hover:bg-red-700 text-white transition flex items-center gap-1 shadow-2xs"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Delete Team
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Roster Members Box */}
                       <div className="bg-white border border-[#E0DCD3] rounded-lg p-2.5 space-y-1.5">
                         <div className="flex items-center justify-between text-[11px] font-semibold text-[#5A5C60] font-mono border-b border-[#F0ECE1] pb-1">
@@ -892,7 +1300,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                           </div>
                         ) : (
                           <div className="text-[11px] text-[#8A8C90] italic py-1">
-                            Controlled by AI Bot engine when empty.
+                            {team.isBot ? "Controlled by AI Bot engine." : "Unassigned team. Switch to Bot or Delete above."}
                           </div>
                         )}
                       </div>
@@ -1865,6 +2273,145 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   className="px-3.5 py-1.5 bg-[#1F2022] hover:bg-[#343538] text-white rounded-lg text-xs font-semibold shadow-2xs transition"
                 >
                   Save Instructor Email
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DELETE TEAM CONFIRMATION */}
+      {deletingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-sm w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-[#1F2022]">Delete Team</h3>
+                <p className="text-xs text-[#5A5C60] font-mono">Position {deletingTeam.index + 1}: {deletingTeam.name}</p>
+              </div>
+            </div>
+            <div className="text-xs text-[#5A5C60] space-y-2">
+              <p>
+                Are you sure you want to permanently delete <strong>{deletingTeam.name}</strong> from this universe?
+              </p>
+              {deletingTeam.memberCount > 0 ? (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                  <span className="font-bold">Notice:</span> {deletingTeam.memberCount} student(s) currently assigned to this team will be moved to the <strong>Unassigned Pool</strong>, and remaining teams will be automatically re-indexed.
+                </div>
+              ) : (
+                <p className="italic text-slate-500">
+                  This team has no assigned students. Remaining teams in this universe will be automatically re-indexed and synced to the database.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+              <button
+                onClick={() => setDeletingTeam(null)}
+                className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteTeam}
+                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition"
+              >
+                Delete Team
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD NEW TEAM */}
+      {isAddTeamModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-md w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <div className="flex items-center gap-2">
+                <Building className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-base text-[#1F2022]">Add New Team</h3>
+              </div>
+              <button onClick={() => setIsAddTeamModalOpen(false)} className="p-1 text-[#8A8C90] hover:text-[#1F2022]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewTeamSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                  Team Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newTeamNameInput}
+                  onChange={(e) => setNewTeamNameInput(e.target.value)}
+                  placeholder="e.g. Apex EV Dynamics"
+                  className="w-full px-3 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-medium text-[#1F2022] focus:outline-none focus:border-purple-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                    Corporate Archetype
+                  </label>
+                  <select
+                    value={newTeamArchInput}
+                    onChange={(e) => setNewTeamArchInput(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-mono text-[#1F2022] focus:outline-none focus:border-purple-600"
+                  >
+                    <option value="premium">Premium Performance</option>
+                    <option value="commuter">Urban Commuter</option>
+                    <option value="budget">Budget GenZ</option>
+                    <option value="fleeteco">Fleet Eco-Solutions</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                    Brand Color
+                  </label>
+                  <input
+                    type="color"
+                    value={newTeamColorInput}
+                    onChange={(e) => setNewTeamColorInput(e.target.value)}
+                    className="w-full h-9 bg-white border border-[#E0DCD3] rounded-lg p-0.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-white border border-[#E0DCD3] rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-xs text-[#1F2022]">Simulated AI Bot Mode</div>
+                  <div className="text-[11px] text-[#7A7C80]">Run automated decisions if no human students join</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={newTeamIsBotInput}
+                  onChange={(e) => setNewTeamIsBotInput(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+                <button
+                  type="button"
+                  onClick={() => setIsAddTeamModalOpen(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create Team
                 </button>
               </div>
             </form>

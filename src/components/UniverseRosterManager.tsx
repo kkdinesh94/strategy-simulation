@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { User, Universe } from "../types/auth";
 import { loadUsers, saveUsers, saveActiveUniverse, getTeamMembersCount, createInitialUniverse } from "../lib/authStore";
-import { saveUserUnified, deleteUserUnified, saveUsersBatchUnified } from "../lib/dbProvider";
+import { saveUserUnified, deleteUserUnified, saveUsersBatchUnified, saveUniverseUnified } from "../lib/dbProvider";
 import { ExcelUserUploader } from "./ExcelUserUploader";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../lib/presence";
-import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock } from "lucide-react";
+import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock, X } from "lucide-react";
+import { ARCHETYPES, TEAM_COLORS, SEGMENTS } from "../engine/catalog";
+import { mkModel, botDecide } from "../engine/simulationEngine";
+import { TeamState } from "../types/simulation";
 
 interface UniverseRosterManagerProps {
   universe: Universe;
@@ -30,6 +33,14 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
   const [newUnivName, setNewUnivName] = useState("");
   const [newUnivCode, setNewUnivCode] = useState("");
   const [showCreateUniv, setShowCreateUniv] = useState(false);
+
+  // Team Deletion and Creation State
+  const [deletingTeam, setDeletingTeam] = useState<{ index: number; name: string; memberCount: number } | null>(null);
+  const [showAddTeamModal, setShowAddTeamModal] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [newTeamArch, setNewTeamArch] = useState("commuter");
+  const [newTeamColor, setNewTeamColor] = useState("#0B9E63");
+  const [newTeamIsBot, setNewTeamIsBot] = useState(false);
 
   const teams = activeUniv.gameState.teams;
   const universeUsers = users.filter((u) => u.universeId === activeUniv.id && u.role === "player");
@@ -165,6 +176,9 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const target = updatedTeams[teamI];
     if (target) {
       target.isBot = !target.isBot;
+      if (target.isBot) {
+        botDecide(target, activeUniv.gameState);
+      }
       const updatedUniv = {
         ...activeUniv,
         gameState: {
@@ -174,7 +188,273 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
       };
       setActiveUniv(updatedUniv);
       saveActiveUniverse(updatedUniv);
+      saveUniverseUnified(updatedUniv).catch((err) => console.warn("Universe save error:", err));
       onUniverseUpdate(updatedUniv);
+    }
+  };
+
+  const handleConfirmDeleteTeam = async () => {
+    if (!deletingTeam) return;
+    const delIdx = deletingTeam.index;
+    const teamName = deletingTeam.name;
+
+    if (activeUniv.gameState.teams.length <= 1) {
+      setMsg({ text: "A universe must contain at least 1 team. Cannot delete the only remaining team.", type: "error" });
+      setDeletingTeam(null);
+      return;
+    }
+
+    const updatedTeams = activeUniv.gameState.teams
+      .filter((_, idx) => idx !== delIdx)
+      .map((t, newIdx) => ({
+        ...t,
+        i: newIdx
+      }));
+
+    // Update users in this universe
+    const updatedUsers = users.map((u) => {
+      if (u.universeId === activeUniv.id && u.role === "player") {
+        if (u.teamI === delIdx) {
+          return { ...u, teamI: -1 }; // Moved to unassigned pool
+        } else if (u.teamI > delIdx) {
+          return { ...u, teamI: u.teamI - 1 }; // Re-indexed
+        }
+      }
+      return u;
+    });
+
+    setUsers(updatedUsers);
+    saveUsers(updatedUsers);
+
+    const updatedUniv: Universe = {
+      ...activeUniv,
+      gameState: {
+        ...activeUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+
+    setActiveUniv(updatedUniv);
+    saveActiveUniverse(updatedUniv);
+    onUniverseUpdate(updatedUniv);
+    setDeletingTeam(null);
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      await saveUsersBatchUnified(updatedUsers);
+      setMsg({ text: `Team '${teamName}' deleted. Remaining ${updatedTeams.length} teams re-indexed and synced.`, type: "success" });
+    } catch (err: any) {
+      setMsg({ text: "Error saving team deletion: " + err.message, type: "error" });
+    }
+  };
+
+  const handleDeleteAllEmptyTeams = async () => {
+    const currentStudents = users.filter((u) => u.universeId === activeUniv.id && u.role === "player");
+    const emptyIndices: number[] = [];
+
+    activeUniv.gameState.teams.forEach((_, idx) => {
+      const memberCount = currentStudents.filter((u) => u.teamI === idx).length;
+      if (memberCount === 0) {
+        emptyIndices.push(idx);
+      }
+    });
+
+    if (emptyIndices.length === 0) {
+      setMsg({ text: "No empty teams found in this universe.", type: "error" });
+      return;
+    }
+
+    if (emptyIndices.length === activeUniv.gameState.teams.length) {
+      setMsg({ text: "Cannot delete all teams. At least 1 team must remain.", type: "error" });
+      return;
+    }
+
+    if (!confirm(`Permanently delete all ${emptyIndices.length} empty team(s)? Remaining teams will be re-indexed.`)) {
+      return;
+    }
+
+    const oldToNewMap = new Map<number, number>();
+    let newCounter = 0;
+    const updatedTeams: TeamState[] = [];
+
+    activeUniv.gameState.teams.forEach((team, oldIdx) => {
+      if (!emptyIndices.includes(oldIdx)) {
+        updatedTeams.push({
+          ...team,
+          i: newCounter
+        });
+        oldToNewMap.set(oldIdx, newCounter);
+        newCounter++;
+      }
+    });
+
+    const updatedUsers = users.map((u) => {
+      if (u.universeId === activeUniv.id && u.role === "player") {
+        if (u.teamI >= 0) {
+          const newTeamI = oldToNewMap.has(u.teamI) ? oldToNewMap.get(u.teamI)! : -1;
+          return { ...u, teamI: newTeamI };
+        }
+      }
+      return u;
+    });
+
+    setUsers(updatedUsers);
+    saveUsers(updatedUsers);
+
+    const updatedUniv: Universe = {
+      ...activeUniv,
+      gameState: {
+        ...activeUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+
+    setActiveUniv(updatedUniv);
+    saveActiveUniverse(updatedUniv);
+    onUniverseUpdate(updatedUniv);
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      await saveUsersBatchUnified(updatedUsers);
+      setMsg({ text: `Successfully deleted ${emptyIndices.length} empty team(s). Universe now has ${updatedTeams.length} active teams.`, type: "success" });
+    } catch (err: any) {
+      setMsg({ text: "Error deleting empty teams: " + err.message, type: "error" });
+    }
+  };
+
+  const handleSwitchAllEmptyToBot = async () => {
+    const currentStudents = users.filter((u) => u.universeId === activeUniv.id && u.role === "player");
+    let countChanged = 0;
+
+    const updatedTeams = activeUniv.gameState.teams.map((team, idx) => {
+      const memberCount = currentStudents.filter((u) => u.teamI === idx).length;
+      if (memberCount === 0 && !team.isBot) {
+        countChanged++;
+        const botTeam = { ...team, isBot: true };
+        botDecide(botTeam, activeUniv.gameState);
+        return botTeam;
+      }
+      return team;
+    });
+
+    if (countChanged === 0) {
+      setMsg({ text: "All empty teams are already configured as AI Bots.", type: "error" });
+      return;
+    }
+
+    const updatedUniv: Universe = {
+      ...activeUniv,
+      gameState: {
+        ...activeUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+
+    setActiveUniv(updatedUniv);
+    saveActiveUniverse(updatedUniv);
+    onUniverseUpdate(updatedUniv);
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      setMsg({ text: `Switched ${countChanged} empty team(s) to AI Bot mode.`, type: "success" });
+    } catch (err: any) {
+      setMsg({ text: "Error switching to bots: " + err.message, type: "error" });
+    }
+  };
+
+  const handleAddNewTeamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const newIndex = activeUniv.gameState.teams.length;
+    const teamTitle = newTeamName.trim() || `Team ${newIndex + 1} EV`;
+
+    const archDef = ARCHETYPES[newTeamArch] || ARCHETYPES["commuter"];
+    const m = mkModel(archDef.name, archDef.cfg, archDef.add, archDef.price);
+    m.launchedQ = 1;
+    const aw: Record<string, number> = {};
+    const base: Record<string, number> = {};
+    SEGMENTS.forEach((s) => {
+      aw[s.id] = 0.05;
+      base[s.id] = 0;
+    });
+
+    const newTeam: TeamState = {
+      i: newIndex,
+      name: teamTitle,
+      color: newTeamColor || TEAM_COLORS[newIndex % TEAM_COLORS.length] || "#2563eb",
+      isBot: newTeamIsBot,
+      arch: newTeamArch,
+      vision: "",
+      mission: "",
+      goals: "",
+      prim: archDef.prim,
+      sec: archDef.sec,
+      charterDone: false,
+      cash: 1900,
+      paidIn: 2500,
+      rep: 0.5,
+      cumProfit: 0,
+      aw,
+      base,
+      models: [m],
+      capacity: 2500,
+      ppe: 600,
+      hr: { sales: 100, plant: 100 },
+      centres: 4,
+      staff: 20,
+      qualityCum: 0,
+      techs: [],
+      rnd: [],
+      debt: { bank: 0, lt: 0, ltLeft: 0, shark: 0 },
+      cumFuture: 0,
+      cumRevenue: 0,
+      equityVC: 0,
+      equityEm: 0,
+      vcRaised: 0,
+      bankrupt: false,
+      dec: {
+        ad: 180,
+        alloc: { ...archDef.alloc },
+        prod: { [m.id]: 1800 },
+        locked: false,
+        claims: [],
+        buyIntel: false,
+        buyClinic: false,
+        vc: null,
+        quality: 0,
+        expBlocks: 0,
+        newCentres: 0,
+        hire: 0,
+        bankTarget: 0,
+        ltIssue: 0,
+        devCost: 0
+      },
+      hist: []
+    };
+
+    if (newTeamIsBot) {
+      botDecide(newTeam, activeUniv.gameState);
+    }
+
+    const updatedTeams = [...activeUniv.gameState.teams, newTeam];
+    const updatedUniv: Universe = {
+      ...activeUniv,
+      gameState: {
+        ...activeUniv.gameState,
+        teams: updatedTeams
+      }
+    };
+
+    setActiveUniv(updatedUniv);
+    saveActiveUniverse(updatedUniv);
+    onUniverseUpdate(updatedUniv);
+    setShowAddTeamModal(false);
+    setNewTeamName("");
+
+    try {
+      await saveUniverseUnified(updatedUniv);
+      setMsg({ text: `Added new team '${teamTitle}' (Position ${newIndex + 1}) to universe.`, type: "success" });
+    } catch (err: any) {
+      setMsg({ text: "Error adding team: " + err.message, type: "error" });
     }
   };
 
@@ -432,13 +712,51 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
         </form>
       </div>
 
-      {/* 10 TEAMS GRID */}
+      {/* TEAMS MATRIX GRID */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold tracking-tight text-[#1F2022] flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-600" /> Universe Roster Matrix (10 Teams × 8 Members)
-          </h3>
-          <span className="text-xs font-mono text-[#5A5C60]">Class Limit: 80 Members Max</span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF8F5] p-4 rounded-2xl border border-[#E5E1D8]">
+          <div>
+            <h3 className="text-sm font-bold tracking-tight text-[#1F2022] flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-600" /> Universe Roster Matrix ({teams.length} Competing Teams)
+            </h3>
+            <p className="text-xs font-mono text-[#5A5C60] mt-0.5">
+              Manage firm capacity, delete empty or unused teams, or configure simulated AI Bots.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setNewTeamName(`Team ${teams.length + 1} EV`);
+                setNewTeamArch("commuter");
+                setNewTeamColor(TEAM_COLORS[teams.length % TEAM_COLORS.length] || "#2563eb");
+                setNewTeamIsBot(false);
+                setShowAddTeamModal(true);
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-[#1F2022] border border-[#E0DCD3] rounded-xl text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5 text-blue-600" /> Add Team
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSwitchAllEmptyToBot}
+              title="Switch all teams without human students to AI Bot mode"
+              className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-xl text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+            >
+              <Bot className="w-3.5 h-3.5 text-purple-700" /> Switch Empty to Bot
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDeleteAllEmptyTeams}
+              title="Permanently remove all teams with 0 assigned students"
+              className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-xl text-xs font-semibold shadow-2xs transition flex items-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-600" /> Delete Empty Teams
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
@@ -448,11 +766,14 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
             );
             const count = teamStudents.length;
             const isFull = count >= 8;
+            const isEmptyTeam = count === 0;
 
             return (
               <div
                 key={teamI}
-                className="bg-white rounded-2xl border border-[#E5E1D8] shadow-sm overflow-hidden flex flex-col justify-between"
+                className={`bg-white rounded-2xl border shadow-sm overflow-hidden flex flex-col justify-between transition ${
+                  isEmptyTeam ? "border-amber-200/90" : "border-[#E5E1D8]"
+                }`}
               >
                 {/* Team Card Header */}
                 <div className="p-4 border-b border-[#E0DCD3] bg-[#FAF8F5] flex items-center justify-between">
@@ -482,7 +803,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
                     </div>
                   </div>
 
-                  {/* Capacity Badge */}
+                  {/* Capacity Badge & Actions */}
                   <div className="flex items-center gap-2">
                     <span
                       className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border ${
@@ -496,7 +817,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
                       {count} / 8 Members {isFull ? "(FULL)" : ""}
                     </span>
 
-                    {/* Bot Toggle & Remove Team */}
+                    {/* Bot Toggle & Delete Team */}
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
@@ -509,36 +830,8 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
 
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirm(`Remove/Deactivate Team ${teamI + 1} (${t.name})? Any assigned students will be moved to the Unassigned Pool, and team will switch to AI Bot.`)) {
-                            // Move assigned students to unassigned
-                            const updatedUsers = users.map((u) =>
-                              u.universeId === activeUniv.id && u.role === "player" && u.teamI === teamI
-                                ? { ...u, teamI: -1 }
-                                : u
-                            );
-                            setUsers(updatedUsers);
-                            saveUsers(updatedUsers);
-
-                            // Set team as Bot
-                            const updatedTeams = [...activeUniv.gameState.teams];
-                            if (updatedTeams[teamI]) {
-                              updatedTeams[teamI].isBot = true;
-                              const updatedUniv = {
-                                ...activeUniv,
-                                gameState: {
-                                  ...activeUniv.gameState,
-                                  teams: updatedTeams
-                                }
-                              };
-                              setActiveUniv(updatedUniv);
-                              saveActiveUniverse(updatedUniv);
-                              onUniverseUpdate(updatedUniv);
-                            }
-                            setMsg({ text: `Team ${teamI + 1} deactivated and students moved to Unassigned Pool.`, type: "success" });
-                          }
-                        }}
-                        title="Deactivate team and release members to Unassigned Pool"
+                        onClick={() => setDeletingTeam({ index: teamI, name: t.name, memberCount: count })}
+                        title="Delete team from universe"
                         className="p-1.5 rounded-lg text-[#5A5C60] hover:text-red-600 hover:bg-red-50 transition"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -547,11 +840,43 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
                   </div>
                 </div>
 
+                {/* Empty Team Dedicated Options Banner */}
+                {isEmptyTeam && (
+                  <div className="mx-4 mt-3 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-xs flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-amber-900 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                      <span>Empty Team (0 human students)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleBot(teamI)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition flex items-center gap-1 border ${
+                          t.isBot
+                            ? "bg-purple-100 text-purple-900 border-purple-300"
+                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        <Bot className="w-3 h-3 text-purple-700" />
+                        {t.isBot ? "Bot Active" : "Switch to Bot"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeletingTeam({ index: teamI, name: t.name, memberCount: 0 })}
+                        className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-red-600 hover:bg-red-700 text-white transition flex items-center gap-1 shadow-2xs"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Delete Team
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Team Members List */}
                 <div className="p-4 space-y-2 flex-1">
                   {teamStudents.length === 0 ? (
                     <div className="p-4 text-center text-xs text-[#5A5C60] font-mono bg-[#FAF8F5] rounded-xl border border-dashed border-[#E0DCD3]">
-                      No human students assigned yet. {t.isBot ? "Simulated by AI Bot." : "Assign students above."}
+                      No human students assigned yet. {t.isBot ? "Simulated by AI Bot." : "Assign students above or switch to Bot."}
                     </div>
                   ) : (
                     teamStudents.map((st) => {
@@ -641,6 +966,145 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
           })}
         </div>
       </div>
+
+      {/* MODAL: DELETE TEAM */}
+      {deletingTeam && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-sm w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-[#1F2022]">Delete Team</h3>
+                <p className="text-xs text-[#5A5C60] font-mono">Position {deletingTeam.index + 1}: {deletingTeam.name}</p>
+              </div>
+            </div>
+            <div className="text-xs text-[#5A5C60] space-y-2">
+              <p>
+                Are you sure you want to delete <strong>{deletingTeam.name}</strong> from this universe?
+              </p>
+              {deletingTeam.memberCount > 0 ? (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+                  <span className="font-bold">Notice:</span> {deletingTeam.memberCount} student(s) will be released to the <strong>Unassigned Pool</strong>, and remaining teams will be re-indexed.
+                </div>
+              ) : (
+                <p className="italic text-slate-500">
+                  This team has no assigned students. Remaining teams will be automatically re-indexed and synchronized.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+              <button
+                onClick={() => setDeletingTeam(null)}
+                className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDeleteTeam}
+                className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition"
+              >
+                Delete Team
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD TEAM */}
+      {showAddTeamModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-md w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <div className="flex items-center gap-2">
+                <Building className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-base text-[#1F2022]">Add New Team</h3>
+              </div>
+              <button onClick={() => setShowAddTeamModal(false)} className="p-1 text-[#8A8C90] hover:text-[#1F2022]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddNewTeamSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                  Team Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  placeholder="e.g. HyperDrive EV"
+                  className="w-full px-3 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-medium text-[#1F2022] focus:outline-none focus:border-purple-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                    Corporate Archetype
+                  </label>
+                  <select
+                    value={newTeamArch}
+                    onChange={(e) => setNewTeamArch(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs font-mono text-[#1F2022] focus:outline-none focus:border-purple-600"
+                  >
+                    <option value="premium">Premium Performance</option>
+                    <option value="commuter">Urban Commuter</option>
+                    <option value="budget">Budget GenZ</option>
+                    <option value="fleeteco">Fleet Eco-Solutions</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                    Brand Color
+                  </label>
+                  <input
+                    type="color"
+                    value={newTeamColor}
+                    onChange={(e) => setNewTeamColor(e.target.value)}
+                    className="w-full h-9 bg-white border border-[#E0DCD3] rounded-lg p-0.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-white border border-[#E0DCD3] rounded-xl flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-xs text-[#1F2022]">Simulated AI Bot Mode</div>
+                  <div className="text-[11px] text-[#7A7C80]">Run automated decisions if no human students join</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={newTeamIsBot}
+                  onChange={(e) => setNewTeamIsBot(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+                <button
+                  type="button"
+                  onClick={() => setShowAddTeamModal(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs transition flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Create Team
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
