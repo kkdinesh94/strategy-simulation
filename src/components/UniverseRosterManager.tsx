@@ -247,6 +247,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
         text: `Student account '${targetName}' permanently deleted from database.`,
         type: "success"
       });
+      onRefreshAll?.();
     } catch (err: any) {
       setMsg({ text: "Error deleting student: " + err.message, type: "error" });
     }

@@ -242,11 +242,23 @@ function createFallbackD1Engine() {
           return null;
         },
         run: (...params: any[]) => {
-          if (lower.includes("delete from universes where id =") && params[0]) {
-            memoryStore.universes.delete(params[0]);
+          if (lower.includes("delete from universes") && params[0]) {
+            const target = params[0];
+            memoryStore.universes.delete(target);
+            for (const [key, u] of memoryStore.universes.entries()) {
+              if (key === target || u.id === target) {
+                memoryStore.universes.delete(key);
+              }
+            }
           }
-          if (lower.includes("delete from users where id =") && params[0]) {
-            memoryStore.users.delete(params[0]);
+          if (lower.includes("delete from users") && params[0]) {
+            const target = params[0];
+            memoryStore.users.delete(target);
+            for (const [key, u] of memoryStore.users.entries()) {
+              if (key === target || u.id === target || u.email === target) {
+                memoryStore.users.delete(key);
+              }
+            }
           }
           persist();
           return { changes: 1 };
@@ -259,6 +271,11 @@ function createFallbackD1Engine() {
     },
     deleteUniverse: (id: string) => {
       memoryStore.universes.delete(id);
+      for (const [key, u] of memoryStore.universes.entries()) {
+        if (key === id || u.id === id) {
+          memoryStore.universes.delete(key);
+        }
+      }
       // Detach any users previously belonging to this universe
       for (const [uid, user] of memoryStore.users.entries()) {
         if (user.universeId === id || user.universe_id === id) {
@@ -279,6 +296,11 @@ function createFallbackD1Engine() {
     },
     deleteUser: (id: string) => {
       memoryStore.users.delete(id);
+      for (const [key, u] of memoryStore.users.entries()) {
+        if (key === id || u.id === id || u.email === id) {
+          memoryStore.users.delete(key);
+        }
+      }
       persist();
     },
     removeUserFromUniverse: (userId: string) => {

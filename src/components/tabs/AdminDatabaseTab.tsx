@@ -81,6 +81,8 @@ interface AdminDatabaseTabProps {
   allUniverses: Universe[];
   onRefreshAll: () => void;
   onSelectActiveUniverse: (univ: Universe) => void;
+  onUsersUpdate?: (users: User[]) => void;
+  onUniversesUpdate?: (universes: Universe[]) => void;
   onNotify: (msg: string) => void;
 }
 
@@ -91,6 +93,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   allUniverses,
   onRefreshAll,
   onSelectActiveUniverse,
+  onUsersUpdate,
+  onUniversesUpdate,
   onNotify
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "schema">("cloudflare");
@@ -159,6 +163,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     };
     const updatedUsers = allUsers.map((u) => (u.id === user.id ? updatedUser : u));
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     const targetUnivName = allUniverses.find((u) => u.id === newUnivId)?.name || "Unassigned Pool";
     onNotify(`Reassigned ${user.name} to cohort '${targetUnivName}' (team position reset to unassigned pool)`);
 
@@ -179,6 +184,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     };
     const updatedUsers = allUsers.map((u) => (u.id === user.id ? updatedUser : u));
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     onNotify(`Removed ${user.name} from universe cohort. Student moved to Unassigned Pool.`);
 
     try {
@@ -201,6 +207,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
 
     const updatedUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     const targetName = updatedUser.name;
     setPasswordResetUser(null);
     setNewPasswordInput("");
@@ -690,6 +697,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
 
     const updatedUsers = [...allUsers.filter((u) => u.id !== createdUser.id), createdUser];
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     setIsAddUserModalOpen(false);
     onNotify(`User '${createdUser.name}' saved successfully!`);
 
@@ -724,6 +732,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     });
 
     saveUsers(updatedUsers);
+    onUsersUpdate?.(updatedUsers);
     saveUsersBatchUnified(updatedUsers).catch((err) => {
       console.warn("Unified batch sync error:", err);
     });
@@ -2139,10 +2148,11 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   const targetId = deletingUser.id;
                   const targetName = deletingUser.name;
                   setDeletingUser(null);
+                  const remaining = allUsers.filter((u) => u.id !== targetId);
+                  saveUsers(remaining);
+                  onUsersUpdate?.(remaining);
                   try {
                     await deleteUserUnified(targetId);
-                    const remaining = allUsers.filter((u) => u.id !== targetId);
-                    saveUsers(remaining);
                     onNotify(`User '${targetName}' permanently deleted from Cloudflare D1.`);
                     onRefreshAll();
                   } catch (err: any) {
@@ -2197,9 +2207,11 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                       return u;
                     });
                     saveUsers(updatedUsers);
+                    onUsersUpdate?.(updatedUsers);
 
                     const remaining = allUniverses.filter((u) => u.id !== targetId);
                     saveUniverses(remaining);
+                    onUniversesUpdate?.(remaining);
                     
                     if (activeUniverse.id === targetId) {
                       if (remaining.length > 0) {

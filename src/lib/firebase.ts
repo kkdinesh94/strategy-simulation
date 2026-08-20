@@ -58,7 +58,20 @@ export async function saveUserToFirestore(user: User): Promise<void> {
 
 export async function deleteUserFromFirestore(userId: string): Promise<void> {
   try {
+    // 1. Direct doc deletion by ID
     await deleteDoc(doc(db, "users", userId));
+    // 2. Scan and remove any doc where doc.id or data.id matches
+    const snap = await getDocs(collection(db, "users"));
+    const toDelete: Promise<void>[] = [];
+    snap.forEach((d) => {
+      const data = d.data();
+      if (data.id === userId || d.id === userId) {
+        toDelete.push(deleteDoc(d.ref));
+      }
+    });
+    if (toDelete.length > 0) {
+      await Promise.allSettled(toDelete);
+    }
   } catch (err) {
     console.error("Error deleting user from Firestore:", err);
   }

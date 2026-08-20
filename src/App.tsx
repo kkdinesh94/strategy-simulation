@@ -146,13 +146,13 @@ export default function App() {
   const refreshAllDataFromFirestore = async () => {
     try {
       const remoteUsers = await fetchUsersUnified();
-      if (remoteUsers && remoteUsers.length > 0) {
+      if (Array.isArray(remoteUsers)) {
         setAllUsers(remoteUsers);
         saveUsers(remoteUsers);
       }
 
       const remoteUniverses = await fetchUniversesUnified();
-      if (remoteUniverses && remoteUniverses.length > 0) {
+      if (Array.isArray(remoteUniverses) && remoteUniverses.length > 0) {
         setAllUniverses(remoteUniverses);
         saveUniverses(remoteUniverses);
         // Only update active universe if current universe is missing or needs refresh
@@ -622,10 +622,17 @@ export default function App() {
           <UniverseRosterManager
             universe={universe}
             currentUser={currentUser}
+            allUsers={allUsers}
+            allUniverses={allUniverses}
             onUniverseUpdate={(updated) => {
               setUniverse(updated);
               setGameState(updated.gameState);
             }}
+            onUsersUpdate={(updatedUsers) => {
+              setAllUsers(updatedUsers);
+              saveUsers(updatedUsers);
+            }}
+            onRefreshAll={refreshAllDataFromFirestore}
           />
         )}
 
@@ -654,6 +661,14 @@ export default function App() {
             allUniverses={allUniverses}
             onRefreshAll={refreshAllDataFromFirestore}
             onSelectActiveUniverse={handleSelectUniverse}
+            onUsersUpdate={(updatedUsers) => {
+              setAllUsers(updatedUsers);
+              saveUsers(updatedUsers);
+            }}
+            onUniversesUpdate={(updatedUnivs) => {
+              setAllUniverses(updatedUnivs);
+              saveUniverses(updatedUnivs);
+            }}
             onNotify={showNotification}
           />
         )}
