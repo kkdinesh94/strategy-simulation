@@ -2148,13 +2148,13 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   const targetId = deletingUser.id;
                   const targetName = deletingUser.name;
                   setDeletingUser(null);
-                  const remaining = allUsers.filter((u) => u.id !== targetId);
+                  const remaining = allUsers.filter((u) => u.id !== targetId && u.email !== targetId);
                   saveUsers(remaining);
                   onUsersUpdate?.(remaining);
                   try {
                     await deleteUserUnified(targetId);
                     onNotify(`User '${targetName}' permanently deleted from Cloudflare D1.`);
-                    onRefreshAll();
+                    await onRefreshAll();
                   } catch (err: any) {
                     alert("Error deleting user: " + err.message);
                   }

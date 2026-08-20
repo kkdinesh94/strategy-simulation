@@ -323,10 +323,13 @@ async function startServer() {
       const id = req.params.id;
       if (d1.deleteUser) {
         d1.deleteUser(id);
-      } else {
-        d1.prepare("DELETE FROM users WHERE id = ?").run(id);
       }
-      res.json({ success: true });
+      try {
+        d1.prepare("DELETE FROM users WHERE id = ? OR email = ?").run(id, id);
+      } catch (e) {
+        console.warn("SQL delete user warn:", e);
+      }
+      res.json({ success: true, deletedId: id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

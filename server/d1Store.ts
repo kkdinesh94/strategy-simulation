@@ -87,6 +87,32 @@ function initD1Tables(db: any) {
           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    // Check if database was already initialized
+    try {
+      const seeded = db.prepare("SELECT value FROM app_settings WHERE key = 'db_seeded'").get();
+      if (!seeded) {
+        const defaultUnivId = "univ_nitw_2026";
+        const initialUsers = [
+          { id: "usr_admin", email: "admin@evleague.edu", name: "Dr. System Administrator", role: "admin", inst: "NIT Warangal", univ: defaultUnivId, team: -1, pass: "admin123" },
+          { id: "usr_prof", email: "instructor@nitw.ac.in", name: "Dr. Kamala Kannan Dinesh", role: "instructor", inst: "Department of Management Studies, NITW", univ: defaultUnivId, team: -1, pass: "prof123" },
+          { id: "usr_std1", email: "student1@nitw.ac.in", name: "Rahul Sharma (Team Lead)", role: "player", inst: "NIT Warangal MBA '26", univ: defaultUnivId, team: 0, pass: "student123" },
+          { id: "usr_std2", email: "student2@nitw.ac.in", name: "Priya Patel", role: "player", inst: "NIT Warangal MBA '26", univ: defaultUnivId, team: 1, pass: "student123" },
+          { id: "usr_std3", email: "student3@nitw.ac.in", name: "Ananya Roy", role: "player", inst: "NIT Warangal MBA '26", univ: defaultUnivId, team: 2, pass: "student123" }
+        ];
+
+        const insertStmt = db.prepare(`
+          INSERT OR IGNORE INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 0, 0)
+        `);
+
+        for (const u of initialUsers) {
+          insertStmt.run(u.id, u.email, u.name, u.role, u.inst, u.univ, u.team, u.pass);
+        }
+
+        db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('db_seeded', 'true')").run();
+      }
+    } catch (_seedErr) {}
   } catch (e) {
     console.error("Error initializing SQLite D1 tables:", e);
   }

@@ -59,13 +59,17 @@ export async function saveUserToFirestore(user: User): Promise<void> {
 export async function deleteUserFromFirestore(userId: string): Promise<void> {
   try {
     // 1. Direct doc deletion by ID
-    await deleteDoc(doc(db, "users", userId));
-    // 2. Scan and remove any doc where doc.id or data.id matches
+    await deleteDoc(doc(db, "users", userId)).catch(() => {});
+    // 2. Scan and remove any doc where doc.id, data.id or data.email matches
     const snap = await getDocs(collection(db, "users"));
     const toDelete: Promise<void>[] = [];
+    const searchTarget = userId.toLowerCase().trim();
     snap.forEach((d) => {
       const data = d.data();
-      if (data.id === userId || d.id === userId) {
+      const docId = d.id?.toLowerCase().trim();
+      const uId = data.id?.toLowerCase().trim();
+      const uEmail = data.email?.toLowerCase().trim();
+      if (docId === searchTarget || uId === searchTarget || uEmail === searchTarget) {
         toDelete.push(deleteDoc(d.ref));
       }
     });

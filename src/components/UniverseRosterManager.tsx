@@ -234,7 +234,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     const targetId = deletingStudent.id;
     const targetName = deletingStudent.name;
 
-    const updated = users.filter((u) => u.id !== targetId);
+    const updated = users.filter((u) => u.id !== targetId && u.email !== targetId);
 
     setUsers(updated);
     saveUsers(updated);
@@ -247,7 +247,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
         text: `Student account '${targetName}' permanently deleted from database.`,
         type: "success"
       });
-      onRefreshAll?.();
+      await onRefreshAll?.();
     } catch (err: any) {
       setMsg({ text: "Error deleting student: " + err.message, type: "error" });
     }

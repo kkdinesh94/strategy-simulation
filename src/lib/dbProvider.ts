@@ -60,7 +60,7 @@ export async function fetchUsersUnified(): Promise<User[]> {
   if (provider === "firebase") {
     try {
       const fsUsers = await fetchUsersFromFirestore();
-      if (fsUsers && fsUsers.length > 0) {
+      if (Array.isArray(fsUsers) && fsUsers.length > 0) {
         saveUsers(fsUsers);
         return fsUsers;
       }
@@ -72,8 +72,9 @@ export async function fetchUsersUnified(): Promise<User[]> {
   // 1. Primary: Fetch from Cloudflare D1
   try {
     const d1Users = await fetchUsersFromD1();
-    if (Array.isArray(d1Users) && d1Users.length > 0) {
+    if (Array.isArray(d1Users)) {
       // D1 has active data - it is the single source of truth
+      // Save and return authoritative list without re-seeding deleted users
       saveUsers(d1Users);
       return d1Users;
     }
@@ -81,37 +82,18 @@ export async function fetchUsersUnified(): Promise<User[]> {
     console.warn("D1 users fetch error:", e);
   }
 
-  // 2. D1 is empty: Auto-import/transfer from Firestore if available
-  console.log("Cloudflare D1 is empty. Checking Firestore for migration/transfer...");
-  try {
-    const firestoreUsers = await fetchUsersFromFirestore();
-    if (Array.isArray(firestoreUsers) && firestoreUsers.length > 0) {
-      console.log(`Auto-importing ${firestoreUsers.length} users from Firestore into Cloudflare D1...`);
-      await saveUsersBatchToD1(firestoreUsers);
-      saveUsers(firestoreUsers);
-      return firestoreUsers;
-    }
-  } catch (e) {
-    console.warn("Firestore fallback check error:", e);
-  }
-
-  // 3. Check local cache snapshot
+  // 2. Check local cache snapshot if network request failed
   try {
     const local = localStorage.getItem("ev_venture_league_users_v2");
     if (local) {
       const parsed: User[] = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        await saveUsersBatchToD1(parsed);
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
   } catch (e) {}
 
-  // 4. Initial fallback seed if database has never had users
-  const defaultInit = getInitialUsers("univ_nitw_2026");
-  await saveUsersBatchToD1(defaultInit);
-  saveUsers(defaultInit);
-  return defaultInit;
+  return [];
 }
 
 /**
@@ -156,7 +138,7 @@ export async function deleteUserUnified(userId: string): Promise<void> {
     if (local) {
       const parsed: User[] = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        const filtered = parsed.filter((u) => u.id !== userId);
+        const filtered = parsed.filter((u) => u.id !== userId && u.email !== userId);
         localStorage.setItem("ev_venture_league_users_v2", JSON.stringify(filtered));
       }
     }
