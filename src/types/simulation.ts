@@ -122,6 +122,9 @@ export interface TeamDecision {
   hire: number; // +/- headcount
   bankTarget: number; // Rs. L
   ltIssue: number; // Rs. L
+  shareIssue?: number; // Rs. L of equity raised via issuing new shares
+  shareBuyback?: number; // Rs. L of equity used to repurchase shares from market
+  dividendPerShare?: number; // Rs. per share dividend declared
   buyIntel: boolean;
   buyClinic: boolean;
   vc: { ask: number; equity: number } | null;
@@ -130,6 +133,27 @@ export interface TeamDecision {
   devCost?: number;
   locked: boolean;
   lockedBy?: string;
+}
+
+export interface QuarterCashFlow {
+  operating: number; // Cash from core operations
+  investing: number; // Capex, showroom expansion, R&D projects
+  financing: number; // Debt changes, share issues, buybacks, dividends
+  net: number; // Net change in cash
+}
+
+export interface QuarterBalanceSheet {
+  cash: number;
+  inventory: number;
+  ppe: number;
+  totalAssets: number;
+  shortTermDebt: number;
+  longTermDebt: number;
+  sharkDebt: number;
+  totalLiabilities: number;
+  paidInCapital: number;
+  retainedEarnings: number;
+  totalEquity: number;
 }
 
 export interface QuarterResult {
@@ -200,6 +224,17 @@ export interface QuarterResult {
   capAdd: number;
   ltIssued: number;
   ltRepaid: number;
+  // Equity, Shares & Corporate Valuation Metrics
+  shares?: number; // Outstanding shares in Lakhs (e.g. 100 L = 10,000,000 shares)
+  stockPrice?: number; // Rs. per share
+  marketCap?: number; // Rs. L (Stock Price * Shares)
+  eps?: number; // Earnings Per Share (Rs.)
+  roe?: number; // Return on Equity (%)
+  dividendsPaid?: number; // Rs. L total dividends distributed
+  shareIssueAmt?: number; // Rs. L raised from new shares
+  shareBuybackAmt?: number; // Rs. L spent on share buybacks
+  cashFlow?: QuarterCashFlow;
+  balanceSheet?: QuarterBalanceSheet;
   bsc: {
     parts: Record<string, number>;
     total: number;
@@ -242,6 +277,10 @@ export interface TeamState {
   equityEm: number;
   vcRaised: number;
   bankrupt: boolean;
+  // Corporate Shares & Valuation
+  shares?: number; // in Lakhs, default 100
+  stockPrice?: number; // in Rs. per share, default 8.00
+  cumDividends?: number; // Rs. L total dividends paid
   roles?: Record<string, string>; // e.g. { CEO: "John Doe", CFO: "Jane Smith" }
   dec: TeamDecision;
   hist: QuarterResult[];

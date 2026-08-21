@@ -1,10 +1,35 @@
 import React, { useState } from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { fmtL, fmtRs } from "../../engine/catalog";
-import { bankLimit, ltLimit, valuationOf, proFormaCalc, equityOf } from "../../engine/simulationEngine";
+import {
+  bankLimit,
+  ltLimit,
+  valuationOf,
+  proFormaCalc,
+  equityOf,
+  sharesOf,
+  stockPriceOf,
+  marketCapOf,
+  maxShareIssueLimit,
+  maxShareBuybackLimit
+} from "../../engine/simulationEngine";
 import { ProFormaWorkbench } from "../ProFormaWorkbench";
 import { DecisionAuditor } from "../DecisionAuditor";
-import { DollarSign, Landmark, PieChart, AlertTriangle, FileText, Sparkles, ShieldCheck } from "lucide-react";
+import {
+  DollarSign,
+  Landmark,
+  PieChart,
+  AlertTriangle,
+  FileText,
+  Sparkles,
+  ShieldCheck,
+  Coins,
+  TrendingUp,
+  ArrowUpRight,
+  ArrowDownRight,
+  RefreshCw,
+  Gift
+} from "lucide-react";
 
 interface FinanceTabProps {
   team: TeamState;
@@ -19,7 +44,9 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   onChange,
   onNotify
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"proforma" | "workbench" | "auditor" | "abc" | "debt" | "vc">("proforma");
+  const [activeSubTab, setActiveSubTab] = useState<
+    "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc"
+  >("proforma");
   const isLocked = team.dec.locked;
 
   const pf = proFormaCalc(gameState, team);
@@ -28,6 +55,13 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   const currentValuation = valuationOf(team);
   const lastHist = team.hist[team.hist.length - 1];
   const netEquity = equityOf(team);
+
+  // Shares and Equity Metrics
+  const curShares = sharesOf(team);
+  const curStockPrice = stockPriceOf(team);
+  const curMarketCap = marketCapOf(team);
+  const maxIssue = maxShareIssueLimit(team);
+  const maxBuyback = maxShareBuybackLimit(team);
 
   const handleBankTargetChange = (val: number) => {
     if (isLocked) return;
@@ -53,6 +87,42 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
     });
   };
 
+  const handleShareIssueChange = (val: number) => {
+    if (isLocked) return;
+    const capped = Math.max(0, Math.min(maxIssue, Math.round(val)));
+    onChange({
+      ...team,
+      dec: {
+        ...team.dec,
+        shareIssue: capped
+      }
+    });
+  };
+
+  const handleShareBuybackChange = (val: number) => {
+    if (isLocked) return;
+    const capped = Math.max(0, Math.min(maxBuyback, Math.round(val)));
+    onChange({
+      ...team,
+      dec: {
+        ...team.dec,
+        shareBuyback: capped
+      }
+    });
+  };
+
+  const handleDividendChange = (val: number) => {
+    if (isLocked) return;
+    const capped = Math.max(0, Math.min(10, Math.round(val * 100) / 100));
+    onChange({
+      ...team,
+      dec: {
+        ...team.dec,
+        dividendPerShare: capped
+      }
+    });
+  };
+
   const handleVChange = (field: "ask" | "equity", val: number) => {
     if (isLocked) return;
     const currentVc = team.dec.vc || { ask: 0, equity: 0 };
@@ -70,7 +140,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       {/* Sub-Tab Selector */}
       <div className="bg-white p-3 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center gap-2">
         <button
@@ -82,6 +152,17 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
           }`}
         >
           <FileText className="w-3.5 h-3.5" /> Pro Forma Budget
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab("equity")}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
+            activeSubTab === "equity"
+              ? "bg-amber-600 text-white shadow-sm"
+              : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
+          }`}
+        >
+          <Coins className="w-3.5 h-3.5" /> Capital Structure & Shares
         </button>
 
         <button
@@ -177,17 +258,17 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
               </div>
 
               <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
-                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Gross Profit Margin %</div>
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Stock Price / MktCap</div>
                 <div className="text-lg font-bold text-amber-700 mt-1">
-                  {lastHist && lastHist.rev > 0 ? ((lastHist.gp / lastHist.rev) * 100).toFixed(1) : "0.0"}%
+                  Rs. {curStockPrice.toFixed(2)}
                 </div>
-                <div className="text-[10px] text-[#5A5C60] mt-0.5">Gross Profit / Revenue</div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">Cap: Rs. {curMarketCap.toLocaleString("en-IN")} L</div>
               </div>
 
               <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
                 <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Operating Margin (EBITDA %)</div>
                 <div className="text-lg font-bold text-blue-700 mt-1">
-                  {lastHist && lastHist.rev > 0 ? ((lastHist.ebitda / lastHist.rev) * 100).toFixed(1) : "0.0"}%
+                  {lastHist && lastHist.revenue > 0 ? ((lastHist.ebitda / lastHist.revenue) * 100).toFixed(1) : "0.0"}%
                 </div>
                 <div className="text-[10px] text-[#5A5C60] mt-0.5">EBITDA / Revenue</div>
               </div>
@@ -199,7 +280,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
               Quarter {gameState.quarter} Pro Forma Cash Budget
             </h3>
             <p className="text-xs text-[#5A5C60] mb-4">
-              Projects ending cash based on committed decision expenditures and current liquid reserves.
+              Projects ending cash based on committed decision expenditures, financing flows, and liquid reserves.
             </p>
 
             <div className="space-y-2 font-mono text-xs">
@@ -207,10 +288,18 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
                 <span className="text-[#5A5C60]">Starting Liquid Cash:</span>
                 <span className="font-bold text-[#1F2022]">{fmtL(pf.cash)} L</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-emerald-700">
-                <span>+ Borrowing Inflow (Bond Issue):</span>
-                <span>+{fmtL(pf.inflow)} L</span>
-              </div>
+              {pf.equityInflow > 0 && (
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-amber-700">
+                  <span>+ Equity Capital Raise (Share Offering):</span>
+                  <span>+{fmtL(pf.equityInflow)} L</span>
+                </div>
+              )}
+              {pf.ltInflow > 0 && (
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-emerald-700">
+                  <span>+ Debt Borrowing Inflow (Bond Issue):</span>
+                  <span>+{fmtL(pf.ltInflow)} L</span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
                 <span>- Scheduled Production Materials:</span>
                 <span>-{fmtL(pf.materials)} L ({pf.prod} units)</span>
@@ -231,6 +320,18 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
                 <span>- Showroom Opex, Overhead & Debt Interest:</span>
                 <span>-{fmtL(pf.running)} L</span>
               </div>
+              {pf.shareBuyback > 0 && (
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-purple-700">
+                  <span>- Share Buyback (Treasury Repurchase):</span>
+                  <span>-{fmtL(pf.shareBuyback)} L</span>
+                </div>
+              )}
+              {pf.dividends > 0 && (
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-indigo-700">
+                  <span>- Cash Dividends Declared:</span>
+                  <span>-{fmtL(pf.dividends)} L</span>
+                </div>
+              )}
               <div className="flex justify-between py-2 border-t-2 border-[#1F2022] text-sm font-bold">
                 <span>Projected Ending Cash:</span>
                 <span className={pf.close < 0 ? "text-red-600" : "text-emerald-700"}>
@@ -248,6 +349,304 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 2: CAPITAL STRUCTURE & SHARES */}
+      {activeSubTab === "equity" && (
+        <div className="space-y-6">
+          {/* Treasury & Equity Metrics Summary */}
+          <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <div className="flex items-center gap-2">
+                <Coins className="w-5 h-5 text-amber-600" />
+                <div>
+                  <h3 className="text-base font-bold text-[#1F2022]">
+                    Treasury & Shareholder Equity Overview
+                  </h3>
+                  <p className="text-xs text-[#5A5C60]">
+                    Manage company equity, public stock issuance, treasury buybacks, and dividend payouts.
+                  </p>
+                </div>
+              </div>
+              <span className="px-2.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-mono font-bold uppercase">
+                Stock Exchange Traded
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 font-mono text-xs">
+              <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3]">
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Stock Price</div>
+                <div className="text-xl font-bold text-amber-700 mt-1">
+                  Rs. {curStockPrice.toFixed(2)}
+                </div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">Per Share</div>
+              </div>
+
+              <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3]">
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Shares Outstanding</div>
+                <div className="text-xl font-bold text-[#1F2022] mt-1">
+                  {curShares.toFixed(1)} L
+                </div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">{(curShares * 100000).toLocaleString("en-IN")} Shares</div>
+              </div>
+
+              <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3]">
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Market Capitalization</div>
+                <div className="text-xl font-bold text-emerald-700 mt-1">
+                  {fmtL(curMarketCap)} L
+                </div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">Price × Shares</div>
+              </div>
+
+              <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3]">
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">EPS (Last Quarter)</div>
+                <div className={`text-xl font-bold mt-1 ${lastHist && (lastHist.eps || 0) >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                  Rs. {lastHist && lastHist.eps !== undefined ? lastHist.eps.toFixed(2) : (lastHist ? (lastHist.profit / curShares).toFixed(2) : "0.00")}
+                </div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">Earnings / Share</div>
+              </div>
+
+              <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3]">
+                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Cum Dividends Paid</div>
+                <div className="text-xl font-bold text-indigo-700 mt-1">
+                  {fmtL(team.cumDividends || 0)} L
+                </div>
+                <div className="text-[10px] text-[#5A5C60] mt-0.5">Total Shareholder Yield</div>
+              </div>
+            </div>
+
+            {/* Ownership Breakdown */}
+            <div className="p-4 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3] space-y-2">
+              <div className="text-xs font-bold text-[#1F2022] flex justify-between">
+                <span>Corporate Ownership Structure</span>
+                <span className="font-mono text-[#5A5C60]">
+                  Founders: {(100 - team.equityVC - team.equityEm).toFixed(1)}% | VC: {team.equityVC.toFixed(1)}% | Emergency Lender: {team.equityEm.toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 h-3 rounded-full overflow-hidden flex">
+                <div
+                  style={{ width: `${Math.max(0, 100 - team.equityVC - team.equityEm)}%` }}
+                  className="bg-emerald-600 h-full"
+                  title="Founders"
+                />
+                <div
+                  style={{ width: `${team.equityVC}%` }}
+                  className="bg-purple-600 h-full"
+                  title="VC Investors"
+                />
+                <div
+                  style={{ width: `${team.equityEm}%` }}
+                  className="bg-red-500 h-full"
+                  title="Emergency Debt Dilution"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Strategic Capital Decisions: Issue Shares, Buyback, Dividends */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* 1. Share Issuance */}
+            <div className="bg-white p-5 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-[#E0DCD3] pb-2 text-emerald-800">
+                <ArrowUpRight className="w-4 h-4 text-emerald-600" />
+                <h4 className="text-sm font-bold">Issue New Shares (Equity Offering)</h4>
+              </div>
+              <p className="text-xs text-[#5A5C60]">
+                Raise non-debt capital by issuing new shares at the current stock price (Rs. {curStockPrice.toFixed(2)}/sh).
+              </p>
+
+              <div className="space-y-3 font-mono text-xs">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[#5A5C60]">Capital to Raise (Rs. L):</span>
+                    <span className="font-bold text-emerald-700">Rs. {team.dec.shareIssue || 0} L</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={maxIssue}
+                    step={25}
+                    disabled={isLocked}
+                    value={team.dec.shareIssue || 0}
+                    onChange={(e) => handleShareIssueChange(+e.target.value)}
+                    className="w-full accent-emerald-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#5A5C60] mt-1">
+                    <span>Rs. 0 L</span>
+                    <span>Max: Rs. {maxIssue} L</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-50/70 rounded-lg border border-emerald-200 text-[11px] space-y-1">
+                  <div className="flex justify-between">
+                    <span>New Shares Issued:</span>
+                    <span className="font-bold text-emerald-800">
+                      {team.dec.shareIssue ? ((team.dec.shareIssue / curStockPrice)).toFixed(2) : "0.00"} L shares
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Pro Forma Dilution:</span>
+                    <span className="font-bold text-emerald-800">
+                      {team.dec.shareIssue
+                        ? (((team.dec.shareIssue / curStockPrice) / (curShares + (team.dec.shareIssue / curStockPrice))) * 100).toFixed(1)
+                        : "0.0"}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Share Buyback */}
+            <div className="bg-white p-5 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-[#E0DCD3] pb-2 text-purple-800">
+                <RefreshCw className="w-4 h-4 text-purple-600" />
+                <h4 className="text-sm font-bold">Share Buyback (Treasury Repurchase)</h4>
+              </div>
+              <p className="text-xs text-[#5A5C60]">
+                Repurchase shares from the open market using liquid cash reserves to reduce share count and boost EPS.
+              </p>
+
+              <div className="space-y-3 font-mono text-xs">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[#5A5C60]">Buyback Outlay (Rs. L):</span>
+                    <span className="font-bold text-purple-700">Rs. {team.dec.shareBuyback || 0} L</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={maxBuyback}
+                    step={25}
+                    disabled={isLocked || maxBuyback <= 0}
+                    value={team.dec.shareBuyback || 0}
+                    onChange={(e) => handleShareBuybackChange(+e.target.value)}
+                    className="w-full accent-purple-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#5A5C60] mt-1">
+                    <span>Rs. 0 L</span>
+                    <span>Max: Rs. {maxBuyback} L</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-purple-50/70 rounded-lg border border-purple-200 text-[11px] space-y-1">
+                  <div className="flex justify-between">
+                    <span>Shares Repurchased:</span>
+                    <span className="font-bold text-purple-800">
+                      {team.dec.shareBuyback ? ((team.dec.shareBuyback / curStockPrice)).toFixed(2) : "0.00"} L shares
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Ending Share Base:</span>
+                    <span className="font-bold text-purple-800">
+                      {Math.max(25, curShares - (team.dec.shareBuyback ? team.dec.shareBuyback / curStockPrice : 0)).toFixed(1)} L shares
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Dividend Payout */}
+            <div className="bg-white p-5 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
+              <div className="flex items-center gap-2 border-b border-[#E0DCD3] pb-2 text-indigo-800">
+                <Gift className="w-4 h-4 text-indigo-600" />
+                <h4 className="text-sm font-bold">Dividend Declaration</h4>
+              </div>
+              <p className="text-xs text-[#5A5C60]">
+                Declare cash dividends per share to reward equity holders and directly boost the Balanced Scorecard Wealth metric.
+              </p>
+
+              <div className="space-y-3 font-mono text-xs">
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[#5A5C60]">Dividend / Share (Rs.):</span>
+                    <span className="font-bold text-indigo-700">Rs. {(team.dec.dividendPerShare || 0).toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.min(5, team.cash / Math.max(1, curShares))}
+                    step={0.1}
+                    disabled={isLocked || team.cash <= 0}
+                    value={team.dec.dividendPerShare || 0}
+                    onChange={(e) => handleDividendChange(+e.target.value)}
+                    className="w-full accent-indigo-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-[#5A5C60] mt-1">
+                    <span>Rs. 0.00</span>
+                    <span>Max: Rs. {Math.min(5, team.cash / Math.max(1, curShares)).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-indigo-50/70 rounded-lg border border-indigo-200 text-[11px] space-y-1">
+                  <div className="flex justify-between">
+                    <span>Total Cash Dividend:</span>
+                    <span className="font-bold text-indigo-800">
+                      Rs. {((team.dec.dividendPerShare || 0) * curShares).toFixed(1)} L
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Dividend Yield:</span>
+                    <span className="font-bold text-indigo-800">
+                      {curStockPrice > 0 ? (((team.dec.dividendPerShare || 0) / curStockPrice) * 100).toFixed(1) : "0.0"}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Historical Stock Price & Valuation Trajectory */}
+          {team.hist.length > 0 && (
+            <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
+              <h4 className="font-bold text-sm text-[#1F2022] flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-amber-600" />
+                Historical Equity & Valuation Trajectory
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-[#E0DCD3] text-[#5A5C60] uppercase text-[10px]">
+                      <th className="text-left py-2">Quarter</th>
+                      <th className="text-right py-2">Stock Price (Rs.)</th>
+                      <th className="text-right py-2">Shares (L)</th>
+                      <th className="text-right py-2">Market Cap (Rs. L)</th>
+                      <th className="text-right py-2">Net Profit (Rs. L)</th>
+                      <th className="text-right py-2">EPS (Rs.)</th>
+                      <th className="text-right py-2">Dividends (Rs. L)</th>
+                      <th className="text-right py-2">Book Equity (Rs. L)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {team.hist.map((h) => {
+                      const sh = h.shares || 100;
+                      const sp = h.stockPrice || (curStockPrice);
+                      return (
+                        <tr key={h.q} className="border-b border-[#E0DCD3] hover:bg-[#FAF8F5]">
+                          <td className="py-2 text-left font-bold text-[#1F2022]">Q{h.q}</td>
+                          <td className="py-2 text-right font-bold text-amber-700">Rs. {sp.toFixed(2)}</td>
+                          <td className="py-2 text-right">{sh.toFixed(1)} L</td>
+                          <td className="py-2 text-right font-bold text-emerald-700">{fmtL(sh * sp)} L</td>
+                          <td className={`py-2 text-right font-bold ${h.profit >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                            {fmtL(h.profit)} L
+                          </td>
+                          <td className="py-2 text-right font-bold">
+                            Rs. {h.eps !== undefined ? h.eps.toFixed(2) : (h.profit / sh).toFixed(2)}
+                          </td>
+                          <td className="py-2 text-right text-indigo-700">
+                            {h.dividendsPaid ? `Rs. ${h.dividendsPaid.toFixed(1)} L` : "-"}
+                          </td>
+                          <td className="py-2 text-right text-[#5A5C60]">
+                            {fmtL(h.cash + (h.invValue || 0) + (h.ppe || 0) - (h.debt.bank + h.debt.lt + h.debt.shark))} L
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -438,3 +837,4 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
     </div>
   );
 };
+

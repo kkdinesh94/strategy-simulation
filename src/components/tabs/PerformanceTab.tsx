@@ -2,7 +2,34 @@ import React, { useState } from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
-import { Award, BarChart3, TrendingUp, Newspaper, Users, Eye, FileText, Lock, ShieldAlert, Sparkles, Building2, Store, DollarSign, Target } from "lucide-react";
+import {
+  sharesOf,
+  stockPriceOf,
+  marketCapOf,
+  equityOf,
+  cumBSC
+} from "../../engine/simulationEngine";
+import {
+  Award,
+  BarChart3,
+  TrendingUp,
+  Newspaper,
+  Users,
+  Eye,
+  FileText,
+  Lock,
+  ShieldAlert,
+  Sparkles,
+  Building2,
+  Store,
+  DollarSign,
+  Target,
+  Receipt,
+  Scale,
+  Coins,
+  ArrowUpRight,
+  ArrowDownRight
+} from "lucide-react";
 
 interface PerformanceTabProps {
   team: TeamState;
@@ -10,10 +37,19 @@ interface PerformanceTabProps {
 }
 
 export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState }) => {
-  const [activeReportTab, setActiveReportTab] = useState<"bsc" | "debrief" | "rivals" | "intel" | "clinic" | "share" | "news">("bsc");
+  const [activeReportTab, setActiveReportTab] = useState<
+    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "intel" | "clinic" | "share" | "news"
+  >("bsc");
+  const [statementType, setStatementType] = useState<"income" | "balance" | "cashflow">("income");
+  const [selectedQuarter, setSelectedQuarter] = useState<number>(
+    team.hist.length > 0 ? team.hist[team.hist.length - 1].q : 1
+  );
 
   const lastResult = team.hist[team.hist.length - 1];
   const lastReport = gameState.reports[gameState.reports.length - 1];
+
+  const currentHistItem =
+    team.hist.find((h) => h.q === selectedQuarter) || lastResult;
 
   const hasIntelReport = !!(lastResult && lastResult.intel && lastResult.intel.length > 0);
   const hasClinicReport = !!(lastResult && lastResult.clinic && lastResult.clinic.length > 0);
@@ -43,6 +79,28 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
           }`}
         >
           <Award className="w-3.5 h-3.5 text-amber-500" /> Balanced Scorecard
+        </button>
+
+        <button
+          onClick={() => setActiveReportTab("statements")}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
+            activeReportTab === "statements"
+              ? "bg-[#1F2022] text-white shadow-sm"
+              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5 text-emerald-600" /> 3-Way Financial Statements
+        </button>
+
+        <button
+          onClick={() => setActiveReportTab("valuation")}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
+            activeReportTab === "valuation"
+              ? "bg-[#1F2022] text-white shadow-sm"
+              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
+          }`}
+        >
+          <Coins className="w-3.5 h-3.5 text-amber-600" /> Stock & Valuation League
         </button>
 
         <button
@@ -77,7 +135,7 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
               : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
           }`}
         >
-          <Lock className="w-3.5 h-3.5 text-purple-600" /> Competitor Intelligence (Rs. 15L)
+          <Lock className="w-3.5 h-3.5 text-purple-600" /> Competitor Intelligence
         </button>
 
         <button
@@ -90,7 +148,7 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
               : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
           }`}
         >
-          <Eye className="w-3.5 h-3.5 text-blue-600" /> Consumer Clinic Report (Rs. 10L)
+          <Eye className="w-3.5 h-3.5 text-blue-600" /> Consumer Clinic Report
         </button>
 
         <button
@@ -115,6 +173,395 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
           <Newspaper className="w-3.5 h-3.5 text-rose-600" /> Industry Press
         </button>
       </div>
+
+      {/* SUB-TAB: AUDITED 3-WAY FINANCIAL STATEMENTS */}
+      {activeReportTab === "statements" && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-6">
+            {/* Header & Quarter Selector */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#E5E1D8] pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-[#1F2022] flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-emerald-700" />
+                  Audited Corporate Financial Statements
+                </h3>
+                <p className="text-xs text-[#5A5C60]">
+                  Standardized GAAP/IFRS 3-way financial statements for {team.name}.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                {/* Quarter Picker */}
+                {team.hist.length > 0 && (
+                  <div className="flex items-center gap-1.5 bg-[#FAF8F5] p-1 rounded-lg border border-[#E0DCD3]">
+                    <span className="text-[10px] font-mono uppercase text-[#5A5C60] px-2 font-bold">Quarter:</span>
+                    {team.hist.map((h) => (
+                      <button
+                        key={h.q}
+                        onClick={() => setSelectedQuarter(h.q)}
+                        className={`px-2.5 py-1 rounded text-xs font-bold font-mono transition ${
+                          selectedQuarter === h.q
+                            ? "bg-[#1F2022] text-white"
+                            : "text-[#5A5C60] hover:bg-slate-200"
+                        }`}
+                      >
+                        Q{h.q}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Statement Selector */}
+                <div className="flex items-center gap-1 bg-[#FAF8F5] p-1 rounded-lg border border-[#E0DCD3]">
+                  <button
+                    onClick={() => setStatementType("income")}
+                    className={`px-3 py-1 rounded text-xs font-bold font-mono transition ${
+                      statementType === "income" ? "bg-emerald-700 text-white" : "text-[#5A5C60] hover:bg-slate-200"
+                    }`}
+                  >
+                    Income Statement
+                  </button>
+                  <button
+                    onClick={() => setStatementType("balance")}
+                    className={`px-3 py-1 rounded text-xs font-bold font-mono transition ${
+                      statementType === "balance" ? "bg-emerald-700 text-white" : "text-[#5A5C60] hover:bg-slate-200"
+                    }`}
+                  >
+                    Balance Sheet
+                  </button>
+                  <button
+                    onClick={() => setStatementType("cashflow")}
+                    className={`px-3 py-1 rounded text-xs font-bold font-mono transition ${
+                      statementType === "cashflow" ? "bg-emerald-700 text-white" : "text-[#5A5C60] hover:bg-slate-200"
+                    }`}
+                  >
+                    Cash Flow
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {!currentHistItem ? (
+              <div className="text-center py-12 text-[#5A5C60] text-xs font-mono">
+                No financial history available yet. Complete Quarter 1 to generate audited financial statements.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* 1. INCOME STATEMENT */}
+                {statementType === "income" && (
+                  <div className="space-y-3 font-mono text-xs max-w-4xl mx-auto">
+                    <div className="text-sm font-bold text-[#1F2022] font-sans pb-2 border-b-2 border-[#1F2022] flex justify-between">
+                      <span>Statement of Profit and Loss (Income Statement)</span>
+                      <span>Quarter {currentHistItem.q}</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between py-1.5 text-emerald-800 font-bold border-b border-[#E0DCD3]">
+                        <span>Gross Commercial Revenue:</span>
+                        <span>{fmtL(currentHistItem.rev)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 text-red-600 pl-4 border-b border-[#E0DCD3]">
+                        <span>Less: Direct Cost of Goods Sold (BOM Materials & Plant Labor):</span>
+                        <span>-{fmtL(currentHistItem.cogs || currentHistItem.materials || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1.5 font-bold text-[#1F2022] bg-[#FAF8F5] px-2 rounded">
+                        <span>GROSS PROFIT (Contribution Margin):</span>
+                        <span className="text-emerald-700">{fmtL(currentHistItem.gp)} L</span>
+                      </div>
+
+                      <div className="pt-2 text-[11px] font-bold text-[#5A5C60] uppercase">Operating Expenses (SG&A):</div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>Brand Marketing & Segment Advertising:</span>
+                        <span>{fmtL(currentHistItem.ad)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>Experience Center Showroom Opex & Fixed Rent:</span>
+                        <span>{fmtL(currentHistItem.centres * 12)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>Sales Force & Corporate Payroll:</span>
+                        <span>{fmtL(currentHistItem.staff * 2.5)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>Quality Management & TQM Programs:</span>
+                        <span>{fmtL(currentHistItem.qualitySpend || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>R&D Tech Engineering Outlays:</span>
+                        <span>{fmtL(currentHistItem.rndSpend || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1.5 font-bold text-[#1F2022] bg-[#FAF8F5] px-2 rounded">
+                        <span>EBITDA (Operating Profit before Interest & Depreciation):</span>
+                        <span className="text-emerald-700">{fmtL(currentHistItem.ebitda)} L</span>
+                      </div>
+
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
+                        <span>Depreciation of PP&E Plant Assets:</span>
+                        <span>-{fmtL(currentHistItem.deprec || 20)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1.5 font-bold text-[#1F2022] bg-[#FAF8F5] px-2 rounded">
+                        <span>EBIT (Operating Profit):</span>
+                        <span className={currentHistItem.ebitda - (currentHistItem.deprec || 20) >= 0 ? "text-emerald-700" : "text-red-600"}>
+                          {fmtL(currentHistItem.ebitda - (currentHistItem.deprec || 20))} L
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-red-600">
+                        <span>Finance Costs (Bank Credit & Bond Debt Interest):</span>
+                        <span>-{fmtL(currentHistItem.interest || 0)} L</span>
+                      </div>
+
+                      <div className="flex justify-between py-2 border-t-2 border-[#1F2022] text-sm font-bold bg-slate-100 px-2 rounded">
+                        <span>NET PROFIT / (LOSS) AFTER TAX:</span>
+                        <span className={currentHistItem.profit >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold"}>
+                          {fmtL(currentHistItem.profit)} L
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. BALANCE SHEET */}
+                {statementType === "balance" && (
+                  <div className="space-y-4 font-mono text-xs max-w-4xl mx-auto">
+                    <div className="text-sm font-bold text-[#1F2022] font-sans pb-2 border-b-2 border-[#1F2022] flex justify-between">
+                      <span>Statement of Financial Position (Balance Sheet)</span>
+                      <span>Quarter {currentHistItem.q}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* ASSETS */}
+                      <div className="p-4 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3] space-y-2">
+                        <div className="font-bold text-sm text-[#1F2022] border-b border-[#E0DCD3] pb-1">
+                          TOTAL ASSETS
+                        </div>
+                        <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-1">Current Assets:</div>
+                        <div className="flex justify-between pl-2">
+                          <span>Liquid Cash & Bank Reserves:</span>
+                          <span className="font-bold text-emerald-700">{fmtL(currentHistItem.cash)} L</span>
+                        </div>
+                        <div className="flex justify-between pl-2">
+                          <span>Finished Goods Inventory Valuation:</span>
+                          <span>{fmtL(currentHistItem.invValue || (currentHistItem.balanceSheet?.inventory) || 0)} L</span>
+                        </div>
+
+                        <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">Non-Current Assets:</div>
+                        <div className="flex justify-between pl-2">
+                          <span>Factory Plant, Machinery & PP&E:</span>
+                          <span>{fmtL(currentHistItem.ppe || (currentHistItem.balanceSheet?.ppe) || 600)} L</span>
+                        </div>
+
+                        <div className="flex justify-between pt-3 border-t-2 border-[#1F2022] font-bold text-sm bg-white p-2 rounded">
+                          <span>TOTAL ASSETS:</span>
+                          <span className="text-emerald-700">
+                            {fmtL(
+                              currentHistItem.cash +
+                              (currentHistItem.invValue || currentHistItem.balanceSheet?.inventory || 0) +
+                              (currentHistItem.ppe || currentHistItem.balanceSheet?.ppe || 600)
+                            )} L
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* LIABILITIES & EQUITY */}
+                      <div className="p-4 bg-[#FAF8F5] rounded-xl border border-[#E0DCD3] space-y-2">
+                        <div className="font-bold text-sm text-[#1F2022] border-b border-[#E0DCD3] pb-1">
+                          TOTAL LIABILITIES & EQUITY
+                        </div>
+                        <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-1">Liabilities:</div>
+                        <div className="flex justify-between pl-2">
+                          <span>Short-Term Bank Credit Facility:</span>
+                          <span>{fmtL(currentHistItem.debt.bank)} L</span>
+                        </div>
+                        <div className="flex justify-between pl-2">
+                          <span>5-Year Long-Term Corporate Bonds:</span>
+                          <span>{fmtL(currentHistItem.debt.lt)} L</span>
+                        </div>
+                        <div className="flex justify-between pl-2 text-red-600">
+                          <span>Emergency Shark Debt:</span>
+                          <span>{fmtL(currentHistItem.debt.shark)} L</span>
+                        </div>
+
+                        <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">Shareholders' Equity:</div>
+                        <div className="flex justify-between pl-2">
+                          <span>Paid-in Capital & Common Stock:</span>
+                          <span>{fmtL(team.paidIn)} L</span>
+                        </div>
+                        <div className="flex justify-between pl-2">
+                          <span>Cumulative Retained Earnings:</span>
+                          <span className={team.cumProfit >= 0 ? "text-emerald-700" : "text-red-600"}>
+                            {fmtL(team.cumProfit)} L
+                          </span>
+                        </div>
+                        <div className="flex justify-between pl-2 text-indigo-700">
+                          <span>Less: Cumulative Dividends Distributed:</span>
+                          <span>-{fmtL(team.cumDividends || 0)} L</span>
+                        </div>
+
+                        <div className="flex justify-between pt-3 border-t-2 border-[#1F2022] font-bold text-sm bg-white p-2 rounded">
+                          <span>TOTAL LIABILITIES & EQUITY:</span>
+                          <span className="text-emerald-700">
+                            {fmtL(
+                              currentHistItem.debt.bank +
+                              currentHistItem.debt.lt +
+                              currentHistItem.debt.shark +
+                              (currentHistItem.cash +
+                                (currentHistItem.invValue || currentHistItem.balanceSheet?.inventory || 0) +
+                                (currentHistItem.ppe || currentHistItem.balanceSheet?.ppe || 600) -
+                                (currentHistItem.debt.bank + currentHistItem.debt.lt + currentHistItem.debt.shark))
+                            )} L
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. CASH FLOW STATEMENT */}
+                {statementType === "cashflow" && (
+                  <div className="space-y-3 font-mono text-xs max-w-4xl mx-auto">
+                    <div className="text-sm font-bold text-[#1F2022] font-sans pb-2 border-b-2 border-[#1F2022] flex justify-between">
+                      <span>Statement of Cash Flows</span>
+                      <span>Quarter {currentHistItem.q}</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-bold text-[#5A5C60] uppercase">1. Cash Flows from Operating Activities:</div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3]">
+                        <span>Net Profit for the Quarter:</span>
+                        <span className={currentHistItem.profit >= 0 ? "text-emerald-700 font-bold" : "text-red-600 font-bold"}>
+                          {fmtL(currentHistItem.profit)} L
+                        </span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3]">
+                        <span>Add Back: Non-Cash Depreciation:</span>
+                        <span>+{fmtL(currentHistItem.deprec || 20)} L</span>
+                      </div>
+
+                      <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">2. Cash Flows from Investing Activities:</div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-red-600">
+                        <span>Capital Expenditures (Plant & Production Expansion):</span>
+                        <span>-{fmtL(currentHistItem.cashFlow?.capex || (currentHistItem.expBlocks ? currentHistItem.expBlocks * 100 : 0))} L</span>
+                      </div>
+
+                      <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">3. Cash Flows from Financing Activities:</div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-amber-700">
+                        <span>Proceeds from Share Issuance:</span>
+                        <span>+{fmtL(currentHistItem.cashFlow?.shareIssuance || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-purple-700">
+                        <span>Outflow for Share Buybacks:</span>
+                        <span>-{fmtL(currentHistItem.cashFlow?.shareBuyback || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-indigo-700">
+                        <span>Cash Dividends Distributed:</span>
+                        <span>-{fmtL(currentHistItem.dividendsPaid || currentHistItem.cashFlow?.dividends || 0)} L</span>
+                      </div>
+                      <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-emerald-700">
+                        <span>Net Debt Financing (Bonds & Bank Credit):</span>
+                        <span>+{fmtL(currentHistItem.cashFlow?.debtIncurred || (currentHistItem.debt.lt > 0 ? currentHistItem.debt.lt : 0))} L</span>
+                      </div>
+
+                      <div className="flex justify-between py-2 border-t-2 border-[#1F2022] text-sm font-bold bg-slate-100 px-2 rounded mt-3">
+                        <span>ENDING CASH BALANCE:</span>
+                        <span className="text-emerald-700 font-bold">{fmtL(currentHistItem.cash)} L</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: STOCK & VALUATION LEAGUE */}
+      {activeReportTab === "valuation" && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+            <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
+              <Coins className="w-5 h-5 text-amber-600" />
+              <div>
+                <h3 className="text-base font-bold text-[#1F2022]">
+                  Corporate Valuation & Public Equity League Table
+                </h3>
+                <p className="text-xs text-[#5A5C60]">
+                  Stock price, market capitalization, earnings per share (EPS), and return on equity (ROE) across all 10 EV universe teams.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-[#E5E1D8] text-[#5A5C60] uppercase text-[10px]">
+                    <th className="text-left py-2.5">Rank & Firm</th>
+                    <th className="text-right py-2.5">Stock Price</th>
+                    <th className="text-right py-2.5">Shares Out</th>
+                    <th className="text-right py-2.5">Market Cap</th>
+                    <th className="text-right py-2.5">EPS (Qtr)</th>
+                    <th className="text-right py-2.5">P/E Ratio</th>
+                    <th className="text-right py-2.5">Dividends Paid</th>
+                    <th className="text-right py-2.5">BSC Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...gameState.teams]
+                    .sort((a, b) => marketCapOf(b) - marketCapOf(a))
+                    .map((t, idx) => {
+                      const r = t.hist[t.hist.length - 1];
+                      const isSelf = t.i === team.i;
+                      const sp = stockPriceOf(t);
+                      const sh = sharesOf(t);
+                      const mcap = marketCapOf(t);
+                      const eps = r && r.eps !== undefined ? r.eps : (r ? r.profit / sh : 0);
+                      const pe = eps > 0 ? (sp / (eps * 4)).toFixed(1) + "x" : "N/A";
+
+                      return (
+                        <tr
+                          key={t.i}
+                          className={`border-b border-[#E0DCD3] transition ${
+                            isSelf ? "bg-amber-50 font-bold" : "hover:bg-[#FAF8F5]"
+                          }`}
+                        >
+                          <td className="py-3 text-left font-sans font-bold flex items-center gap-2 text-[#1F2022]">
+                            <span className="w-5 text-center text-[#5A5C60] font-mono">#{idx + 1}</span>
+                            <span
+                              className="w-3 h-3 rounded-full shrink-0"
+                              style={{ backgroundColor: t.color }}
+                            />
+                            {t.name} {isSelf && " (You)"}
+                          </td>
+                          <td className="text-right py-3 text-amber-700 font-bold">
+                            Rs. {sp.toFixed(2)}
+                          </td>
+                          <td className="text-right py-3 text-[#1F2022]">
+                            {sh.toFixed(1)} L
+                          </td>
+                          <td className="text-right py-3 text-emerald-700 font-bold">
+                            {fmtL(mcap)} L
+                          </td>
+                          <td className={`text-right py-3 font-bold ${eps >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                            Rs. {eps.toFixed(2)}
+                          </td>
+                          <td className="text-right py-3 text-[#5A5C60]">
+                            {pe}
+                          </td>
+                          <td className="text-right py-3 text-indigo-700 font-bold">
+                            {t.cumDividends ? `Rs. ${fmtL(t.cumDividends)} L` : "-"}
+                          </td>
+                          <td className="text-right py-3 text-amber-700 font-bold">
+                            {cumBSC(t).toFixed(1)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUB-TAB: EXECUTIVE DEBRIEF PACK */}
       {activeReportTab === "debrief" && (

@@ -17,8 +17,9 @@ export function getD1Database() {
     // @ts-ignore
     const sqliteModule = require("node:sqlite");
     if (sqliteModule && sqliteModule.DatabaseSync) {
-      dbInstance = createOrRecoverSQLite(sqliteModule);
-      if (dbInstance) {
+      const rawDb = createOrRecoverSQLite(sqliteModule);
+      if (rawDb) {
+        dbInstance = wrapWithSelfHealing(rawDb, sqliteModule);
         return dbInstance;
       }
     }
@@ -76,7 +77,7 @@ function cleanupCorruptFiles() {
       try {
         fs.renameSync(DB_FILE_PATH, backupCorrupt);
       } catch {
-        fs.unlinkSync(DB_FILE_PATH);
+        try { fs.unlinkSync(DB_FILE_PATH); } catch {}
       }
     }
     if (fs.existsSync(walFile)) {
@@ -89,6 +90,207 @@ function cleanupCorruptFiles() {
     console.warn("Cleanup corrupt files warning:", err);
   }
 }
+
+function wrapWithSelfHealing(rawDb: any, sqliteModule: any) {
+  let activeDb = rawDb;
+
+  const recover = () => {
+    console.warn("Recovering corrupted SQLite D1 database instance...");
+    try {
+      if (typeof activeDb?.close === "function") {
+        try { activeDb.close(); } catch {}
+      }
+    } catch {}
+    cleanupCorruptFiles();
+    activeDb = createOrRecoverSQLite(sqliteModule);
+    if (!activeDb) {
+      activeDb = createFallbackD1Engine();
+    }
+    return activeDb;
+  };
+
+  return {
+    exec: (sql: string) => {
+      try {
+        return activeDb.exec(sql);
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt") || err.message.includes("disk I/O"))) {
+          recover();
+          return activeDb.exec(sql);
+        }
+        throw err;
+      }
+    },
+    prepare: (sql: string) => {
+      try {
+        const stmt = activeDb.prepare(sql);
+        return {
+          all: (...params: any[]) => {
+            try {
+              return stmt.all(...params);
+            } catch (err: any) {
+              if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt") || err.message.includes("disk I/O"))) {
+                recover();
+                return activeDb.prepare(sql).all(...params);
+              }
+              throw err;
+            }
+          },
+          get: (...params: any[]) => {
+            try {
+              return stmt.get(...params);
+            } catch (err: any) {
+              if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt") || err.message.includes("disk I/O"))) {
+                recover();
+                return activeDb.prepare(sql).get(...params);
+              }
+              throw err;
+            }
+          },
+          run: (...params: any[]) => {
+            try {
+              return stmt.run(...params);
+            } catch (err: any) {
+              if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt") || err.message.includes("disk I/O"))) {
+                recover();
+                return activeDb.prepare(sql).run(...params);
+              }
+              throw err;
+            }
+          }
+        };
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt") || err.message.includes("disk I/O"))) {
+          recover();
+          return activeDb.prepare(sql);
+        }
+        throw err;
+      }
+    },
+    insertUser: (u: any) => {
+      if (typeof activeDb.insertUser === "function") {
+        return activeDb.insertUser(u);
+      }
+      try {
+        const stmt = activeDb.prepare(`
+          INSERT INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            email = excluded.email,
+            name = excluded.name,
+            role = excluded.role,
+            institution = excluded.institution,
+            universe_id = excluded.universe_id,
+            team_i = excluded.team_i,
+            password = excluded.password,
+            last_active_at = excluded.last_active_at,
+            active_minutes = excluded.active_minutes,
+            is_online = excluded.is_online
+        `);
+        stmt.run(
+          u.id,
+          u.email,
+          u.name,
+          u.role,
+          u.institution || "",
+          u.universeId || u.universe_id,
+          u.teamI ?? u.team_i ?? -1,
+          u.password || "student123",
+          u.lastActiveAt || u.last_active_at || new Date().toISOString(),
+          u.activeMinutes ?? u.active_minutes ?? 0,
+          u.isOnline || u.is_online ? 1 : 0
+        );
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt"))) {
+          recover();
+          return activeDb.insertUser?.(u);
+        }
+      }
+    },
+    deleteUser: (target: string) => {
+      if (!target) return;
+      if (typeof activeDb.deleteUser === "function") {
+        return activeDb.deleteUser(target);
+      }
+      try {
+        const targetClean = target.trim();
+        activeDb.prepare(`
+          DELETE FROM users 
+          WHERE id = ? 
+             OR email = ? 
+             OR LOWER(id) = LOWER(?) 
+             OR LOWER(email) = LOWER(?)
+        `).run(targetClean, targetClean, targetClean, targetClean);
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt"))) {
+          recover();
+          return activeDb.deleteUser?.(target);
+        }
+      }
+    },
+    insertUniverse: (u: any) => {
+      if (typeof activeDb.insertUniverse === "function") {
+        return activeDb.insertUniverse(u);
+      }
+      try {
+        const stmt = activeDb.prepare(`
+          INSERT INTO universes (id, name, code, instructor_email, max_teams, max_members_per_team, game_state, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            code = excluded.code,
+            instructor_email = excluded.instructor_email,
+            max_teams = excluded.max_teams,
+            max_members_per_team = excluded.max_members_per_team,
+            game_state = excluded.game_state,
+            updated_at = datetime('now')
+        `);
+        stmt.run(
+          u.id,
+          u.name || "EV League Simulation",
+          u.code || "NITW2026",
+          u.instructorEmail || u.instructor_email || "instructor@nitw.ac.in",
+          u.maxTeams || u.max_teams || 10,
+          u.maxMembersPerTeam || u.max_members_per_team || 8,
+          typeof u.gameState === "string" ? u.gameState : JSON.stringify(u.gameState)
+        );
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt"))) {
+          recover();
+          return activeDb.insertUniverse?.(u);
+        }
+      }
+    },
+    deleteUniverse: (id: string) => {
+      if (typeof activeDb.deleteUniverse === "function") {
+        return activeDb.deleteUniverse(id);
+      }
+      try {
+        activeDb.prepare("DELETE FROM universes WHERE id = ?").run(id);
+        activeDb.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE universe_id = ?").run(id);
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt"))) {
+          recover();
+          return activeDb.deleteUniverse?.(id);
+        }
+      }
+    },
+    removeUserFromUniverse: (id: string) => {
+      if (typeof activeDb.removeUserFromUniverse === "function") {
+        return activeDb.removeUserFromUniverse(id);
+      }
+      try {
+        activeDb.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE id = ? OR LOWER(email) = LOWER(?)").run(id, id);
+      } catch (err: any) {
+        if (err.message && (err.message.includes("malformed") || err.message.includes("corrupt"))) {
+          recover();
+          return activeDb.removeUserFromUniverse?.(id);
+        }
+      }
+    }
+  };
+}
+
 
 function initD1Tables(db: any) {
   try {

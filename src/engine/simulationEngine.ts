@@ -199,6 +199,36 @@ export function ltLimit(t: TeamState): number {
   return Math.max(0, 2 * equityOf(t) - debtOf(t));
 }
 
+export function sharesOf(t: TeamState): number {
+  return t.shares || 100;
+}
+
+export function stockPriceOf(t: TeamState): number {
+  if (t.stockPrice && t.stockPrice > 0) return t.stockPrice;
+  const val = valuationOf(t);
+  const sh = sharesOf(t);
+  return Math.max(0.5, Math.round((val / sh) * 100) / 100);
+}
+
+export function marketCapOf(t: TeamState): number {
+  return Math.round(sharesOf(t) * stockPriceOf(t) * 10) / 10;
+}
+
+export function maxShareIssueLimit(t: TeamState): number {
+  // Max 30% dilution or 800 Lakhs
+  const currentCap = marketCapOf(t);
+  return Math.max(100, Math.min(800, Math.round(currentCap * 0.35)));
+}
+
+export function maxShareBuybackLimit(t: TeamState): number {
+  // Can only buy back if solvent and surplus cash available, keeping at least 25 Lakh shares
+  const sh = sharesOf(t);
+  if (sh <= 25 || t.cash <= 50) return 0;
+  const p = stockPriceOf(t);
+  const maxSharesToBuy = sh - 25;
+  return Math.max(0, Math.min(Math.round(t.cash * 0.6), Math.round(maxSharesToBuy * p)));
+}
+
 export function hrMults(st: GameState, t: TeamState): { sales: number; plant: number } {
   const mean = (k: "sales" | "plant") =>
     st.teams.reduce((x, x2) => x + x2.hr[k], 0) / (st.teams.length || 1);
@@ -238,7 +268,10 @@ export function computeBSC(t: TeamState, r: QuarterResult, _st: GameState) {
   const MP = ((shares[0] + shares[1]) / 2) * served;
   const ME = clamp((r.brandJ + r.campJ) / 2 / 100, 0, 1);
   const IF = clamp(1 + 10 * (t.cumFuture / Math.max(1, t.cumRevenue)), 1, 5);
-  const W = clamp(equityOf(t) / Math.max(1, t.paidIn), 0, 3);
+  // Wealth creation combines book equity, stock price appreciation, and cumulative dividends
+  const stockRatio = stockPriceOf(t) / 8.0;
+  const divRatio = (t.cumDividends || 0) / Math.max(1, t.paidIn);
+  const W = clamp((equityOf(t) / Math.max(1, t.paidIn)) * 0.45 + stockRatio * 0.35 + divRatio * 0.6, 0.1, 4.5);
   const hr = r.hrM
     ? clamp(((r.hrM.sales - 0.75) / 0.4 + (r.hrM.plant - 0.75) / 0.4) / 2, 0, 1)
     : 0.6;
@@ -296,6 +329,11 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const fixed = 50 + 0.02 * t.capacity;
   const interest = t.debt.bank * 0.04 + t.debt.lt * 0.045 + t.debt.shark * 0.15;
 
+  // Capital structure / financing flows
+  const shareBuyback = +t.dec.shareBuyback || 0;
+  const divPerShare = +t.dec.dividendPerShare || 0;
+  const totalDiv = divPerShare * sharesOf(t);
+
   const out =
     materials +
     ad +
@@ -309,10 +347,14 @@ export function proFormaCalc(st: GameState, t: TeamState) {
     plantPayroll +
     netOpex +
     fixed +
-    interest;
+    interest +
+    shareBuyback +
+    totalDiv;
 
   const headroom = Math.max(0, bankLimit(t) - t.debt.bank);
-  const inflow = +t.dec.ltIssue || 0;
+  const ltInflow = +t.dec.ltIssue || 0;
+  const equityInflow = +t.dec.shareIssue || 0;
+  const totalInflow = ltInflow + equityInflow;
 
   return {
     prod,
@@ -322,10 +364,14 @@ export function proFormaCalc(st: GameState, t: TeamState) {
     growth: dev + rnd + centreOpen + capex,
     people: salesPayroll + plantPayroll,
     running: netOpex + fixed + research + interest,
+    shareBuyback,
+    dividends: totalDiv,
     out,
     cash: t.cash,
-    inflow,
-    close: t.cash + inflow - out,
+    inflow: totalInflow,
+    equityInflow,
+    ltInflow,
+    close: t.cash + totalInflow - out,
     bankHeadroom: headroom
   };
 }
@@ -353,6 +399,36 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
   }
   if (q <= 3 && t.dec.ad > 300) {
     errs.push("Auditor limit in the test-market phase: advertising may not exceed Rs. 300 L before Quarter 4.");
+  }
+
+  // Equity & Share Auditor Checks
+  if (t.dec.shareIssue && t.dec.shareIssue > 0) {
+    const maxIssue = maxShareIssueLimit(t);
+    if (t.dec.shareIssue > maxIssue) {
+      errs.push(
+        `Share issuance exceeds corporate limit: maximum new equity offering allowed this quarter is Rs. ${maxIssue} L.`
+      );
+    }
+  }
+
+  if (t.dec.shareBuyback && t.dec.shareBuyback > 0) {
+    const maxBuyback = maxShareBuybackLimit(t);
+    if (t.dec.shareBuyback > maxBuyback) {
+      errs.push(
+        `Share buyback exceeds treasury limit: maximum buyback allowed is Rs. ${maxBuyback} L (requires sufficient liquidity & minimum 25L shares).`
+      );
+    }
+  }
+
+  if (t.dec.dividendPerShare && t.dec.dividendPerShare > 0) {
+    const totalDiv = t.dec.dividendPerShare * sharesOf(t);
+    if (totalDiv > t.cash) {
+      errs.push(
+        `Declared dividend of Rs. ${t.dec.dividendPerShare.toFixed(2)}/share (total Rs. ${totalDiv.toFixed(
+          1
+        )} L) exceeds total liquid cash reserves (Rs. ${t.cash.toFixed(1)} L).`
+      );
+    }
   }
 
   const newStaff = t.staff + (t.dec.hire || 0);
@@ -750,6 +826,45 @@ export function simulateQuarter(st: GameState) {
       vcDeal = { ask: t.dec.vc.ask, offered, valuation: val, required: req, funded };
     }
 
+    // Process Equity & Share Capital Decisions (Issuance, Buybacks, Dividends)
+    const currentPriceBefore = stockPriceOf(t);
+    let shareIssueAmt = 0;
+    let newSharesIssued = 0;
+    if (t.dec.shareIssue && t.dec.shareIssue > 0) {
+      const maxIssue = maxShareIssueLimit(t);
+      shareIssueAmt = Math.min(t.dec.shareIssue, maxIssue);
+      newSharesIssued = shareIssueAmt / Math.max(0.5, currentPriceBefore);
+      t.shares = (t.shares || 100) + newSharesIssued;
+      t.paidIn += shareIssueAmt;
+      t.cash += shareIssueAmt;
+      (t as any)._shareIssueAmt = shareIssueAmt;
+    }
+
+    let shareBuybackAmt = 0;
+    let sharesRepurchased = 0;
+    if (t.dec.shareBuyback && t.dec.shareBuyback > 0 && t.cash > 0) {
+      const maxBuyback = maxShareBuybackLimit(t);
+      shareBuybackAmt = Math.min(t.dec.shareBuyback, Math.min(maxBuyback, t.cash * 0.7));
+      if (shareBuybackAmt > 0) {
+        sharesRepurchased = shareBuybackAmt / Math.max(0.5, currentPriceBefore);
+        t.shares = Math.max(25, (t.shares || 100) - sharesRepurchased);
+        t.paidIn = Math.max(100, t.paidIn - shareBuybackAmt);
+        t.cash -= shareBuybackAmt;
+        (t as any)._shareBuybackAmt = shareBuybackAmt;
+      }
+    }
+
+    let dividendsPaid = 0;
+    if (t.dec.dividendPerShare && t.dec.dividendPerShare > 0) {
+      const totalDivReq = t.dec.dividendPerShare * (t.shares || 100);
+      if (t.cash >= totalDivReq) {
+        dividendsPaid = totalDivReq;
+        t.cash -= dividendsPaid;
+        t.cumDividends = (t.cumDividends || 0) + dividendsPaid;
+        (t as any)._dividendsPaid = dividendsPaid;
+      }
+    }
+
     let sharkNew = 0,
       dilution = 0;
     if (t.cash < 0) {
@@ -762,6 +877,56 @@ export function simulateQuarter(st: GameState) {
 
     const newlyBankrupt = !t.bankrupt && equityOf(t) < 0;
     if (newlyBankrupt) t.bankrupt = true;
+
+    // Corporate Metrics & Dynamic Stock Price
+    const currentShares = t.shares || 100;
+    const eps = profit / currentShares; // Rs. per share
+    const netEquity = equityOf(t);
+    const roe = netEquity > 0 ? (profit / netEquity) * 100 : 0;
+    const newFirmValuation = valuationOf(t);
+    const baseStockPrice = newFirmValuation / currentShares;
+    const divBoost = dividendsPaid > 0 ? 0.06 : 0;
+    const epsBoost = eps > 0 ? Math.min(0.25, (eps / 12) * 0.1) : -0.12;
+    const repBoost = (t.rep - 0.5) * 0.15;
+    const nextStockPrice = Math.max(
+      0.5,
+      Math.round(baseStockPrice * (1 + divBoost + epsBoost + repBoost) * 100) / 100
+    );
+    t.stockPrice = nextStockPrice;
+    const marketCap = Math.round(currentShares * nextStockPrice * 10) / 10;
+
+    // 3-Way Financial Statement Breakdown: Cash Flow & Balance Sheet
+    const operatingCash = profit + dep - deltaInv;
+    const investingCash = -(capex + dev + rndSpend + centreOpen);
+    const financingCash =
+      dBank +
+      ((t as any)._ltIssued || 0) -
+      ((t as any)._ltRepaid || 0) +
+      shareIssueAmt -
+      shareBuybackAmt -
+      dividendsPaid +
+      (vcDeal ? vcDeal.funded : 0);
+
+    const cashFlow = {
+      operating: Math.round(operatingCash * 10) / 10,
+      investing: Math.round(investingCash * 10) / 10,
+      financing: Math.round(financingCash * 10) / 10,
+      net: Math.round((operatingCash + investingCash + financingCash) * 10) / 10
+    };
+
+    const balanceSheet = {
+      cash: Math.round(t.cash * 10) / 10,
+      inventory: Math.round(invValue * 10) / 10,
+      ppe: Math.round(t.ppe * 10) / 10,
+      totalAssets: Math.round((t.cash + invValue + t.ppe) * 10) / 10,
+      shortTermDebt: Math.round(t.debt.bank * 10) / 10,
+      longTermDebt: Math.round(t.debt.lt * 10) / 10,
+      sharkDebt: Math.round(t.debt.shark * 10) / 10,
+      totalLiabilities: Math.round(debtOf(t) * 10) / 10,
+      paidInCapital: Math.round(t.paidIn * 10) / 10,
+      retainedEarnings: Math.round(t.cumProfit * 10) / 10,
+      totalEquity: Math.round(equityOf(t) * 10) / 10
+    };
 
     const wUnits = Math.max(1, units);
     let sat = 0;
@@ -897,6 +1062,16 @@ export function simulateQuarter(st: GameState) {
       capAdd: (t as any)._capAdd || 0,
       ltIssued: (t as any)._ltIssued || 0,
       ltRepaid: (t as any)._ltRepaid || 0,
+      shares: Math.round(currentShares * 10) / 10,
+      stockPrice: nextStockPrice,
+      marketCap,
+      eps: Math.round(eps * 100) / 100,
+      roe: Math.round(roe * 10) / 10,
+      dividendsPaid,
+      shareIssueAmt,
+      shareBuybackAmt,
+      cashFlow,
+      balanceSheet,
       bsc: { parts: {}, total: 0 }
     };
     res.bsc = computeBSC(t, res, st);
@@ -908,12 +1083,18 @@ export function simulateQuarter(st: GameState) {
     (t as any)._capAdd = 0;
     (t as any)._ltIssued = 0;
     (t as any)._ltRepaid = 0;
+    (t as any)._shareIssueAmt = 0;
+    (t as any)._shareBuybackAmt = 0;
+    (t as any)._dividendsPaid = 0;
     t.dec.devCost = 0;
     t.dec.rndStartCost = 0;
     t.dec.newCentres = 0;
     t.dec.hire = 0;
     t.dec.expBlocks = 0;
     t.dec.ltIssue = 0;
+    t.dec.shareIssue = 0;
+    t.dec.shareBuyback = 0;
+    t.dec.dividendPerShare = 0;
     t.dec.locked = false;
     t.models.forEach((m) => (m.lastHash = bomHash(m)));
   }
@@ -972,6 +1153,27 @@ export function simulateQuarter(st: GameState) {
 
   st.teams.forEach((t) => {
     const r = t.hist[t.hist.length - 1];
+    if (r.shareIssueAmt && r.shareIssueAmt > 0) {
+      news.push(
+        `<b>${t.name}</b> completed a public share issuance: raised Rs. ${r.shareIssueAmt.toLocaleString(
+          "en-IN"
+        )} L in new equity capital (Stock price: Rs. ${r.stockPrice?.toFixed(2)}).`
+      );
+    }
+    if (r.shareBuybackAmt && r.shareBuybackAmt > 0) {
+      news.push(
+        `<b>${t.name}</b> repurchased Rs. ${r.shareBuybackAmt.toLocaleString(
+          "en-IN"
+        )} L of treasury shares, enhancing shareholder value and EPS.`
+      );
+    }
+    if (r.dividendsPaid && r.dividendsPaid > 0) {
+      news.push(
+        `<b>${t.name}</b> rewarded shareholders with Rs. ${r.dividendsPaid.toLocaleString(
+          "en-IN"
+        )} L in cash dividend payouts.`
+      );
+    }
     if (r.vcDeal && r.vcDeal.funded > 0)
       news.push(
         `<b>${t.name}</b> closed a VC round: Rs. ${r.vcDeal.funded.toLocaleString(
@@ -1258,6 +1460,9 @@ export function newState(
         equityEm: 0,
         vcRaised: 0,
         bankrupt: false,
+        shares: 100, // 100 Lakh shares (10,000,000 shares)
+        stockPrice: 8.0, // Rs. 8.00 / share at inception
+        cumDividends: 0,
         dec: {
           ad: 180,
           alloc: { ...arch.alloc },
@@ -1273,6 +1478,9 @@ export function newState(
           hire: 0,
           bankTarget: 0,
           ltIssue: 0,
+          shareIssue: 0,
+          shareBuyback: 0,
+          dividendPerShare: 0,
           devCost: 0
         },
         hist: []
