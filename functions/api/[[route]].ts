@@ -221,6 +221,61 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       }
     }
 
+    // DELETE /api/d1/users/:id — permanently remove user from D1
+    if (
+      path.startsWith("/api/d1/users/") &&
+      !path.endsWith("/batch") &&
+      !path.endsWith("/remove-from-universe") &&
+      method === "DELETE"
+    ) {
+      const segments = path.split("/").filter(Boolean);
+      const userId = decodeURIComponent(segments[segments.length - 1]);
+      const email = url.searchParams.get("email") || "";
+
+      await env.DB.prepare(
+        `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
+      ).bind(userId, userId, userId, userId).run();
+
+      if (email) {
+        await env.DB.prepare(
+          `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
+        ).bind(email, email, email, email).run();
+      }
+
+      return new Response(JSON.stringify({ success: true, deletedId: userId, email }), {
+        status: 200,
+        headers: corsHeaders
+      });
+    }
+
+    // DELETE /api/d1/universes/:id — permanently remove universe from D1
+    if (path.startsWith("/api/d1/universes/") && method === "DELETE") {
+      const segments = path.split("/").filter(Boolean);
+      const universeId = decodeURIComponent(segments[segments.length - 1]);
+
+      await env.DB.prepare("DELETE FROM universes WHERE id = ?").bind(universeId).run();
+
+      return new Response(JSON.stringify({ success: true, deletedId: universeId }), {
+        status: 200,
+        headers: corsHeaders
+      });
+    }
+
+    // POST /api/d1/users/:id/remove-from-universe — detach user from universe
+    if (path.endsWith("/remove-from-universe") && method === "POST") {
+      const segments = path.split("/").filter(Boolean);
+      const userId = decodeURIComponent(segments[segments.length - 2]);
+
+      await env.DB.prepare(
+        `UPDATE users SET universe_id = '', team_i = -1 WHERE id = ?`
+      ).bind(userId).run();
+
+      return new Response(JSON.stringify({ success: true, userId }), {
+        status: 200,
+        headers: corsHeaders
+      });
+    }
+
     // Batch Users
     if (path === "/api/d1/users/batch" && method === "POST") {
       const { users } = await request.json();

@@ -2,12 +2,6 @@ import { User, Universe, UserRole } from "../types/auth";
 import { GameState } from "../types/simulation";
 import { newState } from "../engine/simulationEngine";
 import {
-  saveUsersBatchToFirestore,
-  saveUniverseToFirestore,
-  fetchUsersFromFirestore,
-  fetchUniversesFromFirestore
-} from "./firebase";
-import {
   saveUniverseUnified,
   saveUserUnified,
   saveUsersBatchUnified
@@ -34,9 +28,9 @@ export const DEFAULT_10_TEAMS = [
 export function createInitialUniverse(id = "univ_nitw_2026", name = "EV League - NIT Warangal MBA 2026", code = "NITW2026"): Universe {
   const initialGameState: GameState = newState(
     DEFAULT_10_TEAMS,
-    12,    // 12 quarters
-    25000, // initial quarterly market size
-    5      // VC opens Q5
+    12,
+    25000,
+    5
   );
 
   return {
@@ -80,7 +74,7 @@ export function getInitialUsers(universeId: string): User[] {
       role: "player",
       institution: "NIT Warangal MBA '26",
       universeId,
-      teamI: 0, // Team 1: Aurora EV Motors
+      teamI: 0,
       password: "student123"
     },
     {
@@ -90,7 +84,7 @@ export function getInitialUsers(universeId: string): User[] {
       role: "player",
       institution: "NIT Warangal MBA '26",
       universeId,
-      teamI: 1, // Team 2: CityRun Mobility
+      teamI: 1,
       password: "student123"
     },
     {
@@ -100,7 +94,7 @@ export function getInitialUsers(universeId: string): User[] {
       role: "player",
       institution: "NIT Warangal MBA '26",
       universeId,
-      teamI: 2, // Team 3: Zip GenZ
+      teamI: 2,
       password: "student123"
     }
   ];
@@ -111,7 +105,6 @@ export function loadUsers(): User[] {
     const data = localStorage.getItem(USERS_STORAGE_KEY);
     if (data) {
       const parsed: User[] = JSON.parse(data);
-      // Ensure admins and instructors have teamI = -1
       return parsed.map((u) => {
         if (u.role === "admin" || u.role === "instructor") {
           return { ...u, teamI: -1 };
@@ -187,7 +180,6 @@ export function saveActiveUniverse(universe: Universe) {
   }
   saveUniverses(universes);
   localStorage.setItem(ACTIVE_UNIVERSE_ID_KEY, universe.id);
-  // Sync to Cloudflare D1 and Firestore
   saveUniverseUnified(universe);
 }
 
@@ -213,7 +205,6 @@ export function saveCurrentUser(user: User | null) {
   }
 }
 
-// Check team capacity (Max 8 per team)
 export function getTeamMembersCount(users: User[], universeId: string, teamI: number): number {
   return users.filter((u) => u.universeId === universeId && u.role === "player" && u.teamI === teamI).length;
 }
@@ -238,8 +229,6 @@ export function getAccessibleUniverses(currentUser: User | null, allUniverses: U
     return assigned.length > 0 ? assigned : allUniverses;
   }
 
-  // Players / Students
   const userUniv = allUniverses.filter((u) => u.id === currentUser.universeId);
   return userUniv.length > 0 ? userUniv : allUniverses;
 }
-
