@@ -233,8 +233,17 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     if (!deletingStudent) return;
     const targetId = deletingStudent.id;
     const targetName = deletingStudent.name;
+    const targetEmail = deletingStudent.email;
 
-    const updated = users.filter((u) => u.id !== targetId && u.email !== targetId);
+    const uIdLower = (targetId || "").toLowerCase().trim();
+    const uEmailLower = (targetEmail || "").toLowerCase().trim();
+    const updated = users.filter((u) => {
+      const idMatch = (u.id || "").toLowerCase().trim() === uIdLower;
+      const emailMatch =
+        (u.email || "").toLowerCase().trim() === uIdLower ||
+        (Boolean(uEmailLower) && (u.email || "").toLowerCase().trim() === uEmailLower);
+      return !idMatch && !emailMatch;
+    });
 
     setUsers(updated);
     saveUsers(updated);
@@ -242,7 +251,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
     setDeletingStudent(null);
 
     try {
-      await deleteUserUnified(targetId);
+      await deleteUserUnified(targetId, targetEmail);
       setMsg({
         text: `Student account '${targetName}' permanently deleted from database.`,
         type: "success"

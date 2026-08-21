@@ -56,20 +56,29 @@ export async function saveUserToFirestore(user: User): Promise<void> {
   }
 }
 
-export async function deleteUserFromFirestore(userId: string): Promise<void> {
+export async function deleteUserFromFirestore(userId: string, userEmail?: string): Promise<void> {
   try {
-    // 1. Direct doc deletion by ID
-    await deleteDoc(doc(db, "users", userId)).catch(() => {});
-    // 2. Scan and remove any doc where doc.id, data.id or data.email matches
-    const snap = await getDocs(collection(db, "users"));
     const toDelete: Promise<void>[] = [];
-    const searchTarget = userId.toLowerCase().trim();
+    if (userId) {
+      toDelete.push(deleteDoc(doc(db, "users", userId)).catch(() => {}));
+    }
+    if (userEmail && userEmail !== userId) {
+      toDelete.push(deleteDoc(doc(db, "users", userEmail)).catch(() => {}));
+    }
+
+    // Scan and remove any doc where doc.id, data.id or data.email matches
+    const snap = await getDocs(collection(db, "users"));
+    const targets = [userId, userEmail].filter(Boolean).map((s) => s!.toLowerCase().trim());
     snap.forEach((d) => {
       const data = d.data();
       const docId = d.id?.toLowerCase().trim();
       const uId = data.id?.toLowerCase().trim();
       const uEmail = data.email?.toLowerCase().trim();
-      if (docId === searchTarget || uId === searchTarget || uEmail === searchTarget) {
+      if (
+        targets.includes(docId) ||
+        targets.includes(uId) ||
+        targets.includes(uEmail)
+      ) {
         toDelete.push(deleteDoc(d.ref));
       }
     });

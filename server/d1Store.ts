@@ -17,24 +17,85 @@ export function getD1Database() {
     // @ts-ignore
     const sqliteModule = require("node:sqlite");
     if (sqliteModule && sqliteModule.DatabaseSync) {
-      dbInstance = new sqliteModule.DatabaseSync(DB_FILE_PATH);
-      console.log("Connected to Cloudflare D1 Local SQLite Engine (node:sqlite) at:", DB_FILE_PATH);
-      initD1Tables(dbInstance);
-      return dbInstance;
+      dbInstance = createOrRecoverSQLite(sqliteModule);
+      if (dbInstance) {
+        return dbInstance;
+      }
     }
-  } catch (_err) {
-    // Gracefully fall back to local persistent store if node:sqlite is not exposed
+  } catch (err) {
+    console.warn("Failed to initialize node:sqlite, falling back to JSON engine:", err);
   }
 
-  // Resilient JSON-backed local SQLite engine
+  // Resilient JSON-backed local SQLite engine fallback
   dbInstance = createFallbackD1Engine();
   console.log("Using resilient Cloudflare D1 local persistence engine");
   return dbInstance;
 }
 
+function createOrRecoverSQLite(sqliteModule: any): any {
+  try {
+    // Test if existing database file is healthy
+    if (fs.existsSync(DB_FILE_PATH)) {
+      try {
+        const testDb = new sqliteModule.DatabaseSync(DB_FILE_PATH);
+        const check = testDb.prepare("PRAGMA integrity_check").all();
+        const isOk = Array.isArray(check) && check.length > 0 && (check[0].integrity_check === "ok" || check[0]["integrity_check"] === "ok");
+        if (!isOk) {
+          throw new Error("Integrity check failed: " + JSON.stringify(check));
+        }
+        testDb.exec("PRAGMA journal_mode = WAL;");
+        testDb.exec("PRAGMA synchronous = NORMAL;");
+        console.log("Connected to Cloudflare D1 Local SQLite Engine (node:sqlite) at:", DB_FILE_PATH);
+        initD1Tables(testDb);
+        return testDb;
+      } catch (corruptErr: any) {
+        console.warn("Detected corrupted SQLite database file, auto-repairing and recreating database:", corruptErr.message);
+        cleanupCorruptFiles();
+      }
+    }
+
+    // Create fresh healthy SQLite database
+    const freshDb = new sqliteModule.DatabaseSync(DB_FILE_PATH);
+    freshDb.exec("PRAGMA journal_mode = WAL;");
+    freshDb.exec("PRAGMA synchronous = NORMAL;");
+    console.log("Created fresh Cloudflare D1 SQLite database at:", DB_FILE_PATH);
+    initD1Tables(freshDb);
+    return freshDb;
+  } catch (e: any) {
+    console.error("Error creating SQLite database:", e);
+    return null;
+  }
+}
+
+function cleanupCorruptFiles() {
+  try {
+    const walFile = `${DB_FILE_PATH}-wal`;
+    const shmFile = `${DB_FILE_PATH}-shm`;
+    const backupCorrupt = `${DB_FILE_PATH}.corrupt_${Date.now()}`;
+    if (fs.existsSync(DB_FILE_PATH)) {
+      try {
+        fs.renameSync(DB_FILE_PATH, backupCorrupt);
+      } catch {
+        fs.unlinkSync(DB_FILE_PATH);
+      }
+    }
+    if (fs.existsSync(walFile)) {
+      try { fs.unlinkSync(walFile); } catch {}
+    }
+    if (fs.existsSync(shmFile)) {
+      try { fs.unlinkSync(shmFile); } catch {}
+    }
+  } catch (err) {
+    console.warn("Cleanup corrupt files warning:", err);
+  }
+}
+
 function initD1Tables(db: any) {
   try {
     db.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+
       CREATE TABLE IF NOT EXISTS universes (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -277,11 +338,17 @@ function createFallbackD1Engine() {
               }
             }
           }
-          if (lower.includes("delete from users") && params[0]) {
-            const target = params[0];
-            memoryStore.users.delete(target);
+          if (lower.includes("delete from users") && params.length > 0) {
+            const targets = params.map((p) => String(p).toLowerCase().trim());
             for (const [key, u] of memoryStore.users.entries()) {
-              if (key === target || u.id === target || u.email === target) {
+              const kLower = key.toLowerCase().trim();
+              const idLower = (u.id || "").toLowerCase().trim();
+              const emailLower = (u.email || "").toLowerCase().trim();
+              if (
+                targets.includes(kLower) ||
+                targets.includes(idLower) ||
+                targets.includes(emailLower)
+              ) {
                 memoryStore.users.delete(key);
               }
             }
@@ -320,10 +387,15 @@ function createFallbackD1Engine() {
       memoryStore.users.set(u.id, u);
       persist();
     },
-    deleteUser: (id: string) => {
-      memoryStore.users.delete(id);
+    deleteUser: (target: string) => {
+      if (!target) return;
+      const tLower = target.toLowerCase().trim();
+      memoryStore.users.delete(target);
       for (const [key, u] of memoryStore.users.entries()) {
-        if (key === id || u.id === id || u.email === id) {
+        const kLower = key.toLowerCase().trim();
+        const idLower = (u.id || "").toLowerCase().trim();
+        const emailLower = (u.email || "").toLowerCase().trim();
+        if (kLower === tLower || idLower === tLower || emailLower === tLower) {
           memoryStore.users.delete(key);
         }
       }

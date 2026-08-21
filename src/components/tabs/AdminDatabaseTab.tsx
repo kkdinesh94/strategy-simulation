@@ -222,7 +222,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   };
 
   // Custom confirmation modal states (replaces iframe-blocked native dialogs)
-  const [deletingUser, setDeletingUser] = useState<{ id: string; name: string } | null>(null);
+  const [deletingUser, setDeletingUser] = useState<{ id: string; name: string; email?: string } | null>(null);
   const [deletingUniverse, setDeletingUniverse] = useState<{ id: string; name: string } | null>(null);
   const [deletingTeam, setDeletingTeam] = useState<{ index: number; name: string; memberCount: number } | null>(null);
   const [isAddTeamModalOpen, setIsAddTeamModalOpen] = useState<boolean>(false);
@@ -706,8 +706,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     });
   };
 
-  const handleDeleteUser = (userId: string, name: string) => {
-    setDeletingUser({ id: userId, name });
+  const handleDeleteUser = (userId: string, name: string, email?: string) => {
+    setDeletingUser({ id: userId, name, email });
   };
 
   const handleAutoDistributeAllUnassigned = () => {
@@ -1585,7 +1585,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteUser(u.id, u.name)}
+                              onClick={() => handleDeleteUser(u.id, u.name, u.email)}
                               className="p-1.5 text-[#C83E2B] hover:bg-red-50 rounded transition"
                               title="Delete User Permanently"
                             >
@@ -2147,12 +2147,21 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 onClick={async () => {
                   const targetId = deletingUser.id;
                   const targetName = deletingUser.name;
+                  const targetEmail = deletingUser.email || "";
                   setDeletingUser(null);
-                  const remaining = allUsers.filter((u) => u.id !== targetId && u.email !== targetId);
+                  const uIdLower = (targetId || "").toLowerCase().trim();
+                  const uEmailLower = (targetEmail || "").toLowerCase().trim();
+                  const remaining = allUsers.filter((u) => {
+                    const idMatch = (u.id || "").toLowerCase().trim() === uIdLower;
+                    const emailMatch =
+                      (u.email || "").toLowerCase().trim() === uIdLower ||
+                      (Boolean(uEmailLower) && (u.email || "").toLowerCase().trim() === uEmailLower);
+                    return !idMatch && !emailMatch;
+                  });
                   saveUsers(remaining);
                   onUsersUpdate?.(remaining);
                   try {
-                    await deleteUserUnified(targetId);
+                    await deleteUserUnified(targetId, targetEmail);
                     onNotify(`User '${targetName}' permanently deleted from Cloudflare D1.`);
                     await onRefreshAll();
                   } catch (err: any) {

@@ -131,14 +131,22 @@ export async function saveUserUnified(user: User): Promise<void> {
 /**
  * Delete user permanently across Cloudflare D1, Firestore, and local state
  */
-export async function deleteUserUnified(userId: string): Promise<void> {
+export async function deleteUserUnified(userId: string, userEmail?: string): Promise<void> {
   // 1. Remove from local storage immediately to prevent UI ghosting
   try {
     const local = localStorage.getItem("ev_venture_league_users_v2");
     if (local) {
       const parsed: User[] = JSON.parse(local);
       if (Array.isArray(parsed)) {
-        const filtered = parsed.filter((u) => u.id !== userId && u.email !== userId);
+        const uIdLower = (userId || "").toLowerCase().trim();
+        const uEmailLower = (userEmail || "").toLowerCase().trim();
+        const filtered = parsed.filter((u) => {
+          const idMatch = (u.id || "").toLowerCase().trim() === uIdLower;
+          const emailMatch =
+            (u.email || "").toLowerCase().trim() === uIdLower ||
+            (Boolean(uEmailLower) && (u.email || "").toLowerCase().trim() === uEmailLower);
+          return !idMatch && !emailMatch;
+        });
         localStorage.setItem("ev_venture_league_users_v2", JSON.stringify(filtered));
       }
     }
@@ -146,8 +154,8 @@ export async function deleteUserUnified(userId: string): Promise<void> {
 
   // 2. Delete from D1 (primary backend) and Firestore (mirror)
   await Promise.allSettled([
-    deleteUserFromD1(userId),
-    deleteUserFromFirestore(userId)
+    deleteUserFromD1(userId, userEmail),
+    deleteUserFromFirestore(userId, userEmail)
   ]);
 }
 

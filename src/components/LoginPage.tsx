@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { User, Universe, UserRole } from "../types/auth";
 import { loadUsers, saveUsers, loadUniverses, saveCurrentUser, getTeamMembersCount } from "../lib/authStore";
-import { subscribeUsers, fetchUsersFromFirestore } from "../lib/firebase";
-import { saveUserUnified } from "../lib/dbProvider";
+import { saveUserUnified, fetchUsersUnified } from "../lib/dbProvider";
+import { fetchUsersFromFirestore, subscribeUsers } from "../lib/firebase";
 import {
   Lock,
   Mail,

@@ -210,9 +210,10 @@ export async function saveUserToD1(user: User): Promise<boolean> {
 /**
  * Delete a User in Cloudflare D1
  */
-export async function deleteUserFromD1(userId: string): Promise<boolean> {
+export async function deleteUserFromD1(userId: string, userEmail?: string): Promise<boolean> {
   try {
-    const res = await safeD1Fetch(`/api/d1/users/${userId}`, {
+    const queryParam = userEmail ? `?email=${encodeURIComponent(userEmail)}` : "";
+    const res = await safeD1Fetch(`/api/d1/users/${encodeURIComponent(userId)}${queryParam}`, {
       method: "DELETE"
     });
     return Boolean(res && res.ok);

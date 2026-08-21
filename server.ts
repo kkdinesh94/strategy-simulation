@@ -321,15 +321,28 @@ async function startServer() {
   app.delete("/api/d1/users/:id", (req, res) => {
     try {
       const id = req.params.id;
-      if (d1.deleteUser) {
+      const email = (req.query.email as string) || "";
+      if (typeof d1.deleteUser === "function") {
         d1.deleteUser(id);
+        if (email) {
+          d1.deleteUser(email);
+        }
       }
       try {
-        d1.prepare("DELETE FROM users WHERE id = ? OR email = ?").run(id, id);
+        const targets = [id, email].filter(Boolean);
+        for (const t of targets) {
+          d1.prepare(`
+            DELETE FROM users 
+            WHERE id = ? 
+               OR email = ? 
+               OR LOWER(id) = LOWER(?) 
+               OR LOWER(email) = LOWER(?)
+          `).run(t, t, t, t);
+        }
       } catch (e) {
-        console.warn("SQL delete user warn:", e);
+        console.warn("SQL delete user warning:", e);
       }
-      res.json({ success: true, deletedId: id });
+      res.json({ success: true, deletedId: id, email });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
