@@ -13,14 +13,6 @@ import {
   getAccessibleUniverses
 } from "./lib/authStore";
 import {
-  subscribeUniverse,
-  subscribeUsers,
-  subscribeAllUniverses,
-  fetchUsersFromFirestore,
-  fetchUniversesFromFirestore,
-  saveUserToFirestore
-} from "./lib/firebase";
-import {
   fetchUsersUnified,
   fetchUniversesUnified,
   saveUserUnified,
@@ -143,7 +135,7 @@ export default function App() {
     };
   }, [currentUser?.id]);
 
-  const refreshAllDataFromFirestore = async () => {
+  const refreshAllData = async () => {
     try {
       const remoteUsers = await fetchUsersUnified();
       if (Array.isArray(remoteUsers)) {
@@ -174,58 +166,7 @@ export default function App() {
 
   // Initial cloud fetch on mount
   useEffect(() => {
-    refreshAllDataFromFirestore();
-  }, []);
-
-  // Real-time Firestore active universe listener (only when explicitly in Firebase mode)
-  useEffect(() => {
-    if (!universe?.id) return;
-    if (getActiveDatabaseProvider() !== "firebase") return;
-
-    const unsubscribeUniv = subscribeUniverse(universe.id, (updatedUniv) => {
-      if (updatedUniv && updatedUniv.id === universe.id) {
-        setUniverse(updatedUniv);
-      }
-    });
-
-    return () => {
-      unsubscribeUniv();
-    };
-  }, [universe?.id]);
-
-  // Real-time Firestore global listeners (only when explicitly in Firebase mode)
-  useEffect(() => {
-    if (getActiveDatabaseProvider() !== "firebase") return;
-
-    const unsubscribeAllUnivs = subscribeAllUniverses((updatedUnivs) => {
-      if (updatedUnivs && updatedUnivs.length > 0) {
-        setAllUniverses(updatedUnivs);
-        saveUniverses(updatedUnivs);
-        // If current active universe is no longer in the list (e.g. was deleted remotely), switch cleanly
-        setUniverse((prev) => {
-          if (!prev) return updatedUnivs[0];
-          const exists = updatedUnivs.find((u) => u.id === prev.id);
-          if (!exists) {
-            const fallback = updatedUnivs[0];
-            saveActiveUniverse(fallback);
-            return fallback;
-          }
-          return prev;
-        });
-      }
-    });
-
-    const unsubscribeUsers = subscribeUsers((updatedUsers) => {
-      if (updatedUsers && updatedUsers.length > 0) {
-        setAllUsers(updatedUsers);
-        saveUsers(updatedUsers);
-      }
-    });
-
-    return () => {
-      unsubscribeAllUnivs();
-      unsubscribeUsers();
-    };
+    refreshAllData();
   }, []);
 
   // Update GameState when Universe changes
@@ -632,7 +573,7 @@ export default function App() {
               setAllUsers(updatedUsers);
               saveUsers(updatedUsers);
             }}
-            onRefreshAll={refreshAllDataFromFirestore}
+            onRefreshAll={refreshAllData}
           />
         )}
 
@@ -659,7 +600,7 @@ export default function App() {
             activeUniverse={universe}
             allUsers={allUsers}
             allUniverses={allUniverses}
-            onRefreshAll={refreshAllDataFromFirestore}
+            onRefreshAll={refreshAllData}
             onSelectActiveUniverse={handleSelectUniverse}
             onUsersUpdate={(updatedUsers) => {
               setAllUsers(updatedUsers);

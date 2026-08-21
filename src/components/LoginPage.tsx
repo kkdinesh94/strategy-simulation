@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { User, Universe, UserRole } from "../types/auth";
 import { loadUsers, saveUsers, loadUniverses, saveCurrentUser, getTeamMembersCount } from "../lib/authStore";
 import { saveUserUnified, fetchUsersUnified } from "../lib/dbProvider";
-import { fetchUsersFromFirestore, subscribeUsers } from "../lib/firebase";
 import {
   Lock,
   Mail,
@@ -29,23 +28,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [users, setUsers] = useState<User[]>(() => loadUsers());
   const [universes] = useState<Universe[]>(() => loadUniverses());
 
-  // Subscribe to realtime users from Firestore
+  // Fetch latest users from D1 on mount
   useEffect(() => {
-    fetchUsersFromFirestore().then((remoteUsers) => {
+    fetchUsersUnified().then((remoteUsers) => {
       if (remoteUsers && remoteUsers.length > 0) {
         setUsers(remoteUsers);
         saveUsers(remoteUsers);
       }
     });
-
-    const unsubscribe = subscribeUsers((remoteUsers) => {
-      if (remoteUsers && remoteUsers.length > 0) {
-        setUsers(remoteUsers);
-        saveUsers(remoteUsers);
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
 
   // Form State
@@ -94,9 +84,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       (u) => u.email.toLowerCase() === email.trim().toLowerCase()
     );
 
-    // Fallback: If user not found in local state, query Firestore directly
+    // Fallback: If user not found in local state, query D1 directly
     if (!foundUser) {
-      const remoteUsers = await fetchUsersFromFirestore();
+      const remoteUsers = await fetchUsersUnified();
       if (remoteUsers && remoteUsers.length > 0) {
         currentUsersList = remoteUsers;
         setUsers(remoteUsers);
