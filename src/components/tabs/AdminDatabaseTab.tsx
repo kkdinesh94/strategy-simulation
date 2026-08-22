@@ -220,6 +220,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [newTeamIsBotInput, setNewTeamIsBotInput] = useState<boolean>(false);
   const [editingInstructorUniv, setEditingInstructorUniv] = useState<Universe | null>(null);
   const [instructorEmailInput, setInstructorEmailInput] = useState<string>("");
+  const [editingUniverseName, setEditingUniverseName] = useState<Universe | null>(null);
+  const [universeNameInput, setUniverseNameInput] = useState<string>("");
 
   // Batch User Generator State
   const [batchPrefix, setBatchPrefix] = useState<string>("student");
@@ -244,6 +246,30 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       onRefreshAll();
     } catch (err: any) {
       alert("Failed to update instructor email: " + err.message);
+    }
+  };
+
+  const handleRenameUniverse = async (targetU: Universe, newName: string) => {
+    const trimmedName = newName.trim();
+    if (!trimmedName) return;
+
+    const updated: Universe = {
+      ...targetU,
+      name: trimmedName
+    };
+
+    try {
+      await saveUniverseUnified(updated);
+      const updatedList = allUniverses.map((u) => (u.id === updated.id ? updated : u));
+      saveUniverses(updatedList);
+      onUniversesUpdate?.(updatedList);
+      if (activeUniverse.id === updated.id) {
+        onSelectActiveUniverse(updated);
+      }
+      onNotify(`Universe renamed to '${updated.name}'.`);
+      onRefreshAll();
+    } catch (err: any) {
+      alert("Failed to rename universe: " + err.message);
     }
   };
 
@@ -1004,6 +1030,18 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   >
                     <Plus className="w-4 h-4" /> Create New Universe
                   </button>
+
+                  {targetUniv && (
+                    <button
+                      onClick={() => {
+                        setUniverseNameInput(targetUniv.name);
+                        setEditingUniverseName(targetUniv);
+                      }}
+                      className="px-3.5 py-2 bg-white text-[#1F2022] hover:bg-[#F3F0EA] border border-[#E0DCD3] rounded-lg text-xs font-semibold transition flex items-center gap-1.5"
+                    >
+                      <Edit3 className="w-4 h-4" /> Rename Universe
+                    </button>
+                  )}
 
                   {targetUniv && (
                     <button
@@ -2238,6 +2276,60 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 Delete Universe
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RENAME UNIVERSE */}
+      {editingUniverseName && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-md w-full p-6 text-[#1F2022] space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
+              <h3 className="font-bold text-base text-[#1F2022]">Rename Universe</h3>
+              <button onClick={() => setEditingUniverseName(null)} className="p-1 text-[#8A8C90] hover:text-[#1F2022]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const univObj = editingUniverseName;
+                const newName = universeNameInput.trim();
+                if (!newName) return;
+                setEditingUniverseName(null);
+                handleRenameUniverse(univObj, newName);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[#5A5C60] mb-1">
+                  Universe Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  value={universeNameInput}
+                  onChange={(e) => setUniverseNameInput(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-[#E0DCD3] rounded-lg text-xs text-[#1F2022]"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
+                <button
+                  type="button"
+                  onClick={() => setEditingUniverseName(null)}
+                  className="px-3.5 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold text-[#1F2022] hover:bg-[#F3F0EA] transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 bg-[#1F2022] hover:bg-[#343538] text-white rounded-lg text-xs font-semibold shadow-2xs transition"
+                >
+                  Save Name
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
