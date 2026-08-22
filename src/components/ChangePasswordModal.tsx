@@ -165,7 +165,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       const updatedUsers = existingUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
       saveUsers(updatedUsers);
 
-      // 3. Save to Unified DB (Cloudflare D1 & Firestore)
+      // 3. Save to the unified Cloudflare D1 provider
       await saveUserUnified(updatedUser);
 
       onNotify("Your password has been changed successfully!");

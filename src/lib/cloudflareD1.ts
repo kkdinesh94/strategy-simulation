@@ -216,7 +216,9 @@ export async function deleteUserFromD1(userId: string, userEmail?: string): Prom
     const res = await safeD1Fetch(`/api/d1/users/${encodeURIComponent(userId)}${queryParam}`, {
       method: "DELETE"
     });
-    return Boolean(res && res.ok);
+    if (!res || !res.ok) return false;
+    const data = await res.json();
+    return data.success === true && Number(data.deletedCount || 0) > 0;
   } catch (err) {
     console.warn("Cloudflare D1 delete user note:", err);
     return false;
@@ -282,11 +284,11 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
 }
 
 /**
- * 1-Click Migration Engine: Migrates all active data from Firebase Firestore to Cloudflare D1
+ * 1-Click Migration Engine: Verifies and writes the current application data to Cloudflare D1
  */
-export async function migrateFirestoreToD1(
-  firestoreUsers: User[],
-  firestoreUniverses: Universe[]
+export async function migrateDataToD1(
+  users: User[],
+  universes: Universe[]
 ): Promise<MigrationSummary> {
   const errors: string[] = [];
   let univCount = 0;
@@ -297,7 +299,7 @@ export async function migrateFirestoreToD1(
     await initD1Schema();
 
     // 2. Migrate Universes
-    for (const univ of firestoreUniverses) {
+    for (const univ of universes) {
       const ok = await saveUniverseToD1(univ);
       if (ok) {
         univCount++;
@@ -307,13 +309,13 @@ export async function migrateFirestoreToD1(
     }
 
     // 3. Migrate Users (in batch)
-    if (firestoreUsers.length > 0) {
-      const ok = await saveUsersBatchToD1(firestoreUsers);
+    if (users.length > 0) {
+      const ok = await saveUsersBatchToD1(users);
       if (ok) {
-        userCount = firestoreUsers.length;
+        userCount = users.length;
       } else {
         // Fallback item by item
-        for (const u of firestoreUsers) {
+        for (const u of users) {
           const uOk = await saveUserToD1(u);
           if (uOk) userCount++;
           else errors.push(`Failed to migrate user ${u.name} (${u.email})`);

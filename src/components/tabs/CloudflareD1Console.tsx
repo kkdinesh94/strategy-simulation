@@ -4,7 +4,7 @@ import {
   checkD1Status,
   initD1Schema,
   executeD1Query,
-  migrateFirestoreToD1,
+  migrateDataToD1,
   generateD1SqlDump,
   D1StatusResponse,
   D1QueryResult,
@@ -19,7 +19,6 @@ import {
 } from "../../lib/dbProvider";
 import {
   Cloud,
-  Database,
   RefreshCw,
   Zap,
   Play,
@@ -95,7 +94,7 @@ export const CloudflareD1Console: React.FC<CloudflareD1ConsoleProps> = ({
   const handleProviderChange = (provider: DatabaseProviderType) => {
     setActiveDatabaseProvider(provider);
     setLocalProvider(provider);
-    onNotify(`Database Engine switched to ${provider === "cloudflare_d1" ? "Cloudflare D1" : provider === "hybrid" ? "Hybrid Sync" : "Firebase Firestore"}.`);
+    onNotify("Database Engine switched to Cloudflare D1.");
   };
 
   const handleRunMigration = async () => {
@@ -118,7 +117,7 @@ export const CloudflareD1Console: React.FC<CloudflareD1ConsoleProps> = ({
       addLog(`Step 2/4: Migrating ${allUniverses.length} simulation universe(s) & complete GameState trees...`);
       addLog(`Step 3/4: Batch migrating ${allUsers.length} user account(s) & RBAC credentials...`);
 
-      const summary = await migrateFirestoreToD1(allUsers, allUniverses);
+      const summary = await migrateDataToD1(allUsers, allUniverses);
       setMigrationSummary(summary);
 
       if (summary.success) {
@@ -255,45 +254,6 @@ export const CloudflareD1Console: React.FC<CloudflareD1ConsoleProps> = ({
               </div>
             </button>
 
-            <button
-              onClick={() => handleProviderChange("hybrid")}
-              className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
-                activeProvider === "hybrid"
-                  ? "border-blue-500 bg-blue-50/70 text-blue-950 ring-2 ring-blue-400/20"
-                  : "border-slate-200 hover:bg-slate-50 text-slate-700"
-              }`}
-            >
-              <div className={`p-2 rounded-lg mt-0.5 ${activeProvider === "hybrid" ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"}`}>
-                <Zap className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm">Hybrid Sync (D1 + Firestore)</span>
-                  {activeProvider === "hybrid" && <Check className="w-4 h-4 text-blue-600" />}
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">Writes simultaneously to both D1 and Firestore for seamless backup.</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => handleProviderChange("firebase")}
-              className={`w-full text-left p-3.5 rounded-xl border transition-all flex items-start gap-3 ${
-                activeProvider === "firebase"
-                  ? "border-orange-500 bg-orange-50/70 text-orange-950 ring-2 ring-orange-400/20"
-                  : "border-slate-200 hover:bg-slate-50 text-slate-700"
-              }`}
-            >
-              <div className={`p-2 rounded-lg mt-0.5 ${activeProvider === "firebase" ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600"}`}>
-                <Database className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-sm">Firebase Firestore (Legacy)</span>
-                  {activeProvider === "firebase" && <Check className="w-4 h-4 text-orange-600" />}
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">Original Google Cloud Firestore document store.</p>
-              </div>
-            </button>
           </div>
         </div>
 
@@ -354,9 +314,9 @@ export const CloudflareD1Console: React.FC<CloudflareD1ConsoleProps> = ({
             <div className="flex items-center gap-2 text-amber-400 font-semibold text-xs uppercase tracking-wider">
               <Sparkles className="w-4 h-4" /> 1-Click Migration
             </div>
-            <h3 className="text-lg font-bold text-white mt-1">Migrate Firestore &rarr; Cloudflare D1</h3>
+            <h3 className="text-lg font-bold text-white mt-1">Verify & Save Current Data to Cloudflare D1</h3>
             <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-              Automatically scans all active universes, team configurations, student accounts, and history from Firebase Firestore and writes them safely into your Cloudflare D1 database.
+              Verifies the current universe and account records, then writes them safely into your Cloudflare D1 database.
             </p>
           </div>
 
@@ -713,7 +673,7 @@ CREATE TABLE IF NOT EXISTS users (
                 Why Cloudflare D1 + Workers?
               </h4>
               <p className="text-xs text-amber-900 leading-relaxed">
-                Cloudflare D1 runs on SQLite at the edge, offering microsecond latency, zero cold starts, zero-maintenance relational data storage, and zero egress fees. By moving from Firestore to D1, all student simulation states, decisions, and leaderboards execute directly at the closest Cloudflare edge point to the student.
+                Cloudflare D1 runs on SQLite at the edge, giving the game engine one relational source of truth for simulation state, decisions, and leaderboards.
               </p>
             </div>
           </div>

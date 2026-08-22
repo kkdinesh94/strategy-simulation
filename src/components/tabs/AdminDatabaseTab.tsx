@@ -10,19 +10,7 @@ import {
   createInitialUniverse,
   DEFAULT_10_TEAMS
 } from "../../lib/authStore";
-import {
-  fetchUsersFromFirestore,
-  fetchUniversesFromFirestore,
-  saveUserToFirestore,
-  deleteUserFromFirestore,
-  saveUsersBatchToFirestore,
-  saveUniverseToFirestore,
-  deleteUniverseFromFirestore,
-  rawFetchCollectionDocs,
-  rawSetDocInFirestore,
-  rawDeleteDocInFirestore,
-  testConnection
-} from "../../lib/firebase";
+import { checkD1Status, executeD1Query } from "../../lib/cloudflareD1";
 import {
   saveUniverseUnified,
   saveUserUnified,
@@ -263,15 +251,19 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
   useEffect(() => {
-    testConnection().then((ok) => setIsConnected(ok));
+    checkD1Status().then((result) => setIsConnected(result.status === "connected"));
   }, []);
 
   // Fetch documents for raw collection explorer
   const loadCollectionDocs = async (collName: string) => {
     setLoadingExplorer(true);
     try {
-      const docs = await rawFetchCollectionDocs(collName);
-      setCollectionDocs(docs);
+      const query = collName === "users"
+        ? "SELECT * FROM users ORDER BY name ASC;"
+        : "SELECT * FROM universes ORDER BY created_at DESC;";
+      const result = await executeD1Query(query);
+      if (!result.success) throw new Error(result.error || "D1 query failed");
+      setCollectionDocs((result.results || []).map((doc: any) => ({ id: doc.id, ...doc })));
     } catch (err) {
       console.error("Error fetching collection docs:", err);
       onNotify(`Failed to fetch collection ${collName}`);
@@ -1683,7 +1675,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
               type="submit"
               className="w-full py-2.5 bg-[#1F2022] hover:bg-[#343538] text-white rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm transition flex items-center justify-center gap-2"
             >
-              <Zap className="w-4 h-4 text-amber-400" /> Generate & Sync Accounts to Firestore
+              <Zap className="w-4 h-4 text-amber-400" /> Generate & Save Accounts to D1
             </button>
           </form>
         </div>
@@ -1721,7 +1713,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           </div>
 
           {loadingExplorer ? (
-            <div className="p-12 text-center text-xs font-mono text-[#5A5C60]">Loading documents from Firestore...</div>
+            <div className="p-12 text-center text-xs font-mono text-[#5A5C60]">Loading records from Cloudflare D1...</div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {collectionDocs.map((doc) => (
@@ -1750,19 +1742,19 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
         <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-6 shadow-2xs space-y-4">
           <h2 className="text-base font-bold text-[#1F2022] flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            <span>Firebase Security Rules & Blueprint Schema Audit</span>
+            <span>Cloudflare D1 Schema & Security Audit</span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
             <div className="p-4 bg-white border border-[#E0DCD3] rounded-lg space-y-2">
-              <strong className="text-[#1F2022] block font-bold">firebase-blueprint.json Schema:</strong>
+              <strong className="text-[#1F2022] block font-bold">D1 schema:</strong>
               <p className="text-[11px] text-[#5A5C60]">
-                Defines declarative collections: <code>users</code> (keyed by user ID) and <code>universes</code> (keyed by universe ID).
+                Defines relational tables for <code>users</code> and <code>universes</code>, keyed by their stable IDs.
               </p>
             </div>
             <div className="p-4 bg-white border border-[#E0DCD3] rounded-lg space-y-2">
-              <strong className="text-[#1F2022] block font-bold">firestore.rules Security:</strong>
+              <strong className="text-[#1F2022] block font-bold">D1 API security:</strong>
               <p className="text-[11px] text-[#5A5C60]">
-                Configured with open-access prototyping mode to allow seamless realtime synchronization during simulation execution.
+                All reads and writes are routed through the Cloudflare D1 API and should be protected by the application authentication layer.
               </p>
             </div>
           </div>
@@ -2041,7 +2033,11 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                 onClick={async () => {
                   try {
                     const parsed = JSON.parse(editingDoc.jsonStr);
-                    await rawSetDocInFirestore(editingDoc.collection, editingDoc.id, parsed);
+                    if (editingDoc.collection === "users") {
+                      await saveUserUnified({ ...parsed, id: editingDoc.id } as User);
+                    } else {
+                      await saveUniverseUnified({ ...parsed, id: editingDoc.id } as Universe);
+                    }
                     onNotify(`Updated document ${editingDoc.id}`);
                     setEditingDoc(null);
                     loadCollectionDocs(editingDoc.collection);
@@ -2158,10 +2154,10 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                       (Boolean(uEmailLower) && (u.email || "").toLowerCase().trim() === uEmailLower);
                     return !idMatch && !emailMatch;
                   });
-                  saveUsers(remaining);
-                  onUsersUpdate?.(remaining);
                   try {
                     await deleteUserUnified(targetId, targetEmail);
+                    saveUsers(remaining);
+                    onUsersUpdate?.(remaining);
                     onNotify(`User '${targetName}' permanently deleted from Cloudflare D1.`);
                     await onRefreshAll();
                   } catch (err: any) {

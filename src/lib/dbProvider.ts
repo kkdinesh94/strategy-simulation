@@ -12,14 +12,14 @@ import {
 } from "./cloudflareD1";
 import { getInitialUsers, createInitialUniverse, saveUsers, saveUniverses } from "./authStore";
 
-export type DatabaseProviderType = "cloudflare_d1" | "firebase" | "hybrid"; // firebase/hybrid treated as cloudflare_d1
+export type DatabaseProviderType = "cloudflare_d1";
 
 const PROVIDER_STORAGE_KEY = "ev_venture_league_active_db_provider_v1";
 
 export function getActiveDatabaseProvider(): DatabaseProviderType {
   try {
     const saved = localStorage.getItem(PROVIDER_STORAGE_KEY);
-    if (saved === "cloudflare_d1" || saved === "firebase" || saved === "hybrid") {
+    if (saved === "cloudflare_d1") {
       return saved;
     }
   } catch (e) {
@@ -28,9 +28,9 @@ export function getActiveDatabaseProvider(): DatabaseProviderType {
   return "cloudflare_d1";
 }
 
-export function setActiveDatabaseProvider(provider: DatabaseProviderType) {
+export function setActiveDatabaseProvider(_provider: DatabaseProviderType) {
   try {
-    localStorage.setItem(PROVIDER_STORAGE_KEY, provider);
+    localStorage.setItem(PROVIDER_STORAGE_KEY, "cloudflare_d1");
   } catch (e) {
     console.error("Error saving db provider:", e);
   }
@@ -85,6 +85,11 @@ export async function saveUserUnified(user: User): Promise<void> {
 }
 
 export async function deleteUserUnified(userId: string, userEmail?: string): Promise<void> {
+  const deleted = await deleteUserFromD1(userId, userEmail);
+  if (!deleted) {
+    throw new Error("Cloudflare D1 did not delete a matching user.");
+  }
+
   try {
     const local = localStorage.getItem("ev_venture_league_users_v2");
     if (local) {
@@ -104,7 +109,6 @@ export async function deleteUserUnified(userId: string, userEmail?: string): Pro
     }
   } catch (e) {}
 
-  await deleteUserFromD1(userId, userEmail);
 }
 
 export async function removeUserFromUniverseUnified(user: User): Promise<void> {

@@ -232,18 +232,21 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const userId = decodeURIComponent(segments[segments.length - 1]);
       const email = url.searchParams.get("email") || "";
 
-      await env.DB.prepare(
+      let deletedCount = 0;
+      const result = await env.DB.prepare(
         `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
       ).bind(userId, userId, userId, userId).run();
+      deletedCount += Number(result?.meta?.changes || 0);
 
       if (email) {
-        await env.DB.prepare(
+        const emailResult = await env.DB.prepare(
           `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
         ).bind(email, email, email, email).run();
+        deletedCount += Number(emailResult?.meta?.changes || 0);
       }
 
-      return new Response(JSON.stringify({ success: true, deletedId: userId, email }), {
-        status: 200,
+      return new Response(JSON.stringify({ success: deletedCount > 0, deletedId: userId, email, deletedCount }), {
+        status: deletedCount > 0 ? 200 : 404,
         headers: corsHeaders
       });
     }

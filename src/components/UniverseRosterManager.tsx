@@ -245,13 +245,13 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
       return !idMatch && !emailMatch;
     });
 
-    setUsers(updated);
-    saveUsers(updated);
-    onUsersUpdate?.(updated);
     setDeletingStudent(null);
 
     try {
       await deleteUserUnified(targetId, targetEmail);
+      setUsers(updated);
+      saveUsers(updated);
+      onUsersUpdate?.(updated);
       setMsg({
         text: `Student account '${targetName}' permanently deleted from database.`,
         type: "success"

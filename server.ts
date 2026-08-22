@@ -322,27 +322,23 @@ async function startServer() {
     try {
       const id = req.params.id;
       const email = (req.query.email as string) || "";
-      if (typeof d1.deleteUser === "function") {
-        d1.deleteUser(id);
-        if (email) {
-          d1.deleteUser(email);
-        }
-      }
+      let deletedCount = 0;
       try {
         const targets = [id, email].filter(Boolean);
         for (const t of targets) {
-          d1.prepare(`
+          const result = d1.prepare(`
             DELETE FROM users 
             WHERE id = ? 
                OR email = ? 
                OR LOWER(id) = LOWER(?) 
                OR LOWER(email) = LOWER(?)
           `).run(t, t, t, t);
+          deletedCount += Number(result?.changes || 0);
         }
       } catch (e) {
         console.warn("SQL delete user warning:", e);
       }
-      res.json({ success: true, deletedId: id, email });
+      res.status(deletedCount > 0 ? 200 : 404).json({ success: deletedCount > 0, deletedId: id, email, deletedCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
