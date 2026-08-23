@@ -90,6 +90,26 @@ async function startServer() {
     } catch (err: any) { return res.status(500).json({ error: err.message }); }
   });
 
+  app.all("/api/charging-network", (req, res) => {
+    try {
+      const teamId = String(req.body?.teamId ?? req.query.teamId ?? "").trim();
+      const quarter = Number(req.body?.quarter ?? req.query.quarter);
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1) return res.status(400).json({ error: "teamId and a positive integer quarter are required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS charging_network (team_id TEXT NOT NULL, region TEXT NOT NULL, quarter INTEGER NOT NULL, charger_count INTEGER NOT NULL DEFAULT 0, charger_type TEXT NOT NULL CHECK (charger_type IN ('Level 2 AC', 'DC Fast Charge', 'Ultra-rapid 350kW')), installation_cost REAL NOT NULL DEFAULT 0, quarterly_maintenance REAL NOT NULL DEFAULT 0, demand_boost_pct REAL NOT NULL DEFAULT 0, UNIQUE (team_id, region, quarter))");
+      if (req.method === "GET") return res.json({ investments: d1.prepare("SELECT * FROM charging_network WHERE team_id = ? AND quarter <= ? ORDER BY quarter, region").all(teamId, quarter) });
+      const typeConfig: Record<string, [number, number, number]> = { "Level 2 AC": [0.08, 0.12, 0.006], "DC Fast Charge": [0.18, 0.35, 0.014], "Ultra-rapid 350kW": [0.3, 0.7, 0.025] };
+      const investments = Array.isArray(req.body?.investments) ? req.body.investments : [];
+      if (!investments.length) return res.status(400).json({ error: "At least one regional investment is required." });
+      const statements = investments.map((investment: any) => {
+        const region = String(investment.region || "").trim(); const chargerType = String(investment.charger_type || ""); const count = Math.max(0, Math.floor(Number(investment.charger_count) || 0)); const config = typeConfig[chargerType];
+        if (!region || !config) throw new Error("Each investment needs a valid region and charger type.");
+        return { statement: d1.prepare("INSERT INTO charging_network (team_id, region, quarter, charger_count, charger_type, installation_cost, quarterly_maintenance, demand_boost_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(team_id, region, quarter) DO UPDATE SET charger_count = excluded.charger_count, charger_type = excluded.charger_type, installation_cost = excluded.installation_cost, quarterly_maintenance = excluded.quarterly_maintenance, demand_boost_pct = excluded.demand_boost_pct"), params: [teamId, region, quarter, count, chargerType, count * config[1], count * config[2], count * config[0]] };
+      });
+      statements.forEach((statement: any) => statement.statement.run(...statement.params));
+      return res.json({ success: true });
+    } catch (err: any) { return res.status(500).json({ error: err.message || "Charging strategy could not be saved." }); }
+  });
+
   app.get("/api/strategy-plans", (req, res) => {
     try {
       const universeId = String(req.query.universeId || "").trim();

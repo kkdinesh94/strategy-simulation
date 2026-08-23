@@ -42,6 +42,7 @@ import QuarterChecklist from "./components/QuarterChecklist";
 import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
+import ChargingStrategy from "./components/ChargingStrategy";
 
 export default function App() {
   // Authentication & Session State
@@ -609,6 +610,10 @@ export default function App() {
             onNotify={showNotification}
             universeId={universe.id}
           />
+        )}
+
+        {activeTab === "charging" && (
+          <ChargingStrategy teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
         {activeTab === "performance" && (

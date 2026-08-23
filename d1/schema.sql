@@ -173,6 +173,22 @@ CREATE TABLE IF NOT EXISTS financing_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_financing_decisions_team_quarter ON financing_decisions(team_id, quarter);
 
+-- 3a. Regional charging infrastructure investments.
+CREATE TABLE IF NOT EXISTS charging_network (
+    team_id TEXT NOT NULL,
+    region TEXT NOT NULL,
+    quarter INTEGER NOT NULL,
+    charger_count INTEGER NOT NULL DEFAULT 0,
+    charger_type TEXT NOT NULL CHECK (charger_type IN ('Level 2 AC', 'DC Fast Charge', 'Ultra-rapid 350kW')),
+    installation_cost REAL NOT NULL DEFAULT 0,
+    quarterly_maintenance REAL NOT NULL DEFAULT 0,
+    demand_boost_pct REAL NOT NULL DEFAULT 0, -- computed from charger_count x charger_type_weight
+    UNIQUE (team_id, region, quarter)
+);
+
+CREATE INDEX IF NOT EXISTS idx_charging_network_team_quarter ON charging_network(team_id, quarter);
+CREATE INDEX IF NOT EXISTS idx_charging_network_region ON charging_network(region);
+
 -- 3a. Human resources compensation decisions and productivity inputs
 CREATE TABLE IF NOT EXISTS hr_decisions (
     id TEXT PRIMARY KEY,

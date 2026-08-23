@@ -575,6 +575,28 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ success: true, brandId, brandName: finalBrandName, quarter, redesignFee: fee, brand_loyalty_carry_over: brandLoyaltyCarryOver, decisionId }), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/charging-network" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = method === "POST" ? await request.json() as any : {};
+      const teamId = String(body.teamId ?? url.searchParams.get("teamId") ?? "").trim();
+      const quarter = Number(body.quarter ?? url.searchParams.get("quarter"));
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS charging_network (team_id TEXT NOT NULL, region TEXT NOT NULL, quarter INTEGER NOT NULL, charger_count INTEGER NOT NULL DEFAULT 0, charger_type TEXT NOT NULL CHECK (charger_type IN ('Level 2 AC', 'DC Fast Charge', 'Ultra-rapid 350kW')), installation_cost REAL NOT NULL DEFAULT 0, quarterly_maintenance REAL NOT NULL DEFAULT 0, demand_boost_pct REAL NOT NULL DEFAULT 0, UNIQUE (team_id, region, quarter))");
+      if (method === "GET") {
+        const rows = await env.DB.prepare("SELECT * FROM charging_network WHERE team_id = ? AND quarter <= ? ORDER BY quarter, region").bind(teamId, quarter).all();
+        return new Response(JSON.stringify({ investments: rows.results || [] }), { status: 200, headers: corsHeaders });
+      }
+      const typeConfig: Record<string, [number, number, number]> = { "Level 2 AC": [0.08, 0.12, 0.006], "DC Fast Charge": [0.18, 0.35, 0.014], "Ultra-rapid 350kW": [0.3, 0.7, 0.025] };
+      const investments = Array.isArray(body.investments) ? body.investments : [];
+      if (!investments.length) return new Response(JSON.stringify({ error: "At least one regional investment is required." }), { status: 400, headers: corsHeaders });
+      await env.DB.batch(investments.map((investment: any) => {
+        const region = String(investment.region || "").trim(); const chargerType = String(investment.charger_type || ""); const count = Math.max(0, Math.floor(Number(investment.charger_count) || 0)); const config = typeConfig[chargerType];
+        if (!region || !config) throw new Error("Each investment needs a valid region and charger type.");
+        return env.DB.prepare("INSERT INTO charging_network (team_id, region, quarter, charger_count, charger_type, installation_cost, quarterly_maintenance, demand_boost_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(team_id, region, quarter) DO UPDATE SET charger_count = excluded.charger_count, charger_type = excluded.charger_type, installation_cost = excluded.installation_cost, quarterly_maintenance = excluded.quarterly_maintenance, demand_boost_pct = excluded.demand_boost_pct").bind(teamId, region, quarter, count, chargerType, count * config[1], count * config[2], count * config[0]);
+      }));
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    }
+
     // 2. Cloudflare D1 Status
     if (path === "/api/strategy-plans" && method === "GET") {
       const universeId = String(url.searchParams.get("universeId") || "").trim();

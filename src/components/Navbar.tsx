@@ -8,6 +8,7 @@ import {
   Store,
   Factory,
   DollarSign,
+  BatteryCharging,
   BarChart3,
   Landmark,
   BookOpen,
@@ -31,6 +32,7 @@ export type TabKey =
   | "hr"
   | "operations"
   | "finance"
+  | "charging"
   | "performance"
   | "policy"
   | "instructor"
@@ -70,6 +72,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "hr", label: "HR & Productivity", icon: <Users className="w-4 h-4" /> },
     { id: "operations", label: "Operations & Quality", icon: <Factory className="w-4 h-4" /> },
     { id: "finance", label: "Finance & Pro Forma", icon: <DollarSign className="w-4 h-4 text-emerald-400" /> },
+    { id: "charging", label: "Charging Network", icon: <BatteryCharging className="w-4 h-4 text-rose-500" /> },
     { id: "performance", label: "Scorecard & Reports", icon: <BarChart3 className="w-4 h-4 text-amber-400" /> },
     { id: "policy", label: "Policy Events", icon: <Landmark className="w-4 h-4 text-amber-600" /> },
     { id: "roster", label: "Universe Roster (10 Teams)", icon: <Users className="w-4 h-4 text-blue-400" />, show: canManageRoster },
