@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useReducer } from "react";
 import { GameState, TeamState, LicenceContract } from "./types/simulation";
 import { User, Universe } from "./types/auth";
 import {
@@ -44,6 +44,22 @@ import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
 import ChargingStrategy from "./components/ChargingStrategy";
 import BatteryLifecycle from "./components/BatteryLifecycle";
+import { ProFormaPanel } from "./components/tabs/ProFormaPanel";
+
+type DecisionDashboardState = {
+  revision: number;
+  lastChangedAt: number;
+};
+
+type DecisionDashboardAction = { type: "TEAM_UPDATED" } | { type: "RESET" };
+
+function decisionDashboardReducer(
+  state: DecisionDashboardState,
+  action: DecisionDashboardAction
+): DecisionDashboardState {
+  if (action.type === "RESET") return { revision: 0, lastChangedAt: Date.now() };
+  return { revision: state.revision + 1, lastChangedAt: Date.now() };
+}
 
 export default function App() {
   // Authentication & Session State
@@ -65,6 +81,10 @@ export default function App() {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [auditErrors, setAuditErrors] = useState<string[]>([]);
+  const [decisionDashboard, dispatchDecisionDashboard] = useReducer(decisionDashboardReducer, {
+    revision: 0,
+    lastChangedAt: Date.now()
+  });
   const policyAlertQuarter = React.useRef<number | null>(null);
 
   useEffect(() => {
@@ -263,6 +283,7 @@ export default function App() {
   const handleSelectUniverse = (selectedUniv: Universe) => {
     setUniverse(selectedUniv);
     setGameState(selectedUniv.gameState);
+    dispatchDecisionDashboard({ type: "RESET" });
     saveActiveUniverse(selectedUniv);
     if (currentUser) {
       const updatedUser: User = { ...currentUser, universeId: selectedUniv.id };
@@ -290,6 +311,7 @@ export default function App() {
 
     setUniverse(targetUniv);
     setGameState(targetUniv.gameState);
+    dispatchDecisionDashboard({ type: "RESET" });
     saveActiveUniverse(targetUniv);
   };
 
@@ -323,6 +345,7 @@ export default function App() {
       ...gameState,
       teams: updatedTeams
     };
+    dispatchDecisionDashboard({ type: "TEAM_UPDATED" });
     handleUpdateGameState(newGs);
   };
 
@@ -686,6 +709,16 @@ export default function App() {
 
         {activeTab === "help" && <HelpManualTab />}
           </div>
+          <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[23rem]">
+            <ProFormaPanel
+              team={currentTeam}
+              gameState={gameState}
+              universeId={universe.id}
+              onNotify={showNotification}
+              compact
+              decisionRevision={decisionDashboard.revision}
+            />
+          </aside>
         </div>
       </main>
 
