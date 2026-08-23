@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS team_decisions (
     team_i INTEGER NOT NULL,
     quarter INTEGER NOT NULL,
     decision_json TEXT NOT NULL,
+    redesign_fee REAL NOT NULL DEFAULT 0,
     submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
     submitted_by TEXT NOT NULL,
     FOREIGN KEY (universe_id) REFERENCES universes(id) ON DELETE CASCADE

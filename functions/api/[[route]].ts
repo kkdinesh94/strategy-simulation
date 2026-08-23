@@ -7,7 +7,19 @@ interface Env {
   DB: any; // Cloudflare D1Database binding
   GEMINI_API_KEY?: string;
   NODE_ENV?: string;
+  VEHICLE_REDESIGN_FEE?: string;
 }
+
+const componentBenefitKey: Record<string, string> = {
+  Battery: "range",
+  Charging: "charging",
+  Autonomy: "autonomy",
+  Motor: "image",
+  Interior: "image",
+  Exterior: "image",
+  Software: "autonomy",
+  Safety: "autonomy"
+};
 
 export async function onRequest(context: { request: Request; env: Env; params: { route?: string[] } }) {
   const { request, env } = context;
@@ -34,6 +46,90 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
         { status: 200, headers: corsHeaders }
       );
+    }
+
+    // Vehicle designer catalog and brand save API.
+    if (path === "/api/vehicle-designer" && method === "GET") {
+      const componentRows = await env.DB.prepare(
+        "SELECT component_id, category, name, material_cost, performance_score, benefit_delivered FROM vehicle_components ORDER BY category, material_cost"
+      ).all();
+      const segmentRows = await env.DB.prepare(
+        "SELECT segment_id, name, price_sensitivity, range_priority, charging_speed_priority, autonomy_priority, brand_image_priority, segment_size_pct FROM market_segments ORDER BY segment_id"
+      ).all();
+
+      return new Response(JSON.stringify({
+        components: (componentRows.results || []).map((row: any) => ({
+          componentId: row.component_id,
+          category: row.category,
+          name: row.name,
+          cost: Number(row.material_cost),
+          performance: Number(row.performance_score),
+          benefit: row.benefit_delivered,
+          benefitKey: componentBenefitKey[row.category] || "range"
+        })),
+        segments: (segmentRows.results || []).map((row: any) => ({
+          segmentId: row.segment_id,
+          name: row.name,
+          priceWillingToPay: Math.round(60000 - Number(row.price_sensitivity || 0) * 3500),
+          weights: {
+            range: Number(row.range_priority || 0),
+            charging: Number(row.charging_speed_priority || 0),
+            autonomy: Number(row.autonomy_priority || 0),
+            image: Number(row.brand_image_priority || 0)
+          }
+        }))
+      }), { status: 200, headers: corsHeaders });
+    }
+
+    if (path.startsWith("/api/vehicle-designer/brands/") && method === "POST") {
+      if (!env.DB) {
+        return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      }
+      const brandId = decodeURIComponent(path.split("/").filter(Boolean).pop() || "");
+      const body = await request.json() as {
+        quarter?: number;
+        componentIds?: string[];
+        multiplier?: number;
+        submittedBy?: string;
+      };
+      const quarter = Number(body.quarter);
+      const componentIds = Array.isArray(body.componentIds) ? body.componentIds : [];
+      const multiplier = Number(body.multiplier ?? 2.5);
+      const redesignFee = Math.max(0, Number(env.VEHICLE_REDESIGN_FEE ?? 500));
+      if (!brandId || !Number.isInteger(quarter) || quarter < 1 || !Number.isFinite(multiplier) || multiplier <= 0) {
+        return new Response(JSON.stringify({ error: "brandId, a positive integer quarter, and a positive multiplier are required." }), { status: 400, headers: corsHeaders });
+      }
+
+      const decisionId = `vehicle-design:${brandId}:Q${quarter}`;
+      const existingQuarter = await env.DB.prepare(
+        "SELECT id FROM team_decisions WHERE id = ?"
+      ).bind(decisionId).first();
+      const latestDecision = await env.DB.prepare(
+        "SELECT quarter FROM team_decisions WHERE id LIKE ? ORDER BY quarter DESC LIMIT 1"
+      ).bind(`vehicle-design:${brandId}:Q%`).first();
+      const fee = existingQuarter ? 0 : (latestDecision ? redesignFee : 0);
+      const decision = JSON.stringify({
+        type: "vehicle_design",
+        brandId,
+        quarter,
+        componentIds,
+        multiplier,
+        redesignFee: fee
+      });
+      await env.DB.prepare(`
+        INSERT INTO team_decisions (id, universe_id, team_i, quarter, decision_json, redesign_fee, submitted_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET decision_json = excluded.decision_json, redesign_fee = excluded.redesign_fee, submitted_at = datetime('now'), submitted_by = excluded.submitted_by
+      `).bind(
+        decisionId,
+        "vehicle-designer",
+        -1,
+        quarter,
+        decision,
+        fee,
+        body.submittedBy || "vehicle-designer"
+      ).run();
+      return new Response(JSON.stringify({ success: true, brandId, quarter, redesignFee: fee, decisionId }), { status: 200, headers: corsHeaders });
     }
 
     // 2. Cloudflare D1 Status
@@ -100,6 +196,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
             team_i INTEGER NOT NULL,
             quarter INTEGER NOT NULL,
             decision_json TEXT NOT NULL,
+            redesign_fee REAL NOT NULL DEFAULT 0,
             submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
             submitted_by TEXT NOT NULL
         );
@@ -115,6 +212,28 @@ export async function onRequest(context: { request: Request; env: Env; params: {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS market_segments (
+          segment_id TEXT PRIMARY KEY,
+          name TEXT,
+          description TEXT,
+          price_sensitivity INTEGER,
+          range_priority INTEGER,
+          charging_speed_priority INTEGER,
+          autonomy_priority INTEGER,
+          brand_image_priority INTEGER,
+          typical_buyer_persona TEXT,
+          segment_size_pct REAL
+        );
+        CREATE TABLE IF NOT EXISTS vehicle_components (
+          component_id TEXT PRIMARY KEY,
+          category TEXT,
+          name TEXT,
+          material_cost REAL,
+          performance_score INTEGER,
+          benefit_delivered TEXT,
+          is_rd_unlocked INTEGER DEFAULT 0,
+          available_from_quarter INTEGER DEFAULT 1
         );
       `);
       return new Response(JSON.stringify({ success: true, message: "D1 Schema successfully initialized." }), {
