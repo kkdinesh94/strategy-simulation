@@ -70,6 +70,21 @@ CREATE TABLE IF NOT EXISTS pro_forma_statements (
 
 CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i);
 
+-- 3a. Treasury financing decisions and quarterly financing outcomes
+CREATE TABLE IF NOT EXISTS financing_decisions (
+    team_id TEXT,
+    quarter INTEGER,
+    equity_issued REAL,
+    bank_loan_drawn REAL,
+    bank_loan_repaid REAL,
+    cd_investment REAL,         -- 3-month certificate of deposit, earns interest
+    vc_funding_received REAL,   -- only available after business plan presentation in Q5
+    interest_rate REAL,
+    loan_outstanding REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_financing_decisions_team_quarter ON financing_decisions(team_id, quarter);
+
 -- 3a. Human resources compensation decisions and productivity inputs
 CREATE TABLE IF NOT EXISTS hr_decisions (
     id TEXT PRIMARY KEY,

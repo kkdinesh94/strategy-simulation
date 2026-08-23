@@ -16,6 +16,7 @@ import {
 import { ProFormaWorkbench } from "../ProFormaWorkbench";
 import { ProFormaPanel } from "./ProFormaPanel";
 import { DecisionAuditor } from "../DecisionAuditor";
+import { FinancingPanel } from "../FinancingPanel";
 import {
   DollarSign,
   Landmark,
@@ -48,7 +49,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   universeId
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc"
+    "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc" | "financing"
   >("proforma");
   const isLocked = team.dec.locked;
 
@@ -147,6 +148,12 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
       {/* Sub-Tab Selector */}
       <div className="bg-white p-3 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center gap-2">
         <button
+          onClick={() => setActiveSubTab("financing")}
+          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${activeSubTab === "financing" ? "bg-emerald-700 text-white shadow-sm" : "bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100"}`}
+        >
+          <Landmark className="w-3.5 h-3.5" /> Financing Desk
+        </button>
+        <button
           onClick={() => setActiveSubTab("proforma")}
           className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
             activeSubTab === "proforma"
@@ -225,6 +232,10 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
           </button>
         )}
       </div>
+
+      {activeSubTab === "financing" && (
+        <FinancingPanel team={team} gameState={gameState} onChange={onChange} isLocked={isLocked} />
+      )}
 
       {/* SUB-TAB 1: PRO FORMA STATEMENTS */}
       {activeSubTab === "proforma" && <ProFormaPanel team={team} gameState={gameState} universeId={universeId} onNotify={onNotify} />}

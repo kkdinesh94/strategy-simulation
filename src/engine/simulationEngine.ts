@@ -454,6 +454,16 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
     }
   }
 
+  if (equityOf(t) < 0) {
+    errs.push("Bankruptcy condition: common stock plus retained earnings must not be negative.");
+  }
+  if ((t.dec.cdInvestment || 0) > Math.max(0, t.cash)) {
+    errs.push("CD investment cannot exceed available cash.");
+  }
+  if ((t.dec.interestRate || 0) < 0 || (t.dec.interestRate || 0) > 0.25) {
+    errs.push("Bank interest rate must be between 0% and 25% per quarter.");
+  }
+
   const newStaff = t.staff + (t.dec.hire || 0);
   const newCentres = t.centres + (t.dec.newCentres || 0);
   if (newStaff > 8 * newCentres) {
@@ -762,7 +772,11 @@ export function simulateQuarter(st: GameState) {
     const holding = endInv * HOLD_COST;
     const dep = DEP_RATE * t.ppe;
 
-    const bankRate = 0.03 + 0.02 * (bankLimit(t) > 0 ? t.debt.bank / Math.max(1, bankLimit(t)) : 0);
+    const bankRate = clamp(
+      t.dec.interestRate ?? (0.03 + 0.02 * (bankLimit(t) > 0 ? t.debt.bank / Math.max(1, bankLimit(t)) : 0)),
+      0,
+      0.25
+    );
     const intBank = t.debt.bank * bankRate;
     const intLT = t.debt.lt * 0.045;
     const sharkRate = t.debt.shark > 0 ? Math.min(0.25, 0.05 + 0.005 * Math.ceil(t.debt.shark / 100)) : 0;
@@ -810,6 +824,13 @@ export function simulateQuarter(st: GameState) {
     t.debt.bank = bt;
     t.cash += dBank;
 
+    const cdInvestment = Math.min(Math.max(0, t.dec.cdInvestment || 0), Math.max(0, t.cash));
+    if (cdInvestment > 0) {
+      const cdInterest = cdInvestment * 0.02;
+      t.cash += cdInterest;
+      t.cumProfit += cdInterest;
+    }
+
     if (t.debt.lt > 0) {
       t.debt.ltLeft--;
       if (t.debt.ltLeft <= 0) {
@@ -835,10 +856,16 @@ export function simulateQuarter(st: GameState) {
     }
 
     let vcDeal = null;
-    if (q === st.cfg.vcQuarter && t.dec.vc && t.dec.vc.ask > 0) {
+    if (q >= st.cfg.vcQuarter && t.dec.vc && t.dec.vc.ask > 0) {
       const val = valuationOf(t);
       const req = (100 * t.dec.vc.ask) / val;
-      const offered = clamp(t.dec.vc.equity, 0, 60);
+      const offered = clamp(
+        t.dec.vc.sharesOffered && t.dec.vc.sharesOffered > 0
+          ? (100 * t.dec.vc.sharesOffered) / Math.max(1, (t.shares || 100) + t.dec.vc.sharesOffered)
+          : t.dec.vc.equity,
+        0,
+        60
+      );
       const funded = offered >= req ? t.dec.vc.ask : Math.round((t.dec.vc.ask * offered) / Math.max(req, 0.01));
       if (funded > 0) {
         t.cash += funded;
@@ -1098,6 +1125,10 @@ export function simulateQuarter(st: GameState) {
       bsc: { parts: {}, total: 0 }
     };
     res.bsc = computeBSC(t, res, st);
+    if (sharkNew > 0) {
+      res.bsc.parts.emergencyLoan = -Math.min(0.25, sharkNew / Math.max(1, t.paidIn));
+      res.bsc.total = Math.max(0, res.bsc.total + res.bsc.parts.emergencyLoan);
+    }
     t.hist.push(res);
 
     if ((t as any)._capAdd) {
@@ -1359,7 +1390,7 @@ export function botDecide(t: TeamState, st: GameState) {
   if (st.quarter === st.cfg.vcQuarter) {
     const val = valuationOf(t);
     const ask = 1000;
-    t.dec.vc = { ask, equity: Math.min(60, Math.ceil(((100 * ask) / val) * 10) / 10 + 1) };
+    t.dec.vc = { ask, equity: Math.min(60, Math.ceil(((100 * ask) / val) * 10) / 10 + 1), sharesOffered: 0, sharePrice: stockPriceOf(t) };
   } else t.dec.vc = null;
 
   t.dec.devCost = 0;
@@ -1504,6 +1535,10 @@ export function newState(
           shareIssue: 0,
           shareBuyback: 0,
           dividendPerShare: 0,
+          bankLoanDrawn: 0,
+          bankLoanRepaid: 0,
+          cdInvestment: 0,
+          interestRate: 0.03,
           devCost: 0
         },
         hist: []

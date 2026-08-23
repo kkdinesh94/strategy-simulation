@@ -125,9 +125,13 @@ export interface TeamDecision {
   shareIssue?: number; // Rs. L of equity raised via issuing new shares
   shareBuyback?: number; // Rs. L of equity used to repurchase shares from market
   dividendPerShare?: number; // Rs. per share dividend declared
+  bankLoanDrawn?: number;
+  bankLoanRepaid?: number;
+  cdInvestment?: number;
+  interestRate?: number;
   buyIntel: boolean;
   buyClinic: boolean;
-  vc: { ask: number; equity: number } | null;
+  vc: { ask: number; equity: number; sharesOffered?: number; sharePrice?: number } | null;
   rndStarts?: { id: string; mode: "fast" | "std" }[];
   rndStartCost?: number;
   devCost?: number;
