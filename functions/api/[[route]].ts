@@ -90,9 +90,11 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // Vehicle designer catalog and brand save API.
     if (path === "/api/vehicle-designer" && method === "GET") {
+      const requestedQuarter = Number(url.searchParams.get("quarter") || 1);
+      const currentQuarter = Number.isFinite(requestedQuarter) ? Math.max(1, requestedQuarter) : 1;
       const componentRows = await env.DB.prepare(
-        "SELECT component_id, category, name, material_cost, performance_score, benefit_delivered FROM vehicle_components ORDER BY category, material_cost"
-      ).all();
+        "SELECT component_id, category, name, material_cost, performance_score, benefit_delivered FROM vehicle_components WHERE available_from_quarter <= ? ORDER BY category, material_cost"
+      ).bind(currentQuarter).all();
       const segmentRows = await env.DB.prepare(
         "SELECT segment_id, name, price_sensitivity, range_priority, charging_speed_priority, autonomy_priority, brand_image_priority, segment_size_pct FROM market_segments ORDER BY segment_id"
       ).all();

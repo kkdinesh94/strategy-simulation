@@ -58,7 +58,7 @@ export default function VehicleDesigner({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/vehicle-designer")
+    fetch(`/api/vehicle-designer?quarter=${encodeURIComponent(currentQuarter)}`)
       .then((response) => response.json().then((payload) => ({ response, payload })))
       .then(({ response, payload }) => {
         if (!response.ok) throw new Error(payload.error || "Unable to load vehicle design data.");
@@ -74,7 +74,7 @@ export default function VehicleDesigner({
         }
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [currentQuarter]);
 
   const selected = useMemo(
     () => components.filter((component) => selectedIds.includes(component.id)),

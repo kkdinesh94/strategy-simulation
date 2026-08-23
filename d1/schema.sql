@@ -149,7 +149,22 @@ INSERT OR IGNORE INTO vehicle_components (
 ('safety_enhanced_sensors', 'Safety', 'Safety: Enhanced Sensors', 2150.0, 7, 'Earlier hazard detection and stronger active protection.', 0, 2),
 ('safety_predictive_protection', 'Safety', 'Safety: Predictive Protection', 3600.0, 10, 'Anticipatory protection using advanced sensing systems.', 1, 4);
 
--- 7. Application Configuration & Settings
+-- 7. R&D Projects
+CREATE TABLE IF NOT EXISTS rd_projects (
+    project_id TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    component_unlocked TEXT,
+    cost_one_quarter REAL,
+    cost_two_quarters REAL,
+    quarters_to_complete INTEGER,
+    benefit_segments TEXT,
+    FOREIGN KEY (component_unlocked) REFERENCES vehicle_components(component_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rd_projects_component ON rd_projects(component_unlocked);
+
+-- 8. Application Configuration & Settings
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
