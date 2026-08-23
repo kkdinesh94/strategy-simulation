@@ -43,6 +43,7 @@ import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
 import ChargingStrategy from "./components/ChargingStrategy";
+import BatteryLifecycle from "./components/BatteryLifecycle";
 
 export default function App() {
   // Authentication & Session State
@@ -614,6 +615,10 @@ export default function App() {
 
         {activeTab === "charging" && (
           <ChargingStrategy teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
+        )}
+
+        {activeTab === "battery" && (
+          <BatteryLifecycle universeId={universe.id} teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
         {activeTab === "performance" && (

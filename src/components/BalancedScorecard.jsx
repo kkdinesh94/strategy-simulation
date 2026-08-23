@@ -12,7 +12,7 @@ import { Award, Database, Lock, Save, TrendingUp } from "lucide-react";
 import { equityOf } from "../engine/simulationEngine";
 
 const DIMENSIONS = [
-  { key: "financialPerformance", label: "Financial Performance", shortLabel: "Financial", weight: 20, higherIsBetter: true },
+  { key: "financialPerformance", label: "Financial Performance", shortLabel: "Financial", weight: 15, higherIsBetter: true },
   { key: "financialRisk", label: "Financial Risk", shortLabel: "Risk", weight: 10, higherIsBetter: true },
   { key: "marketPerformance", label: "Market Performance", shortLabel: "Market", weight: 20, higherIsBetter: true },
   { key: "marketingEffectiveness", label: "Marketing Effectiveness", shortLabel: "Marketing", weight: 10, higherIsBetter: true },
@@ -20,7 +20,8 @@ const DIMENSIONS = [
   { key: "wealthCreation", label: "Wealth Creation", shortLabel: "Wealth", weight: 10, higherIsBetter: true },
   { key: "assetManagement", label: "Asset Management", shortLabel: "Assets", weight: 5, higherIsBetter: true },
   { key: "hrManagement", label: "HR Management", shortLabel: "People", weight: 5, higherIsBetter: true },
-  { key: "manufacturingProductivity", label: "Manufacturing Productivity", shortLabel: "Manufacturing", weight: 10, higherIsBetter: true }
+  { key: "manufacturingProductivity", label: "Manufacturing Productivity", shortLabel: "Manufacturing", weight: 10, higherIsBetter: true },
+  { key: "sustainability", label: "Sustainability", shortLabel: "Sustainability", weight: 5, higherIsBetter: true }
 ];
 
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, Number.isFinite(value) ? value : min));
@@ -55,7 +56,8 @@ function rawMetrics(team, result, priorResult) {
     wealthCreation: priorEquityPerShare > 0 ? (equityPerShare - priorEquityPerShare) / priorEquityPerShare : 0,
     assetManagement: average([turnover, number(result.util)]),
     hrManagement: hrScore,
-    manufacturingProductivity: average([number(result.reliab), cogsEfficiency / 100, number(result.util)])
+    manufacturingProductivity: average([number(result.reliab), cogsEfficiency / 100, number(result.util)]),
+    sustainability: number(result.sustainabilityScore)
   };
 }
 

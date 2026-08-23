@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { getD1Database } from "./server/d1Store";
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "./src/lib/competitiveBenchmark";
 import { runQuarterWorkflow } from "./src/lib/processQuarter";
+import { projectBatteryLifecycle } from "./src/lib/batteryLifecycle";
 
 dotenv.config();
 
@@ -24,6 +25,34 @@ async function startServer() {
       app: "EV Venture League Simulation",
       dbProvider: "Cloudflare D1 & SQLite 3 Ready"
     });
+  });
+
+  app.all("/api/battery-lifecycle", (req, res) => {
+    try {
+      const input: any = req.method === "GET" ? req.query : req.body || {};
+      const universeId = String(input.universeId || input.universe_id || "").trim();
+      const teamId = String(input.teamId || input.team_id || "").trim();
+      const quarter = Number(input.quarter);
+      if (!universeId || !teamId || !Number.isInteger(quarter) || quarter < 1) return res.status(400).json({ error: "universeId, teamId, and a positive integer quarter are required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const universe: any = d1.prepare("SELECT game_state FROM universes WHERE id = ?").get(universeId);
+      if (!universe) return res.status(404).json({ error: "Simulation universe was not found." });
+      const state = JSON.parse(universe.game_state || "{}");
+      const team = (state.teams || []).find((item: any) => String(item.i) === teamId);
+      if (!team) return res.status(404).json({ error: "Team was not found." });
+      const projections = Array.from({ length: 8 }, (_, index) => projectBatteryLifecycle(team.hist || [], Math.max(5, quarter) + index));
+      const existing: any = d1.prepare("SELECT * FROM battery_lifecycle_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ?").get(universeId, teamId, quarter);
+      if (req.method === "GET") return res.json({ quarter, active: quarter >= 5, projections, decision: existing || null });
+      if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+      if (quarter < 5) return res.status(400).json({ error: "Battery lifecycle decisions open from Q5." });
+      const disposition = String(input.disposition || "");
+      if (!["warranty", "repurpose", "recycle"].includes(disposition)) return res.status(400).json({ error: "Choose warranty, repurpose, or recycle." });
+      const projection = projectBatteryLifecycle(team.hist || [], quarter);
+      const option: any = projection.options[disposition];
+      const id = `${universeId}:${teamId}:${quarter}`;
+      d1.prepare("INSERT INTO battery_lifecycle_decisions (id, universe_id, team_i, quarter, disposition, returned_units, warranty_reserve, cost, revenue, esg_impact) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET disposition = excluded.disposition, returned_units = excluded.returned_units, warranty_reserve = excluded.warranty_reserve, cost = excluded.cost, revenue = excluded.revenue, esg_impact = excluded.esg_impact, updated_at = datetime('now')").run(id, universeId, teamId, quarter, disposition, projection.returnedUnits, projection.warrantyReserve, option.cost, option.revenue, option.esgImpact);
+      return res.json({ success: true, decision: { id, universeId, teamId, quarter, disposition, returned_units: projection.returnedUnits, warranty_reserve: projection.warrantyReserve, cost: option.cost, revenue: option.revenue, esg_impact: option.esgImpact } });
+    } catch (err: any) { return res.status(500).json({ error: err.message || "Battery lifecycle could not be saved." }); }
   });
 
   app.all("/api/ad-tribunal", (req, res) => {

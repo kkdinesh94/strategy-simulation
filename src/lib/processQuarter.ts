@@ -1,6 +1,7 @@
 import { GameState, TeamState } from "../types/simulation";
 import { SEGMENTS } from "../engine/catalog";
 import { computeBSC, hrMults, priceFit, qualityFit, reachOf, scoreModel, simulateQuarter } from "../engine/simulationEngine";
+import { applyBatteryLifecycle, BatteryDisposition } from "./batteryLifecycle";
 
 export type PolicyEvent = {
   event_id: string;
@@ -34,6 +35,8 @@ export type DemandResult = {
   demand_units: number;
   policy_demand_impact_pct: number;
 };
+
+export type BatteryDecision = { teamId: string; disposition: BatteryDisposition };
 
 const regions = (state: any): string[] => Array.isArray(state.regions) && state.regions.length
   ? state.regions.map((region: any) => String(region.name || region.id || region)).filter(Boolean)
@@ -105,7 +108,7 @@ export function calculateDemand(state: GameState, universeId: string, policies: 
   return output;
 }
 
-export function processQuarterState(state: GameState, universeId = "pending", policies: PolicyEvent[] = []): { state: GameState; logs: QuarterLog[]; demand: DemandResult[] } {
+export function processQuarterState(state: GameState, universeId = "pending", policies: PolicyEvent[] = [], batteryDecisions: BatteryDecision[] = []): { state: GameState; logs: QuarterLog[]; demand: DemandResult[] } {
   const quarter = state.quarter;
   const demand = calculateDemand(state, universeId, policies);
   const logs: QuarterLog[] = [
@@ -113,10 +116,20 @@ export function processQuarterState(state: GameState, universeId = "pending", po
     { step: "demand", status: "complete", detail: `Computed ${demand.length} regional brand-segment demand rows.` }
   ];
   simulateQuarter(state);
+  const lifecycle = state.teams.map((team: any) => {
+    const decision = batteryDecisions.find((item) => String(item.teamId) === String(team.i))?.disposition || "warranty";
+    const result = team.hist[team.hist.length - 1];
+    const applied = applyBatteryLifecycle(result, team.hist, quarter, decision);
+    team.cumProfit += applied.revenue - applied.cost;
+    team.cumRevenue += applied.revenue;
+    result.bsc = computeBSC(team, result, state);
+    return { teamId: String(team.i), disposition: decision, ...applied };
+  });
   const results = state.teams.reduce((count, team) => count + (team.hist.some((row) => row.q === quarter) ? 1 : 0), 0);
   logs.push({ step: "production", status: "complete", detail: `Simulated production for ${results} team${results === 1 ? "" : "s"}.` });
   logs.push({ step: "sales", status: "complete", detail: "Allocated actual sales against available inventory." });
   logs.push({ step: "financials", status: "complete", detail: "Updated revenue, COGS, warranty, advertising, and salaries." });
+  if (quarter >= 5) logs.push({ step: "battery", status: "complete", detail: `Processed ${lifecycle.reduce((total, item) => total + item.projection.returnedUnits, 0).toLocaleString()} end-of-first-life batteries.` });
   logs.push({ step: "scores", status: "complete", detail: "Computed Fast Test inputs and balanced scorecards." });
   logs.push({ step: "advance", status: "complete", detail: `Advanced game to Q${state.quarter}.` });
   logs.push({ step: "unlock", status: "complete", detail: `Unlocked decisions for Q${state.quarter}.` });
@@ -136,7 +149,8 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
     CREATE TABLE IF NOT EXISTS policy_events (event_id TEXT PRIMARY KEY, quarter INTEGER NOT NULL, region TEXT NOT NULL, event_type TEXT NOT NULL, description TEXT NOT NULL, demand_impact_pct REAL NOT NULL DEFAULT 0, cost_impact_pct REAL NOT NULL DEFAULT 0, eligible_segment TEXT, eligibility_condition TEXT);
     CREATE TABLE IF NOT EXISTS demand_results (demand_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, team_i TEXT NOT NULL, brand_id TEXT NOT NULL, brand_name TEXT NOT NULL, segment_id TEXT NOT NULL, base_segment_size REAL NOT NULL, brand_judgment_score REAL NOT NULL, price_judgment_score REAL NOT NULL, advertising_impact_score REAL NOT NULL, sales_force_productivity REAL NOT NULL, channel_coverage_factor REAL NOT NULL, demand_units REAL NOT NULL, policy_demand_impact_pct REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
     CREATE TABLE IF NOT EXISTS fast_test_results (result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, result_type TEXT NOT NULL, subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL, brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL, purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id));
-    CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));`);
+    CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));
+    CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));`);
   try { await db.exec("ALTER TABLE demand_results ADD COLUMN policy_demand_impact_pct REAL NOT NULL DEFAULT 0"); } catch {}
   const universe: any = await db.prepare("SELECT id, game_state FROM universes WHERE id = ?").bind(universeId).first();
   if (!universe) throw new Error("Simulation universe was not found.");
@@ -144,6 +158,8 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
   const currentQuarter = Number(state.quarter || 1);
   const policiesResponse: any = await db.prepare("SELECT * FROM policy_events WHERE quarter = ?").bind(currentQuarter).all();
   const policies = (policiesResponse.results || []) as PolicyEvent[];
+  const batteryResponse: any = await db.prepare("SELECT team_i, disposition FROM battery_lifecycle_decisions WHERE universe_id = ? AND quarter = ?").bind(universeId, currentQuarter).all();
+  const batteryDecisions = (batteryResponse.results || []).map((row: any) => ({ teamId: String(row.team_i), disposition: row.disposition as BatteryDisposition }));
   const marker: any = await db.prepare("SELECT decisions_locked, quarter FROM game_state WHERE universe_id = ?").bind(universeId).first();
   if (Number(marker?.decisions_locked) === 1) throw new Error(`Q${currentQuarter} is already being processed or locked.`);
   await db.prepare("INSERT INTO game_state (universe_id, quarter, decisions_locked) VALUES (?, ?, 1) ON CONFLICT(universe_id) DO UPDATE SET quarter = excluded.quarter, decisions_locked = 1, updated_at = datetime('now')").bind(universeId, currentQuarter).run();
@@ -163,7 +179,13 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
     }
   }
   state.teams.forEach((team: any) => { team.dec.locked = true; });
-  const result = processQuarterState(state, universeId, policies);
+  const result = processQuarterState(state, universeId, policies, batteryDecisions);
+  const lifecycleRows = result.state.teams.map((team: any) => {
+    const quarterResult: any = team.hist.find((row: any) => row.q === currentQuarter);
+    return db.prepare("UPDATE battery_lifecycle_decisions SET returned_units = ?, cost = ?, revenue = ?, esg_impact = ?, updated_at = datetime('now') WHERE universe_id = ? AND team_i = ? AND quarter = ?")
+      .bind(Number(quarterResult?.batteryReturns || 0), Number(quarterResult?.batteryLifecycleCost || 0), Number(quarterResult?.batteryLifecycleRevenue || 0), Number(quarterResult?.sustainabilityScore || 0), universeId, String(team.i), currentQuarter);
+  });
+  if (lifecycleRows.length) await db.batch(lifecycleRows);
   const demandColumns = "(demand_id, universe_id, quarter, region, team_i, brand_id, brand_name, segment_id, base_segment_size, brand_judgment_score, price_judgment_score, advertising_impact_score, sales_force_productivity, channel_coverage_factor, demand_units, policy_demand_impact_pct)";
   await db.batch(result.demand.map((row) => db.prepare(`INSERT OR REPLACE INTO demand_results ${demandColumns} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(row.demand_id, row.universe_id, row.quarter, row.region, row.team_i, row.brand_id, row.brand_name, row.segment_id, row.base_segment_size, row.brand_judgment_score, row.price_judgment_score, row.advertising_impact_score, row.sales_force_productivity, row.channel_coverage_factor, row.demand_units, row.policy_demand_impact_pct)));
   const fastRows = result.demand.map((row) => {

@@ -306,6 +306,7 @@ export function computeBSC(t: TeamState, r: QuarterResult, _st: GameState) {
   const cap = equityOf(t) + debtOf(t);
   const FR = cap > 0 && equityOf(t) > 0 ? Math.sqrt(equityOf(t) / cap) : 0;
   const parts: Record<string, number> = { FP: Math.max(0, FP), MP, ME, IF, W, HR: hr, AM, MFG, FR };
+  if (r.sustainabilityScore !== undefined) parts.ESG = clamp(1 + r.sustainabilityScore / 100, 0.8, 1.1);
   let total = 100;
   for (const k of Object.keys(parts)) total *= parts[k];
   return { parts, total: Math.max(0, total) };

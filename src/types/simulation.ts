@@ -188,6 +188,11 @@ export interface QuarterResult {
   fixed: number;
   ga: number;
   warranty: number;
+  batteryReturns?: number;
+  batteryDisposition?: "warranty" | "repurpose" | "recycle";
+  batteryLifecycleCost?: number;
+  batteryLifecycleRevenue?: number;
+  sustainabilityScore?: number;
   dev: number;
   research: number;
   salesPayroll: number;
