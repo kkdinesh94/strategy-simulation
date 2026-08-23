@@ -460,3 +460,37 @@ INSERT OR IGNORE INTO sales_offices (
 ('em-sao-paulo', NULL, 'São Paulo', 'Emerging Markets', NULL, 40.0, 6.0, 0, 0, '{"urban_commuter":40,"fleet_operator":25,"tech_pioneer":12,"eco_advocate":13,"performance_enthusiast":10}', 460000),
 ('em-nairobi', NULL, 'Nairobi', 'Emerging Markets', NULL, 30.0, 3.5, 0, 0, '{"urban_commuter":42,"fleet_operator":28,"tech_pioneer":8,"eco_advocate":14,"performance_enthusiast":8}', 85000),
 ('em-jakarta', '2', 'Jakarta', 'Emerging Markets', 2, 36.0, 5.0, 16, 1, '{"urban_commuter":45,"fleet_operator":24,"tech_pioneer":12,"eco_advocate":11,"performance_enthusiast":8}', 390000);
+
+-- 10. ABC reporting inputs
+CREATE TABLE IF NOT EXISTS brands (
+    brand_id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price REAL NOT NULL DEFAULT 0,
+    unit_production_cost REAL NOT NULL DEFAULT 0,
+    brand_priority_weight REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS sales_results (
+    result_id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    brand_id TEXT NOT NULL,
+    region TEXT NOT NULL,
+    quarter INTEGER NOT NULL,
+    units_sold REAL NOT NULL DEFAULT 0,
+    price REAL,
+    FOREIGN KEY (brand_id) REFERENCES brands(brand_id)
+);
+
+CREATE TABLE IF NOT EXISTS advertising_placements (
+    placement_id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    brand_id TEXT NOT NULL,
+    quarter INTEGER NOT NULL,
+    brand_ad_spend REAL NOT NULL DEFAULT 0,
+    total_ad_budget REAL NOT NULL DEFAULT 0,
+    FOREIGN KEY (brand_id) REFERENCES brands(brand_id)
+);

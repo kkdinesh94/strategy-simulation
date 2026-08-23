@@ -282,9 +282,18 @@ export async function executeD1Query(sql: string, params: any[] = []): Promise<D
       body: JSON.stringify({ sql, params })
     });
     if (!res || !res.ok) {
+      let error = "Could not connect to Cloudflare D1 engine";
+      if (res) {
+        try {
+          const body = await res.json();
+          error = body.error || body.message || `D1 query failed (${res.status})`;
+        } catch {
+          error = `D1 query failed (${res.status})`;
+        }
+      }
       return {
         success: false,
-        error: "Could not connect to Cloudflare D1 engine"
+        error
       };
     }
     const data = await res.json();
