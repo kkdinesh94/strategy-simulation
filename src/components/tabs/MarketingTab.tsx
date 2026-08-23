@@ -3,6 +3,7 @@ import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, CLAIMS } from "../../engine/catalog";
 import { Megaphone, AlertTriangle, Eye, Sparkles } from "lucide-react";
 import { MarketingVisualizer } from "../MarketingVisualizer";
+import MediaPlanner from "../MediaPlanner";
 
 interface MarketingTabProps {
   team: TeamState;
@@ -92,6 +93,12 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
     <div className="space-y-6">
       {/* Marketing Visualizer Component */}
       <MarketingVisualizer team={team} gameState={gameState} />
+
+      <MediaPlanner
+        team={team}
+        onChange={onChange}
+        competitiveBenchmarkData={team.hist[team.hist.length - 1]?.intel || []}
+      />
 
       {/* Advertising Campaign Budget */}
       <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">

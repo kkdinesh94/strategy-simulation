@@ -121,6 +121,21 @@ CREATE TABLE IF NOT EXISTS ad_campaigns (
 CREATE INDEX IF NOT EXISTS idx_ad_campaigns_team_quarter ON ad_campaigns(team_id, quarter);
 CREATE INDEX IF NOT EXISTS idx_ad_campaigns_segment ON ad_campaigns(segment_target);
 
+-- 5b. Media placement plan for each advertising campaign
+CREATE TABLE IF NOT EXISTS media_placements (
+        placement_id TEXT PRIMARY KEY,
+        campaign_id TEXT,
+        media_type TEXT,
+        region TEXT,
+        cost_per_insertion REAL,
+        insertions INTEGER,
+        total_cost REAL GENERATED ALWAYS AS
+            (cost_per_insertion * POWER(insertions, 0.90)) STORED,
+        FOREIGN KEY (campaign_id) REFERENCES ad_campaigns(campaign_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_placements_campaign ON media_placements(campaign_id);
+
 -- 6. Vehicle Components & R&D Unlocks
 CREATE TABLE IF NOT EXISTS vehicle_components (
     component_id TEXT PRIMARY KEY,
