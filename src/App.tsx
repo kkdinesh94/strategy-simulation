@@ -38,6 +38,7 @@ import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
+import QuarterChecklist from "./components/QuarterChecklist";
 import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 
@@ -465,7 +466,15 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+        <div className="flex flex-col items-stretch gap-6 lg:flex-row lg:items-start">
+          <QuarterChecklist
+            universeId={universe.id}
+            teamId={currentTeam.i}
+            quarter={gameState.quarter}
+            onNavigate={setActiveTab}
+          />
+          <div className="min-w-0 flex-1 space-y-6">
         {/* Toast Notification */}
         {notification && (
           <div className="p-3 bg-[#1F2022] text-white rounded-xl shadow-lg border border-slate-700 flex items-center justify-between text-xs font-semibold animate-fade-in">
@@ -648,6 +657,8 @@ export default function App() {
         )}
 
         {activeTab === "help" && <HelpManualTab />}
+          </div>
+        </div>
       </main>
 
       {/* Pre-Submission Decision Summary Sheet Modal */}
