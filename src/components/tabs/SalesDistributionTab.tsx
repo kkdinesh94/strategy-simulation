@@ -6,6 +6,7 @@ import { Store, Users, MapPin, DollarSign, Award, Globe, ShoppingBag, CheckCircl
 import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
 import SalesForceManager from "../SalesForceManager";
+import SalesPricingPanel, { SALES_REGIONS } from "../SalesPricingPanel";
 
 interface SalesDistributionTabProps {
   team: TeamState;
@@ -115,6 +116,14 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
       <TerritoryMap team={team} />
 
       <SalesForceManager team={team} gameState={gameState} onChange={onChange} />
+
+      <div className="space-y-6">
+        {SALES_REGIONS.map((region) => (
+          <React.Fragment key={region.id}>
+            <SalesPricingPanel team={team} region={region} onChange={onChange} />
+          </React.Fragment>
+        ))}
+      </div>
 
       {/* Experience Centers & D2C E-Commerce */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
