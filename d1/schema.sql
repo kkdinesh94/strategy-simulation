@@ -101,6 +101,26 @@ INSERT OR IGNORE INTO market_segments (
 ('tech_pioneer', 'Tech Pioneer', 'Early adopters attracted to advanced technology, long range, and sophisticated autonomy features.', 4, 9, 7, 10, 8, 'Technology enthusiast eager to own the newest connected and autonomous EV capabilities.', 15.0),
 ('eco_advocate', 'Eco Advocate', 'Sustainability-led buyers who value environmental impact and responsible brand values above price.', 2, 8, 5, 6, 7, 'Environmentally conscious buyer prepared to pay more for a genuinely sustainable vehicle.', 15.0);
 
+-- 5a. Advertising Campaigns
+CREATE TABLE IF NOT EXISTS ad_campaigns (
+    campaign_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    quarter INTEGER,
+    segment_target TEXT,
+    brand_mentioned TEXT,
+    benefit_1 TEXT,
+    benefit_2 TEXT,
+    benefit_3 TEXT,
+    benefit_4 TEXT,
+    benefit_5 TEXT,
+    ad_judgment INTEGER CHECK (ad_judgment IS NULL OR ad_judgment BETWEEN 1 AND 100),
+    FOREIGN KEY (segment_target) REFERENCES market_segments(segment_id),
+    FOREIGN KEY (brand_mentioned) REFERENCES brands(brand_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_campaigns_team_quarter ON ad_campaigns(team_id, quarter);
+CREATE INDEX IF NOT EXISTS idx_ad_campaigns_segment ON ad_campaigns(segment_target);
+
 -- 6. Vehicle Components & R&D Unlocks
 CREATE TABLE IF NOT EXISTS vehicle_components (
     component_id TEXT PRIMARY KEY,
