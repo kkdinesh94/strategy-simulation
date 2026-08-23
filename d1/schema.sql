@@ -267,3 +267,47 @@ INSERT OR IGNORE INTO app_settings (key, value) VALUES
 ('active_provider', 'cloudflare_d1'),
 ('d1_schema_version', '1.0.0'),
 ('app_title', 'EV Venture League Simulation');
+
+-- 9. Global Sales Offices & Market Territories
+CREATE TABLE IF NOT EXISTS sales_offices (
+    office_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    city TEXT NOT NULL,
+    region TEXT NOT NULL,
+    quarter_opened INTEGER,
+    setup_cost REAL NOT NULL,
+    quarterly_lease REAL NOT NULL,
+    sales_force_count INTEGER NOT NULL DEFAULT 0,
+    web_channel_enabled INTEGER NOT NULL DEFAULT 0,
+    segment_composition TEXT NOT NULL,
+    market_size INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sales_offices_region ON sales_offices(region);
+CREATE INDEX IF NOT EXISTS idx_sales_offices_team ON sales_offices(team_id);
+
+INSERT OR IGNORE INTO sales_offices (
+    office_id, team_id, city, region, quarter_opened, setup_cost,
+    quarterly_lease, sales_force_count, web_channel_enabled,
+    segment_composition, market_size
+) VALUES
+('apac-shanghai', '0', 'Shanghai', 'Asia-Pacific', 1, 52.0, 9.5, 18, 1, '{"urban_commuter":38,"fleet_operator":24,"tech_pioneer":16,"eco_advocate":12,"performance_enthusiast":10}', 420000),
+('apac-tokyo', NULL, 'Tokyo', 'Asia-Pacific', NULL, 58.0, 11.0, 0, 0, '{"urban_commuter":30,"fleet_operator":20,"tech_pioneer":24,"eco_advocate":14,"performance_enthusiast":12}', 360000),
+('apac-seoul', '2', 'Seoul', 'Asia-Pacific', 1, 48.0, 8.5, 16, 1, '{"urban_commuter":32,"fleet_operator":18,"tech_pioneer":25,"eco_advocate":13,"performance_enthusiast":12}', 280000),
+('apac-singapore', NULL, 'Singapore', 'Asia-Pacific', NULL, 45.0, 10.5, 0, 0, '{"urban_commuter":26,"fleet_operator":28,"tech_pioneer":18,"eco_advocate":16,"performance_enthusiast":12}', 90000),
+('apac-sydney', NULL, 'Sydney', 'Asia-Pacific', NULL, 44.0, 8.0, 0, 0, '{"urban_commuter":28,"fleet_operator":18,"tech_pioneer":18,"eco_advocate":22,"performance_enthusiast":14}', 145000),
+('na-san-francisco', NULL, 'San Francisco', 'North America', NULL, 62.0, 12.0, 0, 0, '{"urban_commuter":20,"fleet_operator":14,"tech_pioneer":28,"eco_advocate":20,"performance_enthusiast":18}', 180000),
+('na-los-angeles', '0', 'Los Angeles', 'North America', 2, 60.0, 11.5, 20, 1, '{"urban_commuter":24,"fleet_operator":18,"tech_pioneer":20,"eco_advocate":18,"performance_enthusiast":20}', 310000),
+('na-austin', NULL, 'Austin', 'North America', NULL, 42.0, 7.5, 0, 0, '{"urban_commuter":26,"fleet_operator":20,"tech_pioneer":22,"eco_advocate":18,"performance_enthusiast":14}', 120000),
+('na-new-york', NULL, 'New York', 'North America', NULL, 68.0, 14.0, 0, 0, '{"urban_commuter":34,"fleet_operator":16,"tech_pioneer":18,"eco_advocate":16,"performance_enthusiast":16}', 440000),
+('na-toronto', '2', 'Toronto', 'North America', 1, 50.0, 9.0, 15, 1, '{"urban_commuter":30,"fleet_operator":18,"tech_pioneer":18,"eco_advocate":22,"performance_enthusiast":12}', 190000),
+('eu-amsterdam', NULL, 'Amsterdam', 'Europe', NULL, 48.0, 9.0, 0, 0, '{"urban_commuter":28,"fleet_operator":18,"tech_pioneer":18,"eco_advocate":25,"performance_enthusiast":11}', 110000),
+('eu-oslo', '0', 'Oslo', 'Europe', 2, 46.0, 8.0, 14, 1, '{"urban_commuter":24,"fleet_operator":16,"tech_pioneer":18,"eco_advocate":30,"performance_enthusiast":12}', 70000),
+('eu-munich', NULL, 'Munich', 'Europe', NULL, 52.0, 9.5, 0, 0, '{"urban_commuter":24,"fleet_operator":24,"tech_pioneer":16,"eco_advocate":20,"performance_enthusiast":16}', 170000),
+('eu-london', NULL, 'London', 'Europe', NULL, 70.0, 15.0, 0, 0, '{"urban_commuter":32,"fleet_operator":18,"tech_pioneer":18,"eco_advocate":18,"performance_enthusiast":14}', 390000),
+('eu-paris', '2', 'Paris', 'Europe', 1, 64.0, 12.5, 17, 1, '{"urban_commuter":30,"fleet_operator":16,"tech_pioneer":16,"eco_advocate":24,"performance_enthusiast":16}', 280000),
+('em-mumbai', '0', 'Mumbai', 'Emerging Markets', 1, 38.0, 5.5, 22, 1, '{"urban_commuter":44,"fleet_operator":26,"tech_pioneer":10,"eco_advocate":10,"performance_enthusiast":10}', 520000),
+('em-dubai', NULL, 'Dubai', 'Emerging Markets', NULL, 50.0, 8.5, 0, 0, '{"urban_commuter":18,"fleet_operator":24,"tech_pioneer":20,"eco_advocate":14,"performance_enthusiast":24}', 130000),
+('em-sao-paulo', NULL, 'São Paulo', 'Emerging Markets', NULL, 40.0, 6.0, 0, 0, '{"urban_commuter":40,"fleet_operator":25,"tech_pioneer":12,"eco_advocate":13,"performance_enthusiast":10}', 460000),
+('em-nairobi', NULL, 'Nairobi', 'Emerging Markets', NULL, 30.0, 3.5, 0, 0, '{"urban_commuter":42,"fleet_operator":28,"tech_pioneer":8,"eco_advocate":14,"performance_enthusiast":8}', 85000),
+('em-jakarta', '2', 'Jakarta', 'Emerging Markets', 2, 36.0, 5.0, 16, 1, '{"urban_commuter":45,"fleet_operator":24,"tech_pioneer":12,"eco_advocate":11,"performance_enthusiast":8}', 390000);
