@@ -120,6 +120,137 @@ function priorQuarterRecord(team: any, quarter: number): any {
     || {};
 }
 
+type FastTestResult = {
+  result_id: string;
+  team_id: string;
+  quarter: number;
+  region: string;
+  result_type: "brand" | "ad" | "reliability";
+  subject_id: string;
+  subject_name: string;
+  segment_id: string;
+  segment_name: string;
+  brand_judgment: number | null;
+  price_judgment: number | null;
+  ad_judgment: number | null;
+  reliability_judgment: number | null;
+};
+
+const fastTestNumber = (row: any, keys: string[], fallback = 0): number => {
+  for (const key of keys) {
+    const value = Number(row?.[key]);
+    if (Number.isFinite(value)) return value;
+  }
+  return fallback;
+};
+
+const fastTestText = (row: any, keys: string[], fallback = ""): string => {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row?.[key] !== null && String(row[key]).trim()) return String(row[key]).trim();
+  }
+  return fallback;
+};
+
+async function optionalRows(db: any, sql: string, ...params: any[]): Promise<any[]> {
+  try {
+    const response = await db.prepare(sql).bind(...params).all();
+    return response.results || [];
+  } catch {
+    return [];
+  }
+}
+
+/** Compute and persist the paid quarterly Fast Test report for one team. */
+export async function computeFastTests(teamId: string | number, quarter: number, region: string, db?: any): Promise<FastTestResult[]> {
+  if (!db) throw new Error("D1 database binding is required to compute fast tests.");
+  const normalizedTeamId = String(teamId).trim();
+  const normalizedRegion = String(region || "Global").trim() || "Global";
+  if (!normalizedTeamId || !Number.isInteger(quarter) || quarter < 1) throw new Error("teamId and a positive integer quarter are required.");
+
+  await db.exec(`CREATE TABLE IF NOT EXISTS fast_test_results (
+    result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL,
+    result_type TEXT NOT NULL CHECK (result_type IN ('brand', 'ad', 'reliability')),
+    subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL,
+    brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL,
+    purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id)
+  );`);
+
+  const decisionRows = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE team_i = ? AND quarter = ? ORDER BY submitted_at DESC LIMIT 1", normalizedTeamId, quarter);
+  const decision = readJson(decisionRows[0]?.decision_json);
+
+  const segments = await optionalRows(db, "SELECT * FROM market_segments ORDER BY segment_id");
+  const components = await optionalRows(db, "SELECT * FROM vehicle_components");
+  const componentMap = new Map(components.map((component: any) => [String(component.component_id), component]));
+  const brands = await optionalRows(db, "SELECT * FROM brands WHERE team_id = ?", normalizedTeamId);
+  const campaigns = await optionalRows(db, "SELECT * FROM ad_campaigns WHERE team_id = ? AND quarter = ?", normalizedTeamId, quarter);
+  const universeRows = await optionalRows(db, "SELECT game_state FROM universes ORDER BY updated_at DESC");
+  const state = universeRows.map((row: any) => readJson(row.game_state)).find((candidate: any) => (candidate.teams || []).some((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId));
+  const stateTeam = (state?.teams || []).find((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId);
+  const paidDecision = Object.keys(decision).length ? decision : (stateTeam?.dec || {});
+  const researchBudget = fastTestNumber(paidDecision, ["market_research_budget", "marketResearchBudget"]);
+  if (researchBudget <= 0) throw new Error("Purchase the Fast Test report with market_research_budget before computing it.");
+  const purchaseCost = researchBudget;
+  const designs = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC", normalizedTeamId, quarter);
+  const designRows = designs.map((row: any) => readJson(row.decision_json)).filter((row: any) => row.type === "vehicle_design");
+  const subjects = brands.length ? brands : designRows.length ? designRows : (stateTeam?.models || []);
+  const normalizedSegments = segments.length ? segments : Object.entries(stateTeam?.base || {}).map(([id, row]: [string, any]) => ({ segment_id: id, name: id, ...row }));
+  const benefitForComponent: Record<string, string> = { Battery: "range", Charging: "charging", Autonomy: "autonomy", Motor: "perf", Interior: "comfort", Exterior: "image", Software: "autonomy", Safety: "safety" };
+  const scoreBrand = (brand: any, segment: any) => {
+    const weights: Record<string, number> = {
+      range: fastTestNumber(segment, ["range_priority", "range_importance", "range"]),
+      charging: fastTestNumber(segment, ["charging_speed_priority", "charging_importance", "charging_speed"]),
+      autonomy: fastTestNumber(segment, ["autonomy_priority", "autonomy_importance", "autonomy"]),
+      image: fastTestNumber(segment, ["brand_image_priority", "design_importance", "image"]),
+      perf: fastTestNumber(segment, ["performance_priority", "performance_importance", "perf"]),
+      comfort: fastTestNumber(segment, ["comfort_priority", "comfort_importance", "comfort"]),
+      safety: fastTestNumber(segment, ["safety_priority", "safety_importance", "safety"]),
+      econ: fastTestNumber(segment, ["economy_priority", "price_importance", "econ"])
+    };
+    const componentIds = Array.isArray(brand.componentIds) ? brand.componentIds : Array.isArray(brand.component_ids) ? brand.component_ids : [];
+    const config = brand.cfg || {};
+    const tier = (value: any, values: Record<string, number>) => values[String(value)] || 0;
+    const performance: Record<string, number> = {
+      range: brand.range ?? tier(config.battery, { BC1: 10, BC2: 8, BC3: 7.5, BC4: 6.5, BC5: 4.5 }),
+      charging: brand.charging ?? tier(config.battery, { BC1: 10, BC2: 7.5, BC3: 6, BC4: 5, BC5: 4 }),
+      autonomy: brand.autonomy ?? tier(config.tech, { CT1: 1.5, CT2: 5, CT3: 7.5, CT4: 10 }),
+      image: brand.image ?? tier(config.build, { BD1: 10, BD2: 6, BD3: 4 }),
+      perf: brand.perf ?? tier(config.powertrain, { PT1: 10, PT2: 8, PT3: 6, PT4: 4 }),
+      comfort: brand.comfort ?? tier(config.seat, { WIDE: 10, STD: 6 }),
+      safety: brand.safety ?? tier(config.brakes, { BR1: 10, BR2: 7, BR3: 4 }),
+      econ: brand.econ ?? 0
+    };
+    componentIds.map((id: any) => componentMap.get(String(id))).filter(Boolean).forEach((component: any) => {
+      const benefit = benefitForComponent[component.category];
+      if (benefit) performance[benefit] = Math.max(performance[benefit] || 0, fastTestNumber(component, ["performance_score", "performance"]));
+    });
+    const weightedTotal = Object.keys(weights).reduce((sum, key) => sum + Math.max(0, Number(performance[key]) || 0) * weights[key], 0);
+    const maxTotal = Object.values(weights).reduce((sum, weight) => sum + weight * 10, 0) || 1;
+    const tolerance = fastTestNumber(segment, ["price_tolerance", "price_willing_to_pay", "price_willing_max", "wtp_max"], 60000 - fastTestNumber(segment, ["price_sensitivity"], 0) * 3500);
+    const price = fastTestNumber(brand, ["price", "msrp"], fastTestNumber(brand.cfg, ["price"]));
+    return { brand: Math.max(0, Math.min(100, (weightedTotal / maxTotal) * 100 - Math.max(0, price - tolerance) / Math.max(1, tolerance) * 15)), price: price <= tolerance ? 100 : Math.max(0, 100 - ((price - tolerance) / Math.max(1, tolerance)) * 100) };
+  };
+  const rows: FastTestResult[] = [];
+  for (const brand of subjects) for (const segment of normalizedSegments) {
+    const scored = scoreBrand(brand, segment);
+    const subjectId = fastTestText(brand, ["brand_id", "brandId", "id"], `${normalizedTeamId}-brand-${rows.length}`);
+    rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:brand:${subjectId}:${segment.segment_id}`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "brand", subject_id: subjectId, subject_name: fastTestText(brand, ["name", "brandName"], subjectId), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: Math.round(scored.brand), price_judgment: Math.round(scored.price), ad_judgment: null, reliability_judgment: null });
+  }
+  for (const campaign of campaigns) for (const segment of normalizedSegments) {
+    const benefits = [1, 2, 3, 4, 5].map((index) => campaign[`benefit_${index}`]).filter(Boolean);
+    const weights = benefits.reduce((sum, benefit, index) => sum + fastTestNumber(segment, [String(benefit), `${String(benefit)}_priority`, `${String(benefit)}_importance`]) / (index + 1), 0);
+    const maxWeight = Math.max(1, Object.keys(segment).filter((key) => /priority|importance/.test(key)).reduce((sum, key) => sum + Number(segment[key] || 0), 0));
+    rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:ad:${campaign.campaign_id}:${segment.segment_id}`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "ad", subject_id: String(campaign.campaign_id), subject_name: fastTestText(campaign, ["campaign_name", "campaign_id"]), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: null, price_judgment: null, ad_judgment: Math.round(Math.max(0, Math.min(100, weights / maxWeight * 100))), reliability_judgment: null });
+  }
+  const quality = await optionalRows(db, "SELECT * FROM quality_components WHERE team_id = ?", normalizedTeamId);
+  const warranty = quality.reduce((sum, item) => sum + fastTestNumber(item, ["warranty_cost_per_quarter"]), 0);
+  const improvements = quality.reduce((sum, item) => sum + fastTestNumber(item, ["reliability_improvement"]) * (item.improvement_invested > 0 || item.source_action_study_done || item.variance_study_done ? 1 : 0), 0);
+  const reliability = Math.max(0, Math.min(100, 100 - warranty / 10 + improvements));
+  rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:reliability:company`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "reliability", subject_id: "company", subject_name: "Company reliability", segment_id: "company", segment_name: "Company-wide", brand_judgment: null, price_judgment: null, ad_judgment: null, reliability_judgment: Math.round(reliability) });
+  await db.batch(rows.map((row) => db.prepare(`INSERT INTO fast_test_results (result_id, team_id, quarter, region, result_type, subject_id, subject_name, segment_id, segment_name, brand_judgment, price_judgment, ad_judgment, reliability_judgment, purchase_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET brand_judgment=excluded.brand_judgment, price_judgment=excluded.price_judgment, ad_judgment=excluded.ad_judgment, reliability_judgment=excluded.reliability_judgment, purchase_cost=excluded.purchase_cost`).bind(row.result_id, row.team_id, row.quarter, row.region, row.result_type, row.subject_id, row.subject_name, row.segment_id, row.segment_name, row.brand_judgment, row.price_judgment, row.ad_judgment, row.reliability_judgment, purchaseCost)));
+  return rows;
+}
+
 /** Validate a campaign against the previous quarter's persisted market snapshot. */
 export async function validateAdClaims(campaignId: string, teamId: string, quarter: number, db?: any): Promise<{ valid: boolean; results: AdClaimResult[] }> {
   if (!db) throw new Error("D1 database binding is required to validate ad claims.");
@@ -271,6 +402,21 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
         { status: 200, headers: corsHeaders }
       );
+    }
+
+    if (path === "/api/fast-tests" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = method === "POST" ? await request.json() as any : {};
+      const teamId = String(body.teamId || body.team_id || url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
+      const quarter = Number(body.quarter || url.searchParams.get("quarter"));
+      const region = String(body.region || url.searchParams.get("region") || "Global").trim() || "Global";
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      if (method === "POST") {
+        const results = await computeFastTests(teamId, quarter, region, env.DB);
+        return new Response(JSON.stringify({ success: true, purchased: true, results }), { status: 200, headers: corsHeaders });
+      }
+      const resultRows = await env.DB.prepare("SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id").bind(teamId, quarter, region).all();
+      return new Response(JSON.stringify({ success: true, purchased: (resultRows.results || []).length > 0, results: resultRows.results || [] }), { status: 200, headers: corsHeaders });
     }
 
     // Vehicle designer catalog and brand save API.

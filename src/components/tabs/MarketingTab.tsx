@@ -4,6 +4,7 @@ import { SEGMENTS, CLAIMS } from "../../engine/catalog";
 import { Megaphone, AlertTriangle, Eye, Sparkles } from "lucide-react";
 import { MarketingVisualizer } from "../MarketingVisualizer";
 import MediaPlanner from "../MediaPlanner";
+import FastTestReport from "../FastTestReport";
 
 interface MarketingTabProps {
   team: TeamState;
@@ -87,6 +88,11 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
     });
   };
 
+  const handleFastTestBudgetChange = (value: number) => {
+    if (isLocked) return;
+    onChange({ ...team, dec: { ...team.dec, market_research_budget: Math.max(0, value), buyIntel: value > 0 } });
+  };
+
   const totalAlloc = SEGMENTS.reduce((x, s) => x + (team.dec.alloc[s.id] || 0), 0);
 
   return (
@@ -141,6 +147,20 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
             <div>• Diminishing marginal returns occur above ~Rs. 120 L per segment.</div>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
+        <div className="flex items-center justify-between gap-4 mb-3">
+          <div>
+            <h3 className="text-lg font-bold text-[#1F2022]">Fast Test Report</h3>
+            <p className="text-xs text-[#5A5C60]">Purchase this quarter's brand, price, and advertising judgments.</p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#5A5C60]">
+            Budget (Rs. L)
+            <input type="number" min={0} step={1} value={team.dec.market_research_budget || 0} disabled={isLocked} onChange={(event) => handleFastTestBudgetChange(+event.target.value)} className="w-24 p-2 font-mono border border-[#E0DCD3] rounded-lg" />
+          </label>
+        </div>
+        <FastTestReport teamId={team.i} quarter={gameState.quarter} region="Global" budget={team.dec.market_research_budget || 0} />
       </div>
 
       {/* Campaign Claims (Deceptive Advertising Checks) */}

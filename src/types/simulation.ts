@@ -130,6 +130,7 @@ export interface TeamDecision {
   cdInvestment?: number;
   interestRate?: number;
   buyIntel: boolean;
+  market_research_budget?: number;
   buyClinic: boolean;
   vc: { ask: number; equity: number; sharesOffered?: number; sharePrice?: number } | null;
   rndStarts?: { id: string; mode: "fast" | "std" }[];
