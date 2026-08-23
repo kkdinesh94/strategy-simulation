@@ -85,7 +85,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   onUniversesUpdate,
   onNotify
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "schema">("cloudflare");
+  const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "violations" | "schema">("cloudflare");
 
   // Selected Universe for Visual Editing
   const [selectedUnivId, setSelectedUnivId] = useState<string>(activeUniverse?.id || allUniverses[0]?.id || "univ_nitw_2026");
@@ -110,6 +110,9 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [isNewDocModalOpen, setIsNewDocModalOpen] = useState<boolean>(false);
   const [newDocId, setNewDocId] = useState<string>("");
   const [newDocJson, setNewDocJson] = useState<string>("{\n  \"name\": \"Sample Document\"\n}");
+  const [adViolations, setAdViolations] = useState<any[]>([]);
+  const [loadingAdViolations, setLoadingAdViolations] = useState<boolean>(false);
+  const [adViolationRefresh, setAdViolationRefresh] = useState<number>(0);
 
   // Universe Composer Modal state
   const [isUniverseModalOpen, setIsUniverseModalOpen] = useState<boolean>(false);
@@ -303,6 +306,19 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
       loadCollectionDocs(selectedCollection);
     }
   }, [selectedCollection, activeSubTab]);
+
+  useEffect(() => {
+    if (activeSubTab !== "violations") return;
+    setLoadingAdViolations(true);
+    fetch(`/api/ad-violations?universe_id=${encodeURIComponent(selectedUnivId)}`)
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not load ad violations.");
+        setAdViolations(payload.violations || []);
+      })
+      .catch((error) => onNotify(`Failed to load ad violations: ${error.message}`))
+      .finally(() => setLoadingAdViolations(false));
+  }, [activeSubTab, selectedUnivId, adViolationRefresh]);
 
   // Save changes to Teams in Universe visually
   const handleSaveTeamsVisual = async () => {
@@ -947,6 +963,19 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
         >
           <Code className="w-4 h-4 text-slate-600" />
           <span>Blueprint & Rules</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab("violations")}
+          className={`px-4 py-2.5 rounded-t-lg text-xs font-semibold transition flex items-center gap-2 ${
+            activeSubTab === "violations"
+              ? "bg-[#FAF8F5] text-[#1F2022] border-t border-x border-[#E5E1D8] shadow-2xs"
+              : "text-[#5A5C60] hover:text-[#1F2022] hover:bg-[#F3F0EA]"
+          }`}
+        >
+          <AlertCircle className="w-4 h-4 text-red-600" />
+          <span>Ad Violations</span>
+          {adViolations.length > 0 && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">{adViolations.length}</span>}
         </button>
       </div>
 
@@ -1770,6 +1799,46 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                   </pre>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeSubTab === "violations" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-[#1F2022]">Deceptive Advertising Violations</h2>
+              <p className="text-xs text-[#5A5C60]">Recorded claim failures, offense counts, revenue fines, and active ban periods for the selected universe.</p>
+            </div>
+            <button type="button" onClick={() => setAdViolationRefresh((value) => value + 1)} className="px-3 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold flex items-center gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+            </button>
+          </div>
+          {loadingAdViolations ? (
+            <div className="p-12 text-center text-xs font-mono text-[#5A5C60]">Loading advertising violations from Cloudflare D1...</div>
+          ) : adViolations.length === 0 ? (
+            <div className="p-12 text-center bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl text-xs text-[#5A5C60]">No ad claim violations recorded for this universe.</div>
+          ) : (
+            <div className="overflow-x-auto bg-white border border-[#E5E1D8] rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#FAF8F5] border-b border-[#E5E1D8] text-[#5A5C60] uppercase font-mono">
+                  <tr><th className="p-3">Quarter</th><th className="p-3">Team</th><th className="p-3">Claim</th><th className="p-3">Offense</th><th className="p-3">Penalty</th><th className="p-3">Ban Through</th><th className="p-3">Reason</th></tr>
+                </thead>
+                <tbody>
+                  {adViolations.map((violation) => (
+                    <tr key={violation.violation_id} className="border-b border-[#F0ECE5] last:border-0">
+                      <td className="p-3 font-mono">Q{violation.quarter}</td>
+                      <td className="p-3 font-mono">{violation.team_id}</td>
+                      <td className="p-3 font-semibold">{violation.claim}</td>
+                      <td className="p-3">#{violation.offense_number}</td>
+                      <td className="p-3 text-red-700 font-semibold">{violation.fine_pct ? `${Number(violation.fine_pct) * 100}% revenue fine + ban` : "4-quarter ban"}</td>
+                      <td className="p-3 font-mono">Q{violation.ban_until_quarter}</td>
+                      <td className="p-3 text-[#5A5C60] min-w-72">{violation.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

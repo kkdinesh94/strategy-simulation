@@ -61,6 +61,150 @@ function normalizeComponentIds(componentIds: string[]): string[] {
   return [...new Set(componentIds.map((componentId) => String(componentId).trim()).filter(Boolean))].sort();
 }
 
+type AdClaimResult = {
+  claim: string;
+  valid: boolean;
+  reason: string;
+  violation?: Record<string, unknown>;
+};
+
+const CLAIM_ALIASES: Record<string, string> = {
+  range: "range",
+  longestrangeinmarket: "range",
+  charge: "charging",
+  fastestcharginginmarket: "charging",
+  charging: "charging",
+  econ: "affordable",
+  affordable: "affordable",
+  mostaffordableev: "affordable",
+  autonomy: "autonomy",
+  mostautonomous: "autonomy",
+  reliable: "reliable",
+  reliability: "reliable",
+  mostreliable: "reliable"
+};
+
+function claimType(claim: unknown): string {
+  const normalized = String(claim || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return CLAIM_ALIASES[normalized] || normalized;
+}
+
+function readJson(value: unknown): any {
+  if (typeof value !== "string") return value || {};
+  try { return JSON.parse(value); } catch { return {}; }
+}
+
+function modelMetrics(model: any, components: Map<string, any>): { range: number; charging: number; autonomy: number; price: number; hasDcFastCharge: boolean } {
+  const config = model?.cfg || {};
+  const componentIds = Array.isArray(model?.componentIds) ? model.componentIds : [];
+  const selectedComponents = componentIds.map((id: string) => components.get(id)).filter(Boolean);
+  const byCategory = (category: string) => selectedComponents.filter((component: any) => component.category === category);
+  const battery = byCategory("Battery")[0];
+  const charging = byCategory("Charging")[0];
+  const autonomy = byCategory("Autonomy")[0];
+  const legacyRange: Record<string, number> = { BC1: 10, BC2: 8, BC3: 7.5, BC4: 6.5, BC5: 4.5 };
+  const legacyCharging: Record<string, number> = { BC1: 10, BC2: 7.5, BC3: 6, BC4: 5, BC5: 4 };
+  const legacyAutonomy: Record<string, number> = { CT1: 1.5, CT2: 5, CT3: 7.5, CT4: 10 };
+  return {
+    range: Number(model?.range ?? battery?.performance_score ?? legacyRange[config.battery] ?? 0),
+    charging: Number(model?.charging ?? charging?.performance_score ?? legacyCharging[config.battery] ?? 0),
+    autonomy: Number(model?.autonomy ?? autonomy?.performance_score ?? legacyAutonomy[config.tech] ?? 0),
+    price: Number(model?.price || 0),
+    hasDcFastCharge: Boolean(charging && /dc|fast|ultra/i.test(`${charging.component_id} ${charging.name}`))
+  };
+}
+
+function priorQuarterRecord(team: any, quarter: number): any {
+  return (team?.hist || []).find((record: any) => Number(record.q) === quarter - 1)
+    || (team?.hist || []).slice(-1)[0]
+    || {};
+}
+
+/** Validate a campaign against the previous quarter's persisted market snapshot. */
+export async function validateAdClaims(campaignId: string, teamId: string, quarter: number, db?: any): Promise<{ valid: boolean; results: AdClaimResult[] }> {
+  if (!db) throw new Error("D1 database binding is required to validate ad claims.");
+  if (!Number.isInteger(quarter) || quarter < 1) throw new Error("quarter must be a positive integer.");
+  await db.exec(`CREATE TABLE IF NOT EXISTS ad_violations (violation_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, claim TEXT NOT NULL, quarter INTEGER NOT NULL, offense_number INTEGER NOT NULL, penalty_type TEXT NOT NULL, fine_pct REAL NOT NULL DEFAULT 0, fine_amount REAL NOT NULL DEFAULT 0, ban_until_quarter INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+
+  const campaign = await db.prepare("SELECT * FROM ad_campaigns WHERE campaign_id = ?").bind(campaignId).first();
+  if (!campaign) throw new Error("Advertising campaign was not found.");
+  const campaignTeamId = String(teamId || campaign.team_id || "");
+  const requestedUniverseId = campaign.universe_id || null;
+  const universeRows = await db.prepare(requestedUniverseId ? "SELECT * FROM universes WHERE id = ?" : "SELECT * FROM universes ORDER BY updated_at DESC").bind(...(requestedUniverseId ? [requestedUniverseId] : [])).all();
+  const universe = (universeRows.results || []).find((row: any) => {
+    const state = readJson(row.game_state);
+    return requestedUniverseId || (state.teams || []).some((team: any) => String(team.i) === campaignTeamId || String(team.name) === campaignTeamId);
+  });
+  if (!universe) throw new Error("The campaign's universe could not be resolved.");
+  const state = readJson(universe.game_state);
+  const teams = Array.isArray(state.teams) ? state.teams : [];
+  const targetTeam = teams.find((team: any) => String(team.i) === campaignTeamId || String(team.name) === campaignTeamId);
+  if (!targetTeam) throw new Error("The campaign team was not found in the universe.");
+
+  const componentRows = await db.prepare("SELECT component_id, category, name, performance_score FROM vehicle_components").all();
+  const components = new Map<string, any>((componentRows.results || []).map((row: any) => [String(row.component_id), row] as [string, any]));
+  const decisionRows = await db.prepare("SELECT team_i, quarter, decision_json FROM team_decisions WHERE universe_id = ? AND quarter <= ? ORDER BY quarter DESC").bind(universe.id, quarter - 1).all();
+  const latestDesigns = new Map<string, any>();
+  for (const row of (decisionRows.results || []) as any[]) {
+    const decision = readJson(row.decision_json);
+    if (decision.type !== "vehicle_design") continue;
+    const key = `${row.team_i}:${decision.brandId || decision.brandName || row.team_i}`;
+    if (!latestDesigns.has(key)) latestDesigns.set(key, { teamId: String(row.team_i), ...decision });
+  }
+  const brandsByTeam = new Map<string, any[]>();
+  for (const design of latestDesigns.values()) {
+    const brands = brandsByTeam.get(design.teamId) || [];
+    brands.push(modelMetrics(design, components));
+    brandsByTeam.set(design.teamId, brands);
+  }
+  for (const team of teams) {
+    const teamKey = String(team.i);
+    if (!brandsByTeam.has(teamKey)) brandsByTeam.set(teamKey, (team.models || []).map((model: any) => modelMetrics(model, components)));
+  }
+  const targetBrands = brandsByTeam.get(String(targetTeam.i)) || [];
+  const competitorBrands = [...brandsByTeam.entries()].filter(([id]) => id !== String(targetTeam.i)).flatMap(([, brands]) => brands);
+  const targetPrior = priorQuarterRecord(targetTeam, quarter);
+  const competitorPrior = teams.map((team: any) => priorQuarterRecord(team, quarter));
+  const industryAverageReliability = competitorPrior.length
+    ? competitorPrior.reduce((sum: number, record: any) => sum + Number(record.reliability_rating ?? record.reliabilityRating ?? record.reliab ?? 0), 0) / competitorPrior.length
+    : 0;
+  const claims = Array.from({ length: 5 }, (_, index) => campaign[`benefit_${index + 1}`]).filter(Boolean);
+  const results: AdClaimResult[] = [];
+  for (const claim of claims) {
+    const type = claimType(claim);
+    let valid = quarter === 1;
+    let reason = quarter === 1 ? "First-quarter test market grace period." : "Claim is not supported by the market snapshot.";
+    if (quarter > 1 && type === "range") {
+      valid = targetBrands.length > 0 && competitorBrands.length > 0 && Math.max(...targetBrands.map((brand) => brand.range)) >= Math.max(...competitorBrands.map((brand) => brand.range));
+      reason = "Team range must be at least as high as every competitor brand.";
+    } else if (quarter > 1 && type === "charging") {
+      valid = targetBrands.some((brand) => brand.hasDcFastCharge);
+      reason = "Team must offer a DC fast-charge component on at least one brand.";
+    } else if (quarter > 1 && type === "affordable") {
+      valid = targetBrands.length > 0 && competitorBrands.length > 0 && Math.min(...targetBrands.map((brand) => brand.price)) <= Math.min(...competitorBrands.map((brand) => brand.price));
+      reason = "Team's lowest-priced brand must be no higher than the lowest competitor brand.";
+    } else if (quarter > 1 && type === "autonomy") {
+      valid = targetBrands.length > 0 && competitorBrands.length > 0 && Math.max(...targetBrands.map((brand) => brand.autonomy)) >= Math.max(...competitorBrands.map((brand) => brand.autonomy));
+      reason = "Team must have the highest autonomy component tier in the market.";
+    } else if (quarter > 1 && type === "reliable") {
+      valid = Number(targetPrior.reliability_rating ?? targetPrior.reliabilityRating ?? targetPrior.reliab ?? 0) >= industryAverageReliability;
+      reason = "Team reliability must be at least the industry average.";
+    }
+    const result: AdClaimResult = { claim: String(claim), valid, reason };
+    if (!valid) {
+      const priorCount = await db.prepare("SELECT COUNT(*) AS count FROM ad_violations WHERE universe_id = ? AND team_id = ? AND claim = ?").bind(universe.id, campaignTeamId, type).first("count");
+      const offenseNumber = Number(priorCount || 0) + 1;
+      const finePct = offenseNumber < 2 ? 0 : (offenseNumber - 1) * 0.05;
+      const revenue = Number(targetPrior.revenue || 0);
+      const violation = { violation_id: `${campaignId}:${type}`, campaign_id: campaignId, universe_id: universe.id, team_id: campaignTeamId, claim: type, quarter, offense_number: offenseNumber, penalty_type: finePct ? "fine_and_ban" : "ban", fine_pct: finePct, fine_amount: revenue * finePct, ban_until_quarter: quarter + 4, reason };
+      await db.prepare("INSERT OR IGNORE INTO ad_violations (violation_id, campaign_id, universe_id, team_id, claim, quarter, offense_number, penalty_type, fine_pct, fine_amount, ban_until_quarter, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(violation.violation_id, violation.campaign_id, violation.universe_id, violation.team_id, violation.claim, violation.quarter, violation.offense_number, violation.penalty_type, violation.fine_pct, violation.fine_amount, violation.ban_until_quarter, violation.reason).run();
+      result.violation = violation;
+    }
+    results.push(result);
+  }
+  return { valid: results.every((result) => result.valid), results };
+}
+
 export async function onRequest(context: { request: Request; env: Env; params: { route?: string[] } }) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -343,6 +487,35 @@ export async function onRequest(context: { request: Request; env: Env; params: {
           is_rd_unlocked INTEGER DEFAULT 0,
           available_from_quarter INTEGER DEFAULT 1
         );
+        CREATE TABLE IF NOT EXISTS ad_campaigns (
+          campaign_id TEXT PRIMARY KEY,
+          universe_id TEXT,
+          team_id TEXT,
+          quarter INTEGER,
+          segment_target TEXT,
+          brand_mentioned TEXT,
+          benefit_1 TEXT,
+          benefit_2 TEXT,
+          benefit_3 TEXT,
+          benefit_4 TEXT,
+          benefit_5 TEXT,
+          ad_judgment INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS ad_violations (
+          violation_id TEXT PRIMARY KEY,
+          campaign_id TEXT NOT NULL,
+          universe_id TEXT NOT NULL,
+          team_id TEXT NOT NULL,
+          claim TEXT NOT NULL,
+          quarter INTEGER NOT NULL,
+          offense_number INTEGER NOT NULL,
+          penalty_type TEXT NOT NULL,
+          fine_pct REAL NOT NULL DEFAULT 0,
+          fine_amount REAL NOT NULL DEFAULT 0,
+          ban_until_quarter INTEGER NOT NULL,
+          reason TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
       `);
       return new Response(JSON.stringify({ success: true, message: "D1 Schema successfully initialized." }), {
         status: 200,
@@ -565,6 +738,27 @@ export async function onRequest(context: { request: Request; env: Env; params: {
           headers: corsHeaders
         });
       }
+    }
+
+    if (path.startsWith("/api/ad-campaigns/") && path.endsWith("/validate") && method === "POST") {
+      const campaignId = decodeURIComponent(path.split("/").filter(Boolean).slice(-2, -1)[0] || "");
+      const body = await request.json() as { teamId?: string; quarter?: number };
+      const teamId = String(body.teamId || "").trim();
+      const quarter = Number(body.quarter);
+      if (!campaignId || !teamId || !Number.isInteger(quarter) || quarter < 1) {
+        return new Response(JSON.stringify({ error: "campaignId, teamId, and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      }
+      const validation = await validateAdClaims(campaignId, teamId, quarter, env.DB);
+      return new Response(JSON.stringify(validation), { status: 200, headers: corsHeaders });
+    }
+
+    if (path === "/api/ad-violations" && method === "GET") {
+      const universeId = url.searchParams.get("universe_id");
+      const query = universeId
+        ? "SELECT * FROM ad_violations WHERE universe_id = ? ORDER BY created_at DESC"
+        : "SELECT * FROM ad_violations ORDER BY created_at DESC";
+      const rows = await env.DB.prepare(query).bind(...(universeId ? [universeId] : [])).all();
+      return new Response(JSON.stringify({ violations: rows.results || [] }), { status: 200, headers: corsHeaders });
     }
 
     // Gemini advisor endpoint (Cloudflare Edge compatible)

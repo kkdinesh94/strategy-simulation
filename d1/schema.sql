@@ -104,6 +104,7 @@ INSERT OR IGNORE INTO market_segments (
 -- 5a. Advertising Campaigns
 CREATE TABLE IF NOT EXISTS ad_campaigns (
     campaign_id TEXT PRIMARY KEY,
+    universe_id TEXT,
     team_id TEXT,
     quarter INTEGER,
     segment_target TEXT,
@@ -120,6 +121,25 @@ CREATE TABLE IF NOT EXISTS ad_campaigns (
 
 CREATE INDEX IF NOT EXISTS idx_ad_campaigns_team_quarter ON ad_campaigns(team_id, quarter);
 CREATE INDEX IF NOT EXISTS idx_ad_campaigns_segment ON ad_campaigns(segment_target);
+
+CREATE TABLE IF NOT EXISTS ad_violations (
+    violation_id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    universe_id TEXT NOT NULL,
+    team_id TEXT NOT NULL,
+    claim TEXT NOT NULL,
+    quarter INTEGER NOT NULL,
+    offense_number INTEGER NOT NULL,
+    penalty_type TEXT NOT NULL,
+    fine_pct REAL NOT NULL DEFAULT 0,
+    fine_amount REAL NOT NULL DEFAULT 0,
+    ban_until_quarter INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_violations_universe ON ad_violations(universe_id, quarter DESC);
+CREATE INDEX IF NOT EXISTS idx_ad_violations_team_claim ON ad_violations(universe_id, team_id, claim, quarter DESC);
 
 -- 5b. Media placement plan for each advertising campaign
 CREATE TABLE IF NOT EXISTS media_placements (
