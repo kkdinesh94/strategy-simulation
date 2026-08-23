@@ -180,7 +180,14 @@ export function mkModel(name: string, cfg: any, addIds: string[], price: number)
 }
 
 export function reliabilityOf(t: TeamState): number {
-  return 1 - 0.5 * Math.exp(-t.qualityCum / 150);
+  const spendReliability = 1 - 0.5 * Math.exp(-t.qualityCum / 150);
+  const components = t.qualityComponents;
+  if (!components || components.length === 0) return spendReliability;
+  const componentReliability = components.reduce(
+    (total, component) => total + 0.5 + Math.min(0.5, Math.max(0, component.reliabilityImprovement) / 100),
+    0
+  ) / components.length;
+  return Math.max(0, Math.min(1, (spendReliability + componentReliability) / 2));
 }
 
 export function equityOf(t: TeamState): number {

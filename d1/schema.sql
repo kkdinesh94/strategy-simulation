@@ -106,6 +106,23 @@ CREATE TABLE IF NOT EXISTS production_schedules (
 
 CREATE INDEX IF NOT EXISTS idx_production_schedules_lookup ON production_schedules(universe_id, team_i, quarter);
 
+-- 3d. Component-level quality improvement decisions
+CREATE TABLE IF NOT EXISTS quality_components (
+    qc_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    component_category TEXT,
+    inspection_active INTEGER DEFAULT 0,
+    variance_study_done INTEGER DEFAULT 0,
+    source_action_study_done INTEGER DEFAULT 0,
+    improvement_invested REAL DEFAULT 0,
+    warranty_cost_per_quarter REAL,
+    defect_cost_per_quarter REAL,
+    inspection_cost REAL,
+    reliability_improvement REAL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_quality_components_team ON quality_components(team_id);
+
 INSERT OR IGNORE INTO production_facilities (
     facility_id, team_id, location, fixed_capacity_per_day,
     operating_capacity_per_day, quarter_built, build_cost,

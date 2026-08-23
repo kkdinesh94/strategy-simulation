@@ -6,6 +6,7 @@ import { Factory, ShieldCheck, Wrench, AlertTriangle, ArrowUpRight } from "lucid
 import { OperationsVisualizer } from "../OperationsVisualizer";
 import FacilityLocationWizard from "../FacilityLocationWizard";
 import ProductionScheduler from "../ProductionScheduler";
+import QualityDashboard from "../QualityDashboard";
 
 interface OperationsTabProps {
   team: TeamState;
@@ -113,6 +114,7 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
       />
 
       <ProductionScheduler team={team} gameState={gameState} universeId={universeId} onChange={onChange} onNotify={onNotify} />
+      <QualityDashboard team={team} gameState={gameState} onChange={onChange} onNotify={onNotify} />
       <div className="hidden">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#1F2022]">

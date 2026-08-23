@@ -137,6 +137,20 @@ export interface TeamDecision {
   lockedBy?: string;
 }
 
+export interface QualityComponentState {
+  qcId: string;
+  componentCategory: string;
+  inspectionActive: boolean;
+  varianceStudyDone: boolean;
+  sourceActionStudyDone: boolean;
+  improvementInvested: number;
+  warrantyCostPerQuarter: number;
+  defectCostPerQuarter: number;
+  inspectionCost: number;
+  reliabilityImprovement: number;
+  improvementQuarter?: number;
+}
+
 export interface QuarterCashFlow {
   operating: number; // Cash from core operations
   investing: number; // Capex, showroom expansion, R&D projects
@@ -286,6 +300,7 @@ export interface TeamState {
   roles?: Record<string, string>; // e.g. { CEO: "John Doe", CFO: "Jane Smith" }
   dec: TeamDecision;
   hist: QuarterResult[];
+  qualityComponents?: QualityComponentState[];
   draft?: any;
 }
 
