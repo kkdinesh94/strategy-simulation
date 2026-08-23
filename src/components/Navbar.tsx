@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import {
   Compass,
+  Target,
   Bike,
   Cpu,
   Megaphone,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 
 export type TabKey =
+  | "strategy"
   | "charter"
   | "product"
   | "rnd"
@@ -57,6 +59,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [isWrapView, setIsWrapView] = useState<boolean>(false);
 
   const tabs: { id: TabKey; label: string; icon: React.ReactNode; show?: boolean }[] = [
+    { id: "strategy", label: "Strategy Wizard", icon: <Target className="w-4 h-4 text-rose-500" /> },
     { id: "charter", label: "Executive Charter", icon: <Compass className="w-4 h-4" /> },
     { id: "product", label: "Product & Specs", icon: <Bike className="w-4 h-4" /> },
     { id: "rnd", label: "R&D & Licensing", icon: <Cpu className="w-4 h-4 text-purple-400" /> },

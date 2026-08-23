@@ -38,6 +38,7 @@ import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
+import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 
 export default function App() {
@@ -491,6 +492,23 @@ export default function App() {
         )}
 
         {/* Tab Switcher Body */}
+        <StrategySummary
+          universeId={universe.id}
+          teamId={currentTeam.i}
+          quarter={gameState.quarter}
+          onOpen={() => setActiveTab("strategy")}
+        />
+
+        {activeTab === "strategy" && (
+          <StrategyWizard
+            universeId={universe.id}
+            teamId={currentTeam.i}
+            quarter={gameState.quarter}
+            teamName={currentTeam.name}
+            onNotify={showNotification}
+          />
+        )}
+
         {activeTab === "charter" && (
           <CharterTab
             team={currentTeam}

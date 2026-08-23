@@ -25,6 +25,35 @@ async function startServer() {
     });
   });
 
+  app.get("/api/strategy-plans", (req, res) => {
+    try {
+      const universeId = String(req.query.universeId || "").trim();
+      const teamId = Number(req.query.teamId);
+      const quarter = Number(req.query.quarter);
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1) return res.status(400).json({ error: "universeId, teamId, and a positive integer quarter are required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS strategy_plans (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, plan_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const row: any = d1.prepare("SELECT * FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter = ?").get(universeId, teamId, quarter);
+      return res.json({ plan: row ? JSON.parse(row.plan_json) : null, updatedAt: row?.updated_at || null });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/strategy-plans", (req, res) => {
+    try {
+      const { universeId, teamId, quarter, plan } = req.body || {};
+      const teamI = Number(teamId);
+      const quarterNumber = Number(quarter);
+      if (!String(universeId || "").trim() || !Number.isInteger(teamI) || !Number.isInteger(quarterNumber) || quarterNumber < 1 || !plan || typeof plan !== "object") return res.status(400).json({ error: "universeId, teamId, quarter, and plan are required." });
+      if (String(plan.mission || "").trim().split(/\s+/).filter(Boolean).length > 200) return res.status(400).json({ error: "Mission statement cannot exceed 200 words." });
+      const priorities = plan.priorities || {};
+      const priorityTotal = ["Marketing", "Sales", "Manufacturing", "R&D", "Human Resources"].reduce((sum, name) => sum + Number(priorities[name] || 0), 0);
+      if (priorityTotal !== 100) return res.status(400).json({ error: "Functional priorities must total 100 points." });
+      d1.exec("CREATE TABLE IF NOT EXISTS strategy_plans (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, plan_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const id = `${universeId}:${teamI}:${quarterNumber}`;
+      d1.prepare("INSERT INTO strategy_plans (id, universe_id, team_i, quarter, plan_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET plan_json = excluded.plan_json, updated_at = datetime('now')").run(id, String(universeId), teamI, quarterNumber, JSON.stringify(plan));
+      return res.json({ success: true, id });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  });
+
   app.all("/api/competitive-benchmark", (req, res) => {
     try {
       const input = req.method === "POST" ? req.body || {} : req.query;
