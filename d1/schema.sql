@@ -106,6 +106,17 @@ CREATE TABLE IF NOT EXISTS production_schedules (
 
 CREATE INDEX IF NOT EXISTS idx_production_schedules_lookup ON production_schedules(universe_id, team_i, quarter);
 
+-- 3c. Changeover investment decisions and diminishing-return projections
+CREATE TABLE IF NOT EXISTS changeover_investments (
+    team_id TEXT,
+    quarter INTEGER,
+    amount_invested REAL,
+    changeover_hours_saved REAL, -- formula: diminishing returns curve
+    new_changeover_time REAL -- hours per brand switch on production line
+);
+
+CREATE INDEX IF NOT EXISTS idx_changeover_investments_team_quarter ON changeover_investments(team_id, quarter);
+
 -- 3d. Component-level quality improvement decisions
 CREATE TABLE IF NOT EXISTS quality_components (
     qc_id TEXT PRIMARY KEY,

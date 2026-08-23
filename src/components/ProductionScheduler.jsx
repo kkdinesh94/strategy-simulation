@@ -1,9 +1,23 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Factory, Save } from "lucide-react";
+import { AlertTriangle, Factory, Info, Save } from "lucide-react";
 import { unitCost } from "../engine/simulationEngine";
 
 const DAYS = 65;
+const HOURS_PER_PRODUCTION_DAY = 8;
+const CURRENT_CHANGEOVER_TIME = 8;
+const MAX_CHANGEOVER_HOURS_SAVED = 6;
+const CHANGEOVER_HALF_SATURATION = 10;
 const COLORS = ["#0f766e", "#d97706", "#2563eb", "#be123c", "#7c3aed"];
+
+function changeoverProjection(amountInvested, brandCount) {
+  const investment = Math.max(0, Number(amountInvested) || 0);
+  const hoursSaved = MAX_CHANGEOVER_HOURS_SAVED * investment / (investment + CHANGEOVER_HALF_SATURATION);
+  const newChangeoverTime = Math.max(2, CURRENT_CHANGEOVER_TIME - hoursSaved);
+  const switches = Math.max(0, brandCount - 1);
+  const currentDaysLost = switches * CURRENT_CHANGEOVER_TIME / HOURS_PER_PRODUCTION_DAY;
+  const projectedDaysLost = switches * newChangeoverTime / HOURS_PER_PRODUCTION_DAY;
+  return { hoursSaved, newChangeoverTime, currentDaysLost, projectedDaysLost, daysRecovered: currentDaysLost - projectedDaysLost };
+}
 
 function buildSchedule(team, settings) {
   const brands = team.models.map((model) => {
@@ -81,11 +95,15 @@ export default function ProductionScheduler({ team, gameState, universeId, onCha
     const operatingCapacity = Math.max(1, Math.round((team.capacity || 0) / DAYS));
     return {
       operatingCapacity,
+      changeoverInvestment: Math.max(0, Number(team.dec.changeoverInvestment) || 0),
       ...Object.fromEntries(team.models.map((model) => [model.id, { target: Math.max(100, model.inv || operatingCapacity * 4), replenish: Math.max(50, Math.round(Math.max(100, model.inv || operatingCapacity * 4) * 0.4)) }]))
     };
-  }, [team.capacity, team.models]);
+  }, [team.capacity, team.models, team.dec.changeoverInvestment]);
   const [settings, setSettings] = useState(defaultSettings);
   const result = useMemo(() => buildSchedule(team, settings), [team, settings]);
+  const changeover = useMemo(() => changeoverProjection(settings.changeoverInvestment, team.models.length), [settings.changeoverInvestment, team.models.length]);
+  const referenceRevenue = Number(team.hist?.slice(-1)[0]?.revenue) || 0;
+  const revenueRecovered = changeover.daysRecovered * referenceRevenue / DAYS;
   const dailyCapacityCeiling = Math.max(0, Math.floor((Number(team.capacity) || 0) / DAYS));
   const [saveState, setSaveState] = useState("idle");
 
@@ -95,7 +113,7 @@ export default function ProductionScheduler({ team, gameState, universeId, onCha
   const updateBrand = (id, key, value) => setSettings((current) => ({ ...current, [id]: { ...current[id], [key]: value } }));
   const applySchedule = () => {
     const production = result.brands.reduce((output, brand) => ({ ...output, [brand.id]: result.days.filter((day) => day.brandId === brand.id).reduce((sum, day) => sum + day.units, 0) }), {});
-    onChange({ ...team, dec: { ...team.dec, prod: production } });
+    onChange({ ...team, dec: { ...team.dec, prod: production, changeoverInvestment: Number(settings.changeoverInvestment) || 0 } });
   };
   const saveSchedule = async () => {
     setSaveState("saving");
@@ -120,6 +138,26 @@ export default function ProductionScheduler({ team, gameState, universeId, onCha
         <label className="text-xs font-mono text-[#57534e]">Operating capacity / day<input type="number" min="0" max={dailyCapacityCeiling} value={settings.operatingCapacity} disabled={team.dec.locked} onChange={(event) => updateSetting("operatingCapacity", Math.max(0, Math.min(dailyCapacityCeiling, Number(event.target.value))))} className="mt-1 w-full p-2 border border-[#D6D3D1] rounded-lg text-sm text-[#1F2022]" /></label>
         <div className="p-2 bg-[#FAF8F5] rounded-lg text-xs text-[#57534e]">Fixed capacity ceiling<div className="font-bold text-[#1F2022]">{dailyCapacityCeiling.toLocaleString("en-IN")} units/day</div></div>
         <div className="p-2 bg-[#FAF8F5] rounded-lg text-xs text-[#57534e]">Capacity utilisation<div className="font-bold text-[#1F2022]">{result.utilisation.toFixed(1)}%</div></div>
+      </div>
+      <div className="border border-amber-200 bg-amber-50/60 rounded-lg p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2"><h4 className="text-sm font-bold text-amber-950">Changeover investment</h4><span title="Faster changeover -> more frequent small batch production -> lower target/replenishment points -> less inventory risk." className="text-amber-800 cursor-help"><Info className="w-4 h-4" /></span></div>
+            <p className="text-xs text-amber-900/75 mt-1">Reduce the hours lost when the production line switches between brands.</p>
+          </div>
+          <strong className="text-sm text-amber-950">Rs. {Number(settings.changeoverInvestment || 0).toFixed(1)} L</strong>
+        </div>
+        <label className="block text-xs font-mono text-amber-950">Investment / quarter
+          <input aria-label="Changeover investment per quarter" type="range" min="0" max="100" step="0.5" value={settings.changeoverInvestment || 0} disabled={team.dec.locked} onChange={(event) => updateSetting("changeoverInvestment", Number(event.target.value))} className="mt-2 w-full accent-amber-700" />
+          <span className="flex justify-between text-[10px] text-amber-900/70"><span>Rs. 0 L</span><span>Rs. 100 L</span></span>
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          <div className="p-2 rounded bg-white/70"><div className="text-amber-900/70">Current changeover time</div><strong className="text-amber-950">{CURRENT_CHANGEOVER_TIME.toFixed(1)} hours</strong></div>
+          <div className="p-2 rounded bg-white/70"><div className="text-amber-900/70">Projected new time</div><strong className="text-amber-950">{changeover.newChangeoverTime.toFixed(1)} hours</strong><div className="text-[10px]">{changeover.hoursSaved.toFixed(1)} hours saved / switch</div></div>
+          <div className="p-2 rounded bg-white/70"><div className="text-amber-900/70">Production days lost / quarter</div><strong className="text-amber-950">{changeover.projectedDaysLost.toFixed(1)} days</strong><div className="text-[10px]">from {changeover.currentDaysLost.toFixed(1)} days · {changeover.daysRecovered.toFixed(1)} recovered</div></div>
+          <div className="p-2 rounded bg-white/70"><div className="text-amber-900/70">Cost-benefit</div><strong className={revenueRecovered >= Number(settings.changeoverInvestment || 0) ? "text-emerald-800" : "text-red-800"}>Rs. {revenueRecovered.toFixed(1)} L recovered</strong><div className="text-[10px]">vs. Rs. {Number(settings.changeoverInvestment || 0).toFixed(1)} L investment</div></div>
+        </div>
+        {!referenceRevenue && <p className="text-[10px] text-amber-900/75">Recovered revenue uses the latest quarter's revenue and will populate after a quarter has been recorded.</p>}
       </div>
       <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-left text-[#57534e] border-b border-[#E7E5E4]"><th className="p-2">Brand</th><th className="p-2">Starting inventory</th><th className="p-2">Target inventory</th><th className="p-2">Replenishment point</th><th className="p-2">Demand / day</th></tr></thead><tbody>{team.models.map((model) => <tr key={model.id} className="border-b border-[#F0EEEB]"><td className="p-2 font-bold text-[#1F2022]">{model.name}</td><td className="p-2 font-mono">{model.inv || 0}</td><td className="p-2"><input type="number" min="0" value={settings[model.id]?.target || 0} disabled={team.dec.locked} onChange={(event) => updateBrand(model.id, "target", event.target.value)} className="w-28 p-1.5 border border-[#D6D3D1] rounded text-[#1F2022]" /></td><td className="p-2"><input type="number" min="0" value={settings[model.id]?.replenish || 0} disabled={team.dec.locked} onChange={(event) => updateBrand(model.id, "replenish", event.target.value)} className="w-28 p-1.5 border border-[#D6D3D1] rounded text-[#1F2022]" /></td><td className="p-2 font-mono">{result.brands.find((brand) => brand.id === model.id)?.demand}</td></tr>)}</tbody></table></div>
       <div className="border border-[#E7E5E4] rounded-lg p-3"><Chart result={result} /><div className="flex flex-wrap gap-3 text-[10px] font-mono">{result.inventory.map((series, index) => <span key={series.id} className="text-[#57534e]"><i className="inline-block w-2 h-2 rounded-full mr-1" style={{ backgroundColor: COLORS[index % COLORS.length] }} />{series.name}</span>)}</div></div>

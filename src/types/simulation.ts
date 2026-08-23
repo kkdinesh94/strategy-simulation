@@ -133,6 +133,7 @@ export interface TeamDecision {
   devCost?: number;
   facilityLocation?: string;
   facilityLocked?: boolean;
+  changeoverInvestment?: number;
   locked: boolean;
   lockedBy?: string;
 }

@@ -33,11 +33,16 @@ async function startServer() {
         return res.status(400).json({ error: "universeId, teamId, quarter, inputs, and outputs are required." });
       }
       d1.exec("CREATE TABLE IF NOT EXISTS production_schedules (schedule_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, inputs_json TEXT NOT NULL, outputs_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      d1.exec("CREATE TABLE IF NOT EXISTS changeover_investments (team_id TEXT, quarter INTEGER, amount_invested REAL, changeover_hours_saved REAL, new_changeover_time REAL)");
       const scheduleId = `${universeId}:${teamI}:${quarterNumber}`;
       d1.prepare(`INSERT INTO production_schedules (schedule_id, universe_id, team_i, quarter, inputs_json, outputs_json)
         VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET inputs_json = excluded.inputs_json, outputs_json = excluded.outputs_json, updated_at = datetime('now')`)
         .run(scheduleId, String(universeId), teamI, quarterNumber, JSON.stringify(inputs), JSON.stringify(outputs));
+      const investment = Math.max(0, Number(inputs.changeoverInvestment) || 0);
+      const hoursSaved = 6 * investment / (investment + 10);
+      d1.prepare("DELETE FROM changeover_investments WHERE team_id = ? AND quarter = ?").run(String(teamI), quarterNumber);
+      d1.prepare("INSERT INTO changeover_investments (team_id, quarter, amount_invested, changeover_hours_saved, new_changeover_time) VALUES (?, ?, ?, ?, ?)").run(String(teamI), quarterNumber, investment, hoursSaved, Math.max(2, 8 - hoursSaved));
       return res.json({ success: true, scheduleId });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
