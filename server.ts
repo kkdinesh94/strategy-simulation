@@ -81,6 +81,15 @@ async function startServer() {
     }
   });
 
+  app.get("/api/policy-events", (req, res) => {
+    try {
+      const quarter = Number(req.query.quarter);
+      if (!Number.isInteger(quarter) || quarter < 1) return res.status(400).json({ error: "A positive integer quarter is required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS policy_events (event_id TEXT PRIMARY KEY, quarter INTEGER NOT NULL, region TEXT NOT NULL, event_type TEXT NOT NULL, description TEXT NOT NULL, demand_impact_pct REAL NOT NULL DEFAULT 0, cost_impact_pct REAL NOT NULL DEFAULT 0, eligible_segment TEXT, eligibility_condition TEXT)");
+      return res.json({ events: d1.prepare("SELECT * FROM policy_events WHERE quarter = ? ORDER BY event_id").all(quarter) });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  });
+
   app.get("/api/strategy-plans", (req, res) => {
     try {
       const universeId = String(req.query.universeId || "").trim();

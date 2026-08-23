@@ -41,6 +41,7 @@ import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import QuarterChecklist from "./components/QuarterChecklist";
 import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
+import PolicyEvents from "./components/PolicyEvents";
 
 export default function App() {
   // Authentication & Session State
@@ -62,6 +63,19 @@ export default function App() {
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [auditErrors, setAuditErrors] = useState<string[]>([]);
+  const policyAlertQuarter = React.useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!universe?.id || policyAlertQuarter.current === gameState.quarter) return;
+    fetch(`/api/policy-events?quarter=${encodeURIComponent(gameState.quarter)}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        const events = Array.isArray(payload?.events) ? payload.events : [];
+        if (events.length) showNotification(`Policy Alert: ${events.map((event: any) => event.event_type).join(", ")} active in Q${gameState.quarter}.`);
+        policyAlertQuarter.current = gameState.quarter;
+      })
+      .catch(() => { policyAlertQuarter.current = gameState.quarter; });
+  }, [universe?.id, gameState.quarter]);
 
   // Active user telemetry heartbeat & presence tracking
   useEffect(() => {
@@ -599,6 +613,10 @@ export default function App() {
 
         {activeTab === "performance" && (
           <PerformanceTab team={currentTeam} gameState={gameState} universeId={universe.id} onNotify={showNotification} functionalRole={Object.entries(currentTeam.roles || {}).find(([, memberName]) => memberName === currentUser?.name)?.[0] || "President"} />
+        )}
+
+        {activeTab === "policy" && (
+          <PolicyEvents universeId={universe.id} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
         {activeTab === "roster" && (

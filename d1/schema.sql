@@ -48,6 +48,20 @@ CREATE TABLE IF NOT EXISTS demand_results (
 
 CREATE INDEX IF NOT EXISTS idx_demand_results_lookup ON demand_results(universe_id, quarter, team_i);
 
+CREATE TABLE IF NOT EXISTS policy_events (
+    event_id TEXT PRIMARY KEY,
+    quarter INTEGER NOT NULL,
+    region TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    demand_impact_pct REAL NOT NULL DEFAULT 0,
+    cost_impact_pct REAL NOT NULL DEFAULT 0,
+    eligible_segment TEXT,
+    eligibility_condition TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_events_quarter_region ON policy_events(quarter, region);
+
 -- 2. Users Table (Stores Roster, Role-Based Access Control, and Telemetry)
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,

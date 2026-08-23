@@ -9,6 +9,7 @@ import {
   Factory,
   DollarSign,
   BarChart3,
+  Landmark,
   BookOpen,
   UserCheck,
   Users,
@@ -31,6 +32,7 @@ export type TabKey =
   | "operations"
   | "finance"
   | "performance"
+  | "policy"
   | "instructor"
   | "roster"
   | "admin_db"
@@ -69,6 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "operations", label: "Operations & Quality", icon: <Factory className="w-4 h-4" /> },
     { id: "finance", label: "Finance & Pro Forma", icon: <DollarSign className="w-4 h-4 text-emerald-400" /> },
     { id: "performance", label: "Scorecard & Reports", icon: <BarChart3 className="w-4 h-4 text-amber-400" /> },
+    { id: "policy", label: "Policy Events", icon: <Landmark className="w-4 h-4 text-amber-600" /> },
     { id: "roster", label: "Universe Roster (10 Teams)", icon: <Users className="w-4 h-4 text-blue-400" />, show: canManageRoster },
     { id: "instructor", label: "Instructor Console", icon: <UserCheck className="w-4 h-4 text-purple-400" />, show: canManageRoster },
     { id: "admin_db", label: "Admin DB & Console", icon: <Database className="w-4 h-4 text-emerald-500" />, show: isAdmin },
