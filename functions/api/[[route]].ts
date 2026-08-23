@@ -1123,6 +1123,66 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify(validation), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/ad-tribunal") {
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS ad_campaigns (campaign_id TEXT PRIMARY KEY, universe_id TEXT, team_id TEXT, quarter INTEGER, segment_target TEXT, brand_mentioned TEXT, benefit_1 TEXT, benefit_2 TEXT, benefit_3 TEXT, benefit_4 TEXT, benefit_5 TEXT, ad_judgment INTEGER); CREATE TABLE IF NOT EXISTS ad_violations (violation_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, claim TEXT NOT NULL, quarter INTEGER NOT NULL, offense_number INTEGER NOT NULL DEFAULT 0, penalty_type TEXT NOT NULL DEFAULT 'pending', fine_pct REAL NOT NULL DEFAULT 0, fine_amount REAL NOT NULL DEFAULT 0, ban_until_quarter INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS ad_claim_bans (ban_id TEXT PRIMARY KEY, violation_id TEXT NOT NULL UNIQUE, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, claim TEXT NOT NULL, offense_number INTEGER NOT NULL, ban_start_quarter INTEGER NOT NULL, ban_until_quarter INTEGER NOT NULL, fine_pct REAL NOT NULL DEFAULT 0, fine_amount REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+      for (const statement of [
+        "ALTER TABLE ad_violations ADD COLUMN plaintiff_team_id TEXT",
+        "ALTER TABLE ad_violations ADD COLUMN defendant_response TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE ad_violations ADD COLUMN ruling TEXT",
+        "ALTER TABLE ad_violations ADD COLUMN ruled_at TEXT",
+        "ALTER TABLE ad_violations ADD COLUMN ruling_document TEXT"
+      ]) { try { await env.DB.exec(statement); } catch { /* Existing D1 databases may already have the column. */ } }
+      const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      if (method === "GET") {
+        const quarter = Number(url.searchParams.get("quarter"));
+        if (!universeId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "universe_id and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+        const universe: any = await env.DB.prepare("SELECT game_state FROM universes WHERE id = ?").bind(universeId).first();
+        const state = readJson(universe?.game_state);
+        const teamName = (teamId: string) => (state.teams || []).find((team: any) => String(team.i) === teamId || String(team.id) === teamId)?.name || teamId;
+        const rows = await env.DB.prepare(`SELECT v.*, c.segment_target, c.brand_mentioned, c.benefit_1, c.benefit_2, c.benefit_3, c.benefit_4, c.benefit_5
+          FROM ad_violations v LEFT JOIN ad_campaigns c ON c.campaign_id = v.campaign_id
+          WHERE v.universe_id = ? AND v.quarter = ? ORDER BY v.created_at DESC`).bind(universeId, quarter).all();
+        const complaints = (rows.results || []).map((row: any) => ({
+          ...row,
+          plaintiff_team: teamName(String(row.plaintiff_team_id || "Market Integrity Office")),
+          defendant_team: teamName(String(row.team_id)),
+          evidence: { campaignId: row.campaign_id, segmentTarget: row.segment_target, brandMentioned: row.brand_mentioned, claimedBenefits: [row.benefit_1, row.benefit_2, row.benefit_3, row.benefit_4, row.benefit_5].filter(Boolean), validationReason: row.reason },
+          defendant_response: row.defendant_response || "No response filed.",
+          ruling: row.ruling || "pending"
+        }));
+        return new Response(JSON.stringify({ complaints, quarter }), { status: 200, headers: corsHeaders });
+      }
+      if (method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
+      const body = await request.json() as { universe_id?: string; violation_id?: string; ruling?: string };
+      const ruling = String(body.ruling || "").toLowerCase();
+      const bodyUniverseId = String(body.universe_id || universeId).trim();
+      if (!bodyUniverseId || !body.violation_id || !["guilty", "not guilty"].includes(ruling)) return new Response(JSON.stringify({ error: "universe_id, violation_id, and ruling (Guilty or Not Guilty) are required." }), { status: 400, headers: corsHeaders });
+      const violation: any = await env.DB.prepare("SELECT * FROM ad_violations WHERE violation_id = ? AND universe_id = ?").bind(String(body.violation_id), bodyUniverseId).first();
+      if (!violation) return new Response(JSON.stringify({ error: "Complaint not found." }), { status: 404, headers: corsHeaders });
+      if (violation.ruling) return new Response(JSON.stringify({ success: true, ruling: violation.ruling, document: violation.ruling_document, alreadyRuled: true }), { status: 200, headers: corsHeaders });
+      const prior = await env.DB.prepare("SELECT COUNT(*) AS count FROM ad_violations WHERE universe_id = ? AND team_id = ? AND claim = ? AND ruling = 'guilty'").bind(bodyUniverseId, violation.team_id, violation.claim).first("count");
+      const offenseNumber = Number(prior || 0) + 1;
+      const finePct = offenseNumber === 2 ? 0.05 : offenseNumber >= 3 ? Math.min(0.2, 0.1 * Math.pow(2, offenseNumber - 3)) : 0;
+      const universe: any = await env.DB.prepare("SELECT game_state FROM universes WHERE id = ?").bind(bodyUniverseId).first();
+      const state = readJson(universe?.game_state);
+      const team: any = (state.teams || []).find((item: any) => String(item.i) === String(violation.team_id) || String(item.id) === String(violation.team_id));
+      const revenue = Number(team?.revenue || team?.financials?.revenue || team?.cumRevenue || 0);
+      const fineAmount = revenue * finePct;
+      const banUntil = Number(violation.quarter) + 4;
+      const teamName = team?.name || violation.team_id;
+      const document = `To: ${state.instructorEmail || "Instructor"}\nSubject: Ad Claims Tribunal Ruling - ${teamName} - Q${violation.quarter}\n\nThe Ad Claims Tribunal has ruled ${ruling === "guilty" ? "GUILTY" : "NOT GUILTY"} in the complaint concerning the claim "${violation.claim}".\n\nPlaintiff: ${violation.plaintiff_team_id || "Market Integrity Office"}\nDefendant: ${teamName}\nEvidence: Campaign ${violation.campaign_id}; ${violation.reason}\nDefendant response: ${violation.defendant_response || "No response filed."}\n\n${ruling === "guilty" ? `Penalty: ${finePct ? `${finePct * 100}% revenue fine (Rs. ${fineAmount.toFixed(2)}) and ` : ""}four-quarter claim ban through Q${banUntil}.` : "No penalty applies."}\n\nRegards,\nAd Claims Tribunal`;
+      await env.DB.batch([
+        env.DB.prepare("UPDATE ad_violations SET ruling = ?, ruled_at = datetime('now'), offense_number = ?, fine_pct = ?, fine_amount = ?, ban_until_quarter = ?, penalty_type = ?, ruling_document = ? WHERE violation_id = ? AND ruling IS NULL").bind(ruling, ruling === "guilty" ? offenseNumber : 0, finePct, fineAmount, ruling === "guilty" ? banUntil : 0, ruling === "guilty" ? (finePct ? "fine_and_ban" : "ban") : "none", document, violation.violation_id),
+        ...(ruling === "guilty" ? [env.DB.prepare("INSERT INTO ad_claim_bans (ban_id, violation_id, universe_id, team_id, claim, offense_number, ban_start_quarter, ban_until_quarter, fine_pct, fine_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(`ban:${violation.violation_id}`, violation.violation_id, bodyUniverseId, violation.team_id, violation.claim, offenseNumber, violation.quarter, banUntil, finePct, fineAmount)] : [])
+      ]);
+      if (ruling === "guilty" && team && fineAmount > 0) {
+        team.cash = Math.max(0, Number(team.cash || 0) - fineAmount);
+        await env.DB.prepare("UPDATE universes SET game_state = ?, updated_at = datetime('now') WHERE id = ?").bind(JSON.stringify(state), bodyUniverseId).run();
+      }
+      return new Response(JSON.stringify({ success: true, ruling, offenseNumber, finePct, fineAmount, banUntil, document }), { status: 200, headers: corsHeaders });
+    }
+
     if (path === "/api/ad-violations" && method === "GET") {
       const universeId = url.searchParams.get("universe_id");
       const query = universeId

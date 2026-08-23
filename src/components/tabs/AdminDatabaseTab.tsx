@@ -115,6 +115,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [adViolations, setAdViolations] = useState<any[]>([]);
   const [loadingAdViolations, setLoadingAdViolations] = useState<boolean>(false);
   const [adViolationRefresh, setAdViolationRefresh] = useState<number>(0);
+  const [rulingViolationId, setRulingViolationId] = useState<string | null>(null);
+  const [rulingDocument, setRulingDocument] = useState<string | null>(null);
   const [processingQuarter, setProcessingQuarter] = useState(false);
   const [quarterLogs, setQuarterLogs] = useState<{ step: string; status: string; detail: string }[]>([]);
   const [processedQuarter, setProcessedQuarter] = useState<number | null>(null);
@@ -335,15 +337,32 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   useEffect(() => {
     if (activeSubTab !== "violations") return;
     setLoadingAdViolations(true);
-    fetch(`/api/ad-violations?universe_id=${encodeURIComponent(selectedUnivId)}`)
+    const quarter = targetUniv?.gameState?.quarter || activeUniverse?.gameState?.quarter || 1;
+    fetch(`/api/ad-tribunal?universe_id=${encodeURIComponent(selectedUnivId)}&quarter=${quarter}`)
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Could not load ad violations.");
-        setAdViolations(payload.violations || []);
+        if (!response.ok) throw new Error(payload.error || "Could not load tribunal complaints.");
+        setAdViolations(payload.complaints || []);
       })
-      .catch((error) => onNotify(`Failed to load ad violations: ${error.message}`))
+      .catch((error) => onNotify(`Failed to load tribunal complaints: ${error.message}`))
       .finally(() => setLoadingAdViolations(false));
-  }, [activeSubTab, selectedUnivId, adViolationRefresh]);
+  }, [activeSubTab, selectedUnivId, adViolationRefresh, targetUniv, activeUniverse]);
+
+  const handleTribunalRuling = async (violationId: string, ruling: "guilty" | "not guilty") => {
+    setRulingViolationId(violationId);
+    try {
+      const response = await fetch("/api/ad-tribunal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ universe_id: selectedUnivId, violation_id: violationId, ruling }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not record ruling.");
+      setAdViolations((items) => items.map((item) => item.violation_id === violationId ? { ...item, ruling, ruling_document: payload.document, offense_number: payload.offenseNumber, fine_pct: payload.finePct, fine_amount: payload.fineAmount, ban_until_quarter: payload.banUntil } : item));
+      setRulingDocument(payload.document || null);
+      onNotify(`${ruling === "guilty" ? "Guilty" : "Not guilty"} ruling recorded and penalty applied.`);
+    } catch (error: any) {
+      onNotify(`Failed to record ruling: ${error.message}`);
+    } finally {
+      setRulingViolationId(null);
+    }
+  };
 
   // Save changes to Teams in Universe visually
   const handleSaveTeamsVisual = async () => {
@@ -1007,7 +1026,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           }`}
         >
           <AlertCircle className="w-4 h-4 text-red-600" />
-          <span>Ad Violations</span>
+          <span>Ad Claims Tribunal</span>
           {adViolations.length > 0 && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">{adViolations.length}</span>}
         </button>
       </div>
@@ -1863,8 +1882,8 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-base font-bold text-[#1F2022]">Deceptive Advertising Violations</h2>
-              <p className="text-xs text-[#5A5C60]">Recorded claim failures, offense counts, revenue fines, and active ban periods for the selected universe.</p>
+              <h2 className="text-base font-bold text-[#1F2022]">Ad Claims Tribunal</h2>
+              <p className="text-xs text-[#5A5C60]">Quarterly deceptive advertising complaints requiring an administrator ruling.</p>
             </div>
             <button type="button" onClick={() => setAdViolationRefresh((value) => value + 1)} className="px-3 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold flex items-center gap-1.5">
               <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -1875,27 +1894,41 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           ) : adViolations.length === 0 ? (
             <div className="p-12 text-center bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl text-xs text-[#5A5C60]">No ad claim violations recorded for this universe.</div>
           ) : (
-            <div className="overflow-x-auto bg-white border border-[#E5E1D8] rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-[#FAF8F5] border-b border-[#E5E1D8] text-[#5A5C60] uppercase font-mono">
-                  <tr><th className="p-3">Quarter</th><th className="p-3">Team</th><th className="p-3">Claim</th><th className="p-3">Offense</th><th className="p-3">Penalty</th><th className="p-3">Ban Through</th><th className="p-3">Reason</th></tr>
-                </thead>
-                <tbody>
-                  {adViolations.map((violation) => (
-                    <tr key={violation.violation_id} className="border-b border-[#F0ECE5] last:border-0">
-                      <td className="p-3 font-mono">Q{violation.quarter}</td>
-                      <td className="p-3 font-mono">{violation.team_id}</td>
-                      <td className="p-3 font-semibold">{violation.claim}</td>
-                      <td className="p-3">#{violation.offense_number}</td>
-                      <td className="p-3 text-red-700 font-semibold">{violation.fine_pct ? `${Number(violation.fine_pct) * 100}% revenue fine + ban` : "4-quarter ban"}</td>
-                      <td className="p-3 font-mono">Q{violation.ban_until_quarter}</td>
-                      <td className="p-3 text-[#5A5C60] min-w-72">{violation.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              {adViolations.map((violation) => (
+                <article key={violation.violation_id} className="bg-white border border-[#E5E1D8] rounded-xl p-4 space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-[#5A5C60]"><span>Q{violation.quarter}</span><span>·</span><span>{violation.violation_id}</span><span className={`px-2 py-0.5 rounded-full border ${violation.ruling === "pending" ? "bg-amber-50 text-amber-800 border-amber-200" : violation.ruling === "guilty" ? "bg-red-50 text-red-800 border-red-200" : "bg-emerald-50 text-emerald-800 border-emerald-200"}`}>{violation.ruling}</span></div>
+                      <h3 className="mt-1 text-sm font-bold">{violation.claim}</h3>
+                    </div>
+                    {violation.ruling === "pending" ? (
+                      <div className="flex gap-2">
+                        <button type="button" disabled={rulingViolationId === violation.violation_id} onClick={() => handleTribunalRuling(violation.violation_id, "guilty")} className="px-3 py-1.5 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Guilty</button>
+                        <button type="button" disabled={rulingViolationId === violation.violation_id} onClick={() => handleTribunalRuling(violation.violation_id, "not guilty")} className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Not Guilty</button>
+                      </div>
+                    ) : violation.ruling_document ? <button type="button" onClick={() => setRulingDocument(violation.ruling_document)} className="px-3 py-1.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-semibold flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" /> View ruling email</button> : null}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-lg p-3 space-y-1"><div><strong>Plaintiff:</strong> {violation.plaintiff_team}</div><div><strong>Defendant:</strong> {violation.defendant_team}</div><div><strong>Claim in dispute:</strong> {violation.claim}</div></div>
+                    <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-lg p-3"><strong>Defendant response</strong><p className="mt-1 text-[#5A5C60] whitespace-pre-wrap">{violation.defendant_response}</p></div>
+                  </div>
+                  <details className="text-xs"><summary className="cursor-pointer font-semibold text-[#3A3C40]">Supporting evidence pulled from D1</summary><pre className="mt-2 p-3 bg-[#FAF8F5] border border-[#E5E1D8] rounded-lg overflow-x-auto text-[11px]">{JSON.stringify(violation.evidence, null, 2)}</pre></details>
+                  {violation.ruling === "guilty" && <div className="text-xs text-red-700 font-semibold">Penalty: {violation.fine_pct ? `${Number(violation.fine_pct) * 100}% revenue fine + ` : ""}four-quarter claim ban through Q{violation.ban_until_quarter}.</div>}
+                </article>
+              ))}
             </div>
           )}
+        </div>
+      )}
+
+      {rulingDocument && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl shadow-2xl max-w-2xl w-full p-6 space-y-4">
+            <div className="flex items-center justify-between"><h3 className="font-bold text-base">Email-format ruling</h3><button type="button" onClick={() => setRulingDocument(null)} className="p-1 text-[#8A8C90] hover:text-[#1F2022]"><X className="w-5 h-5" /></button></div>
+            <textarea readOnly value={rulingDocument} className="w-full min-h-72 p-3 bg-white border border-[#E0DCD3] rounded-lg text-xs font-mono" />
+            <button type="button" onClick={() => navigator.clipboard?.writeText(rulingDocument).then(() => onNotify("Ruling email copied to clipboard."))} className="px-3 py-2 bg-[#1F2022] text-white rounded-lg text-xs font-semibold flex items-center gap-1.5"><Copy className="w-3.5 h-3.5" /> Copy email</button>
+          </div>
         </div>
       )}
 
