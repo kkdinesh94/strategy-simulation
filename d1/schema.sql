@@ -100,7 +100,55 @@ INSERT OR IGNORE INTO market_segments (
 ('tech_pioneer', 'Tech Pioneer', 'Early adopters attracted to advanced technology, long range, and sophisticated autonomy features.', 4, 9, 7, 10, 8, 'Technology enthusiast eager to own the newest connected and autonomous EV capabilities.', 15.0),
 ('eco_advocate', 'Eco Advocate', 'Sustainability-led buyers who value environmental impact and responsible brand values above price.', 2, 8, 5, 6, 7, 'Environmentally conscious buyer prepared to pay more for a genuinely sustainable vehicle.', 15.0);
 
--- 6. Application Configuration & Settings
+-- 6. Vehicle Components & R&D Unlocks
+CREATE TABLE IF NOT EXISTS vehicle_components (
+    component_id TEXT PRIMARY KEY,
+    category TEXT,
+    name TEXT,
+    material_cost REAL,
+    performance_score INTEGER,
+    benefit_delivered TEXT,
+    is_rd_unlocked INTEGER DEFAULT 0,
+    available_from_quarter INTEGER DEFAULT 1
+);
+
+-- Seed component choices; premium options require category R&D investment.
+INSERT OR IGNORE INTO vehicle_components (
+    component_id,
+    category,
+    name,
+    material_cost,
+    performance_score,
+    benefit_delivered,
+    is_rd_unlocked,
+    available_from_quarter
+) VALUES
+('battery_standard_60kwh', 'Battery', 'Battery: Standard 60 kWh', 7200.0, 5, 'Balanced range and purchase affordability.', 0, 1),
+('battery_fast_charge_75kwh', 'Battery', 'Battery: Fast-charge 75 kWh', 9400.0, 7, 'Longer range with shorter charging stops.', 0, 2),
+('battery_long_range_100kwh', 'Battery', 'Battery: Long-range 100 kWh', 13200.0, 10, 'Maximum driving range and reduced range anxiety.', 1, 4),
+('motor_standard_150kw', 'Motor', 'Motor: Standard 150 kW', 4100.0, 5, 'Reliable everyday performance at a competitive cost.', 0, 1),
+('motor_performance_220kw', 'Motor', 'Motor: Performance 220 kW', 6100.0, 8, 'Faster acceleration and a more engaging drive.', 0, 2),
+('motor_dual_awd_300kw', 'Motor', 'Motor: Dual AWD 300 kW', 8900.0, 10, 'Maximum traction, acceleration, and performance.', 1, 4),
+('charging_ac_11kw', 'Charging', 'Charging: AC 11 kW', 850.0, 5, 'Convenient overnight home charging.', 0, 1),
+('charging_dc_150kw', 'Charging', 'Charging: DC 150 kW', 1550.0, 7, 'Faster public charging and improved trip convenience.', 0, 2),
+('charging_ultra_250kw', 'Charging', 'Charging: Ultra-fast 250 kW', 2700.0, 10, 'Industry-leading charging speed and minimal downtime.', 1, 4),
+('autonomy_driver_assist', 'Autonomy', 'Autonomy: Driver Assist', 1100.0, 5, 'Reduced driver workload in routine traffic.', 0, 1),
+('autonomy_highway_pilot', 'Autonomy', 'Autonomy: Highway Pilot', 2300.0, 7, 'More relaxed and confident highway journeys.', 0, 2),
+('autonomy_city_navigate', 'Autonomy', 'Autonomy: City Navigate', 4200.0, 10, 'Advanced assistance for complex urban environments.', 1, 4),
+('interior_comfort_cloth', 'Interior', 'Interior: Comfort Cloth', 900.0, 5, 'Durable, comfortable seating at an accessible price.', 0, 1),
+('interior_premium_vegan', 'Interior', 'Interior: Premium Vegan', 1750.0, 7, 'Premium feel with sustainable, easy-clean materials.', 0, 2),
+('interior_lounge_cabin', 'Interior', 'Interior: Lounge Cabin', 3200.0, 10, 'First-class comfort and a spacious passenger experience.', 1, 4),
+('software_connected_basic', 'Software', 'Software: Connected Essentials', 180.0, 5, 'Simple connectivity and dependable vehicle updates.', 0, 1),
+('software_personalized_ui', 'Software', 'Software: Personalized UI', 420.0, 7, 'A more intuitive and engaging digital experience.', 0, 2),
+('software_predictive_ai', 'Software', 'Software: Predictive AI', 950.0, 10, 'Proactive recommendations and smarter vehicle operation.', 1, 4),
+('exterior_aero_standard', 'Exterior', 'Exterior: Standard Aero', 1600.0, 5, 'Efficient, practical styling with low production cost.', 0, 1),
+('exterior_premium_lighting', 'Exterior', 'Exterior: Premium Lighting', 2450.0, 7, 'Distinctive presence and improved night-time visibility.', 0, 2),
+('exterior_adaptive_aero', 'Exterior', 'Exterior: Adaptive Aero', 3900.0, 10, 'Improved efficiency through shape-changing aerodynamics.', 1, 4),
+('safety_standard_suite', 'Safety', 'Safety: Standard Suite', 1250.0, 5, 'Core occupant protection and collision prevention.', 0, 1),
+('safety_enhanced_sensors', 'Safety', 'Safety: Enhanced Sensors', 2150.0, 7, 'Earlier hazard detection and stronger active protection.', 0, 2),
+('safety_predictive_protection', 'Safety', 'Safety: Predictive Protection', 3600.0, 10, 'Anticipatory protection using advanced sensing systems.', 1, 4);
+
+-- 7. Application Configuration & Settings
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
