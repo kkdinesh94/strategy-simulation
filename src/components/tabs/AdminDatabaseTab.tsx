@@ -58,7 +58,9 @@ import {
   ArrowRightLeft,
   Cloud,
   KeyRound,
-  Lock
+  Lock,
+  Play,
+  ListChecks
 } from "lucide-react";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../../lib/presence";
 
@@ -85,7 +87,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   onUniversesUpdate,
   onNotify
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "violations" | "schema">("cloudflare");
+  const [activeSubTab, setActiveSubTab] = useState<"cloudflare" | "universes" | "users" | "batch" | "explorer" | "violations" | "schema" | "process">("cloudflare");
 
   // Selected Universe for Visual Editing
   const [selectedUnivId, setSelectedUnivId] = useState<string>(activeUniverse?.id || allUniverses[0]?.id || "univ_nitw_2026");
@@ -113,6 +115,29 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [adViolations, setAdViolations] = useState<any[]>([]);
   const [loadingAdViolations, setLoadingAdViolations] = useState<boolean>(false);
   const [adViolationRefresh, setAdViolationRefresh] = useState<number>(0);
+  const [processingQuarter, setProcessingQuarter] = useState(false);
+  const [quarterLogs, setQuarterLogs] = useState<{ step: string; status: string; detail: string }[]>([]);
+  const [processedQuarter, setProcessedQuarter] = useState<number | null>(null);
+
+  const handleProcessQuarter = async () => {
+    if (!targetUniv || processingQuarter) return;
+    setProcessingQuarter(true);
+    setQuarterLogs([]);
+    try {
+      const response = await fetch("/api/process-quarter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ universeId: targetUniv.id }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Quarter processing failed.");
+      setQuarterLogs(payload.logs || []);
+      setProcessedQuarter(payload.quarter || null);
+      onNotify(`Q${targetUniv.gameState.quarter} processed. Decisions unlocked for Q${payload.quarter}.`);
+      onRefreshAll();
+    } catch (error: any) {
+      setQuarterLogs([{ step: "error", status: "error", detail: error.message }]);
+      onNotify(`Quarter processing failed: ${error.message}`);
+    } finally {
+      setProcessingQuarter(false);
+    }
+  };
 
   // Universe Composer Modal state
   const [isUniverseModalOpen, setIsUniverseModalOpen] = useState<boolean>(false);
@@ -906,6 +931,14 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveSubTab("process")}
+          className={`px-4 py-2.5 rounded-t-lg text-xs font-semibold transition flex items-center gap-2 ${activeSubTab === "process" ? "bg-[#FAF8F5] text-orange-900 border-t-2 border-t-orange-500 border-x border-[#E5E1D8] shadow-2xs font-bold" : "text-[#5A5C60] hover:text-orange-900 hover:bg-orange-50/50"}`}
+        >
+          <Play className="w-4 h-4 text-orange-600" />
+          <span>Process Quarter</span>
+        </button>
+
+        <button
           onClick={() => setActiveSubTab("universes")}
           className={`px-4 py-2.5 rounded-t-lg text-xs font-semibold transition flex items-center gap-2 ${
             activeSubTab === "universes"
@@ -978,6 +1011,28 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
           {adViolations.length > 0 && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">{adViolations.length}</span>}
         </button>
       </div>
+
+      {/* SUB-TAB 0: CLOUDFLARE D1 CENTER */}
+      {activeSubTab === "process" && (
+        <div className="space-y-4">
+          <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-xl p-6 shadow-2xs flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-[#1F2022] flex items-center gap-2"><ListChecks className="w-5 h-5 text-orange-600" /> Process Quarter</h2>
+              <p className="text-xs text-[#5A5C60] mt-1">Lock decisions, run demand, production, sales, financials, and scorecards for the selected universe.</p>
+              <p className="text-xs font-mono text-[#1F2022] mt-3">{targetUniv ? `${targetUniv.name} · Q${targetUniv.gameState.quarter}` : "No universe selected"}</p>
+            </div>
+            <button type="button" disabled={!targetUniv || processingQuarter} onClick={handleProcessQuarter} className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-2">
+              <Play className="w-4 h-4" /> {processingQuarter ? "Processing..." : "Process Quarter"}
+            </button>
+          </div>
+          {quarterLogs.length > 0 && (
+            <div className="bg-white border border-[#E5E1D8] rounded-xl p-5 shadow-2xs">
+              <div className="flex items-center justify-between mb-3"><h3 className="text-sm font-bold">Processing Log</h3>{processedQuarter && <span className="text-[11px] font-mono text-emerald-700">Ready for Q{processedQuarter}</span>}</div>
+              <div className="space-y-2">{quarterLogs.map((log, index) => <div key={`${log.step}-${index}`} className="flex items-start gap-3 text-xs"><CheckCircle className={`w-4 h-4 mt-0.5 ${log.status === "error" ? "text-red-600" : "text-emerald-600"}`} /><span className="font-mono uppercase w-24 text-[#5A5C60]">{log.step}</span><span>{log.detail}</span></div>)}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* SUB-TAB 0: CLOUDFLARE D1 CENTER */}
       {activeSubTab === "cloudflare" && (

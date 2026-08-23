@@ -3,6 +3,7 @@
  * Handles all /api/* routes natively with Cloudflare D1 (env.DB) and Gemini AI
  */
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "../../src/lib/competitiveBenchmark";
+import { runQuarterWorkflow } from "../../src/lib/processQuarter";
 
 interface Env {
   DB: any; // Cloudflare D1Database binding
@@ -404,6 +405,19 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
         { status: 200, headers: corsHeaders }
       );
+    }
+
+    if (path === "/api/process-quarter" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = await request.json() as { universeId?: string };
+      const universeId = String(body.universeId || "").trim();
+      if (!universeId) return new Response(JSON.stringify({ error: "universeId is required." }), { status: 400, headers: corsHeaders });
+      try {
+        const result = await runQuarterWorkflow(env.DB, universeId);
+        return new Response(JSON.stringify({ success: true, quarter: result.state.quarter, logs: result.logs, demandRows: result.demand.length, scorecards: result.scorecards }), { status: 200, headers: corsHeaders });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message || "Quarter processing failed." }), { status: err.message?.includes("already") ? 409 : 500, headers: corsHeaders });
+      }
     }
 
     if (path === "/api/competitive-benchmark" && (method === "GET" || method === "POST")) {

@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { getD1Database } from "./server/d1Store";
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "./src/lib/competitiveBenchmark";
+import { runQuarterWorkflow } from "./src/lib/processQuarter";
 
 dotenv.config();
 
@@ -23,6 +24,17 @@ async function startServer() {
       app: "EV Venture League Simulation",
       dbProvider: "Cloudflare D1 & SQLite 3 Ready"
     });
+  });
+
+  app.post("/api/process-quarter", async (req, res) => {
+    try {
+      const universeId = String(req.body?.universeId || "").trim();
+      if (!universeId) return res.status(400).json({ error: "universeId is required." });
+      const result = await runQuarterWorkflow(d1, universeId);
+      return res.json({ success: true, quarter: result.state.quarter, logs: result.logs, demandRows: result.demand.length, scorecards: result.scorecards });
+    } catch (err: any) {
+      return res.status(err.message?.includes("already") ? 409 : 500).json({ error: err.message || "Quarter processing failed." });
+    }
   });
 
   app.get("/api/strategy-plans", (req, res) => {
