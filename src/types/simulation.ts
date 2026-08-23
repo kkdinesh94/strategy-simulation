@@ -131,6 +131,8 @@ export interface TeamDecision {
   rndStarts?: { id: string; mode: "fast" | "std" }[];
   rndStartCost?: number;
   devCost?: number;
+  facilityLocation?: string;
+  facilityLocked?: boolean;
   locked: boolean;
   lockedBy?: string;
 }

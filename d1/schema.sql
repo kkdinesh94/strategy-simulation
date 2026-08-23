@@ -74,6 +74,32 @@ CREATE TABLE IF NOT EXISTS sales_force (
 CREATE INDEX IF NOT EXISTS idx_sales_force_team_quarter ON sales_force(team_id, quarter);
 CREATE INDEX IF NOT EXISTS idx_sales_force_office ON sales_force(team_id, office_id);
 
+-- 3b. Regional production facility options. Teams select one option in Q1.
+CREATE TABLE IF NOT EXISTS production_facilities (
+    facility_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    location TEXT,
+    fixed_capacity_per_day INTEGER,
+    operating_capacity_per_day INTEGER,
+    quarter_built INTEGER,
+    build_cost REAL,
+    labor_cost_per_unit REAL,
+    overhead_cost_per_unit REAL,
+    shipping_cost_to_region TEXT -- JSON {"North America": 50, "Europe": 120, ...}
+);
+
+CREATE INDEX IF NOT EXISTS idx_production_facilities_team ON production_facilities(team_id);
+CREATE INDEX IF NOT EXISTS idx_production_facilities_location ON production_facilities(location);
+
+INSERT OR IGNORE INTO production_facilities (
+    facility_id, team_id, location, fixed_capacity_per_day,
+    operating_capacity_per_day, quarter_built, build_cost,
+    labor_cost_per_unit, overhead_cost_per_unit, shipping_cost_to_region
+) VALUES
+('facility_north_america', NULL, 'North America', 500, 450, 1, 2500000, 42.0, 18.0, '{"North America": 50, "Europe": 120, "Asia-Pacific": 150}'),
+('facility_europe', NULL, 'Europe', 500, 450, 1, 2700000, 48.0, 30.0, '{"North America": 120, "Europe": 45, "Asia-Pacific": 135}'),
+('facility_asia_pacific', NULL, 'Asia-Pacific', 500, 450, 1, 2200000, 28.0, 22.0, '{"North America": 150, "Europe": 135, "Asia-Pacific": 40}');
+
 -- 4. Audit & Telemetry Logs
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,

@@ -4,6 +4,7 @@ import { CAP_BLOCK, fmtRs } from "../../engine/catalog";
 import { reliabilityOf } from "../../engine/simulationEngine";
 import { Factory, ShieldCheck, Wrench, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { OperationsVisualizer } from "../OperationsVisualizer";
+import FacilityLocationWizard from "../FacilityLocationWizard";
 
 interface OperationsTabProps {
   team: TeamState;
@@ -17,6 +18,19 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
   onChange
 }) => {
   const isLocked = team.dec.locked;
+  const isQ1 = gameState.quarter === 1;
+
+  const handleFacilitySelect = (location: string) => {
+    if (isLocked || !isQ1 || team.dec.facilityLocked) return;
+    onChange({
+      ...team,
+      dec: {
+        ...team.dec,
+        facilityLocation: location,
+        facilityLocked: true
+      }
+    });
+  };
 
   const handleProdChange = (modelId: string, units: number) => {
     if (isLocked) return;
@@ -85,6 +99,13 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
 
       {/* Operations & Assembly Line Visualizer */}
       <OperationsVisualizer team={team} gameState={gameState} />
+
+      <FacilityLocationWizard
+        currentQuarter={gameState.quarter}
+        selectedLocation={team.dec.facilityLocation}
+        isLocked={isLocked || Boolean(team.dec.facilityLocked)}
+        onSelect={handleFacilitySelect}
+      />
 
       {/* Production Scheduling */}
       <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
