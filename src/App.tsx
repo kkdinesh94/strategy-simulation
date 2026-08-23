@@ -518,6 +518,7 @@ export default function App() {
             onOfferLicence={handleOfferLicence}
             onRespondLicence={handleRespondLicence}
             onNotify={showNotification}
+            universeId={universe.id}
           />
         )}
 

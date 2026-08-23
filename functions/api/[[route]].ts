@@ -80,6 +80,47 @@ export async function onRequest(context: { request: Request; env: Env; params: {
   }
 
   try {
+    if (path === "/api/rd/license" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS vehicle_components (component_id TEXT PRIMARY KEY, category TEXT, name TEXT, material_cost REAL, performance_score INTEGER, benefit_delivered TEXT, is_rd_unlocked INTEGER DEFAULT 0, available_from_quarter INTEGER DEFAULT 1); CREATE TABLE IF NOT EXISTS rd_projects (project_id TEXT PRIMARY KEY, name TEXT, description TEXT, component_unlocked TEXT NOT NULL); CREATE TABLE IF NOT EXISTS rd_project_completions (game_id TEXT NOT NULL, team_id TEXT NOT NULL, project_id TEXT NOT NULL, completed_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, project_id)); CREATE TABLE IF NOT EXISTS rd_license_offers (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, seller_team_id TEXT NOT NULL, buyer_team_id TEXT NOT NULL, project_id TEXT NOT NULL, license_fee REAL NOT NULL CHECK (license_fee >= 1), special_terms TEXT NOT NULL DEFAULT '', offered_quarter INTEGER NOT NULL, execute_quarter INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'offered' CHECK (status IN ('offered', 'accepted', 'rejected', 'executed')), accepted_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS team_component_access (game_id TEXT NOT NULL, team_id TEXT NOT NULL, component_id TEXT NOT NULL, source_license_id TEXT, unlocked_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, component_id));`);
+      if (method === "GET") {
+        const gameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id") || "";
+        const teamId = url.searchParams.get("team_id") || "";
+        const quarter = Math.max(1, Number(url.searchParams.get("quarter") || 1));
+        if (!gameId || !teamId) return new Response(JSON.stringify({ error: "game_id and team_id are required." }), { status: 400, headers: corsHeaders });
+        await env.DB.prepare("UPDATE rd_license_offers SET status = 'executed' WHERE game_id = ? AND status = 'accepted' AND execute_quarter <= ?").bind(gameId, quarter).run();
+        const due = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'executed' AND execute_quarter <= ?").bind(gameId, quarter).all();
+        for (const offer of (due.results || []) as any[]) await env.DB.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").bind(gameId, offer.buyer_team_id, offer.id, offer.execute_quarter, offer.project_id).run();
+        const available = await env.DB.prepare("SELECT p.project_id, p.name, p.description, p.component_unlocked, c.name AS component_name, c.category, c.benefit_delivered, x.team_id AS seller_team_id FROM rd_projects p JOIN vehicle_components c ON c.component_id = p.component_unlocked JOIN rd_project_completions x ON x.game_id = ? AND x.project_id = p.project_id AND x.completed_quarter < ? WHERE x.team_id <> ? AND NOT EXISTS (SELECT 1 FROM team_component_access a WHERE a.game_id = ? AND a.team_id = ? AND a.component_id = p.component_unlocked) ORDER BY p.name").bind(gameId, quarter, teamId, gameId, teamId).all();
+        const outbound = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND seller_team_id = ? ORDER BY created_at DESC").bind(gameId, teamId).all();
+        return new Response(JSON.stringify({ available: available.results || [], outbound: outbound.results || [] }), { status: 200, headers: corsHeaders });
+      }
+      const body = await request.json() as any;
+      const gameId = String(body.game_id || request.headers.get("X-Game-Id") || "").trim();
+      const quarter = Number(body.quarter);
+      if (!gameId || !body.buyer_team_id || !Number.isInteger(quarter) || quarter < 1 || (body.action !== "accept" && (!body.seller_team_id || !body.project_id))) return new Response(JSON.stringify({ error: "game_id, buyer_team_id, and a positive integer quarter are required; offers also require seller_team_id and project_id." }), { status: 400, headers: corsHeaders });
+      await env.DB.prepare("UPDATE rd_license_offers SET status = 'executed' WHERE game_id = ? AND status = 'accepted' AND execute_quarter <= ?").bind(gameId, quarter).run();
+      const due = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'executed' AND execute_quarter <= ?").bind(gameId, quarter).all();
+      for (const offer of (due.results || []) as any[]) {
+        await env.DB.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").bind(gameId, offer.buyer_team_id, offer.id, offer.execute_quarter, offer.project_id).run();
+      }
+      if (body.action === "accept") {
+        const offer = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE id = ? AND game_id = ? AND buyer_team_id = ?").bind(String(body.license_id || ""), gameId, String(body.buyer_team_id)).first();
+        if (!offer || offer.status !== "offered") return new Response(JSON.stringify({ error: "Offer is missing or no longer open." }), { status: 409, headers: corsHeaders });
+        await env.DB.prepare("UPDATE rd_license_offers SET status = 'accepted', accepted_at = datetime('now') WHERE id = ? AND status = 'offered'").bind(offer.id).run();
+        return new Response(JSON.stringify({ success: true, offer: { ...offer, status: "accepted" } }), { status: 200, headers: corsHeaders });
+      }
+      const fee = Number(body.license_fee);
+      if (!Number.isFinite(fee) || fee < 1) return new Response(JSON.stringify({ error: "license_fee must be at least 1." }), { status: 400, headers: corsHeaders });
+      if (String(body.seller_team_id) === String(body.buyer_team_id)) return new Response(JSON.stringify({ error: "Seller and buyer must be different teams." }), { status: 400, headers: corsHeaders });
+      const completion = await env.DB.prepare("SELECT completed_quarter FROM rd_project_completions WHERE game_id = ? AND team_id = ? AND project_id = ? AND completed_quarter < ? ORDER BY completed_quarter DESC LIMIT 1").bind(gameId, String(body.seller_team_id), String(body.project_id), quarter).first();
+      if (!completion) return new Response(JSON.stringify({ error: "Seller must have completed this R&D project in a prior quarter." }), { status: 409, headers: corsHeaders });
+      const id = crypto.randomUUID();
+      const offer = { id, game_id: gameId, seller_team_id: String(body.seller_team_id), buyer_team_id: String(body.buyer_team_id), project_id: String(body.project_id), license_fee: fee, special_terms: typeof body.special_terms === "string" ? body.special_terms.trim() : "", offered_quarter: quarter, execute_quarter: quarter + 1, status: "offered" };
+      await env.DB.prepare("INSERT INTO rd_license_offers (id, game_id, seller_team_id, buyer_team_id, project_id, license_fee, special_terms, offered_quarter, execute_quarter, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'offered')").bind(offer.id, offer.game_id, offer.seller_team_id, offer.buyer_team_id, offer.project_id, offer.license_fee, offer.special_terms, offer.offered_quarter, offer.execute_quarter).run();
+      return new Response(JSON.stringify({ success: true, offer }), { status: 201, headers: corsHeaders });
+    }
+
     // 1. Health check
     if (path === "/api/health") {
       return new Response(

@@ -3,6 +3,7 @@ import { TeamState, GameState } from "../../types/simulation";
 import { TECHS, techById, fmtRs } from "../../engine/catalog";
 import { Cpu, Handshake, CheckCircle2, Clock, Zap, DollarSign } from "lucide-react";
 import { RnDVisualizer } from "../RnDVisualizer";
+import LicensingBoard from "../LicensingBoard";
 
 interface RnDTabProps {
   team: TeamState;
@@ -11,6 +12,7 @@ interface RnDTabProps {
   onOfferLicence: (techId: string, buyerI: number, fee: number) => Promise<void>;
   onRespondLicence: (contractId: number, accept: boolean) => Promise<void>;
   onNotify: (msg: string) => void;
+  universeId?: string;
 }
 
 export const RnDTab: React.FC<RnDTabProps> = ({
@@ -19,7 +21,8 @@ export const RnDTab: React.FC<RnDTabProps> = ({
   onChange,
   onOfferLicence,
   onRespondLicence,
-  onNotify
+  onNotify,
+  universeId
 }) => {
   const isLocked = team.dec.locked;
   const [selectedRndTech, setSelectedRndTech] = useState<string>(TECHS[0].id);
@@ -266,6 +269,15 @@ export const RnDTab: React.FC<RnDTabProps> = ({
           </p>
         )}
       </div>
+
+      <LicensingBoard
+        gameId={universeId}
+        teamId={team.i}
+        quarter={gameState.quarter}
+        teams={gameState.teams}
+        ownedTechnologies={team.techs.map((id) => ({ project_id: id, name: techById(id)?.name || id }))}
+        onNotify={onNotify}
+      />
     </div>
   );
 };

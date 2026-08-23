@@ -24,6 +24,44 @@ async function startServer() {
     });
   });
 
+  app.all("/api/rd/license", (req, res) => {
+    try {
+      d1.exec(`CREATE TABLE IF NOT EXISTS vehicle_components (component_id TEXT PRIMARY KEY, category TEXT, name TEXT, material_cost REAL, performance_score INTEGER, benefit_delivered TEXT, is_rd_unlocked INTEGER DEFAULT 0, available_from_quarter INTEGER DEFAULT 1); CREATE TABLE IF NOT EXISTS rd_projects (project_id TEXT PRIMARY KEY, name TEXT, description TEXT, component_unlocked TEXT NOT NULL); CREATE TABLE IF NOT EXISTS rd_project_completions (game_id TEXT NOT NULL, team_id TEXT NOT NULL, project_id TEXT NOT NULL, completed_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, project_id)); CREATE TABLE IF NOT EXISTS rd_license_offers (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, seller_team_id TEXT NOT NULL, buyer_team_id TEXT NOT NULL, project_id TEXT NOT NULL, license_fee REAL NOT NULL CHECK (license_fee >= 1), special_terms TEXT NOT NULL DEFAULT '', offered_quarter INTEGER NOT NULL, execute_quarter INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'offered', accepted_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS team_component_access (game_id TEXT NOT NULL, team_id TEXT NOT NULL, component_id TEXT NOT NULL, source_license_id TEXT, unlocked_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, component_id));`);
+      const gameId = String(req.body?.game_id || req.header("X-Game-Id") || req.query.game_id || req.query.universe_id || "").trim();
+      const teamId = String(req.query.team_id || req.body?.buyer_team_id || "").trim();
+      const quarter = Number(req.body?.quarter || req.query.quarter || 1);
+      if (!gameId) return res.status(400).json({ error: "game_id is required." });
+      d1.prepare("UPDATE rd_license_offers SET status = 'executed' WHERE game_id = ? AND status = 'accepted' AND execute_quarter <= ?").run(gameId, quarter);
+      const due = d1.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'executed' AND execute_quarter <= ?").all(gameId, quarter);
+      for (const offer of due) d1.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").run(gameId, offer.buyer_team_id, offer.id, offer.execute_quarter, offer.project_id);
+      if (req.method === "GET") {
+        if (!teamId) return res.status(400).json({ error: "team_id is required." });
+        const available = d1.prepare("SELECT p.project_id, p.name, p.description, p.component_unlocked, c.name AS component_name, c.category, c.benefit_delivered, x.team_id AS seller_team_id FROM rd_projects p JOIN vehicle_components c ON c.component_id = p.component_unlocked JOIN rd_project_completions x ON x.game_id = ? AND x.project_id = p.project_id AND x.completed_quarter < ? WHERE x.team_id <> ? AND NOT EXISTS (SELECT 1 FROM team_component_access a WHERE a.game_id = ? AND a.team_id = ? AND a.component_id = p.component_unlocked) ORDER BY p.name").all(gameId, quarter, teamId, gameId, teamId);
+        const outbound = d1.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND seller_team_id = ? ORDER BY created_at DESC").all(gameId, teamId);
+        return res.json({ available, outbound });
+      }
+      if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+      const body = req.body || {};
+      if (!body.seller_team_id || !body.buyer_team_id || !body.project_id || !Number.isInteger(quarter) || quarter < 1) return res.status(400).json({ error: "seller_team_id, buyer_team_id, project_id, and a positive integer quarter are required." });
+      if (body.action === "accept") {
+        const offer = d1.prepare("SELECT * FROM rd_license_offers WHERE id = ? AND game_id = ? AND buyer_team_id = ?").get(String(body.license_id || ""), gameId, String(body.buyer_team_id));
+        if (!offer || offer.status !== "offered") return res.status(409).json({ error: "Offer is missing or no longer open." });
+        d1.prepare("UPDATE rd_license_offers SET status = 'accepted', accepted_at = datetime('now') WHERE id = ? AND status = 'offered'").run(offer.id);
+        return res.json({ success: true, offer: { ...offer, status: "accepted" } });
+      }
+      const fee = Number(body.license_fee);
+      if (!Number.isFinite(fee) || fee < 1) return res.status(400).json({ error: "license_fee must be at least 1." });
+      if (String(body.seller_team_id) === String(body.buyer_team_id)) return res.status(400).json({ error: "Seller and buyer must be different teams." });
+      const completion = d1.prepare("SELECT completed_quarter FROM rd_project_completions WHERE game_id = ? AND team_id = ? AND project_id = ? AND completed_quarter < ? LIMIT 1").get(gameId, String(body.seller_team_id), String(body.project_id), quarter);
+      if (!completion) return res.status(409).json({ error: "Seller must have completed this R&D project in a prior quarter." });
+      const offer = { id: crypto.randomUUID(), game_id: gameId, seller_team_id: String(body.seller_team_id), buyer_team_id: String(body.buyer_team_id), project_id: String(body.project_id), license_fee: fee, special_terms: typeof body.special_terms === "string" ? body.special_terms.trim() : "", offered_quarter: quarter, execute_quarter: quarter + 1, status: "offered" };
+      d1.prepare("INSERT INTO rd_license_offers (id, game_id, seller_team_id, buyer_team_id, project_id, license_fee, special_terms, offered_quarter, execute_quarter, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'offered')").run(offer.id, offer.game_id, offer.seller_team_id, offer.buyer_team_id, offer.project_id, offer.license_fee, offer.special_terms, offer.offered_quarter, offer.execute_quarter);
+      return res.status(201).json({ success: true, offer });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // Cloudflare D1 Status & Diagnostics
   app.get("/api/d1/status", (_req, res) => {
     try {
