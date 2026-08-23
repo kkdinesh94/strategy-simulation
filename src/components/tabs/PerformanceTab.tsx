@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
+import ExecutiveBriefing from "../ExecutiveBriefing";
 import CompetitiveBenchmark from "../CompetitiveBenchmark";
 import SWOTAnalysis from "../SWOTAnalysis";
 import BalancedScorecard from "../BalancedScorecard";
@@ -39,9 +40,10 @@ interface PerformanceTabProps {
   gameState: GameState;
   universeId: string;
   onNotify?: (message: string) => void;
+  functionalRole?: string;
 }
 
-export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState, universeId, onNotify }) => {
+export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState, universeId, onNotify, functionalRole = "President" }) => {
   const [activeReportTab, setActiveReportTab] = useState<
     "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news" | "swot"
   >("bsc");
@@ -573,7 +575,7 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
       {/* SUB-TAB: EXECUTIVE DEBRIEF PACK */}
       {activeReportTab === "debrief" && (
-        <ExecutiveDebrief gameState={gameState} currentTeam={team} />
+        <div className="space-y-6"><ExecutiveBriefing team={team} gameState={gameState} universeId={universeId} role={functionalRole} /><ExecutiveDebrief gameState={gameState} currentTeam={team} /></div>
       )}
 
       {activeReportTab === "swot" && <SWOTAnalysis universeId={universeId} teamId={team.i} quarter={selectedQuarter} teamName={team.name} onNotify={onNotify} />}

@@ -541,6 +541,78 @@ Focus on financial viability, pricing strategy, capacity planning, R&D/licensing
     }
   });
 
+  // AI-generated quarterly instructor briefing from the team's persisted records.
+  app.post("/api/executive-briefing", async (req, res) => {
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey || apiKey === "YOUR_ANTHROPIC_API_KEY") {
+        return res.status(400).json({ error: "ANTHROPIC_API_KEY is not configured in environment." });
+      }
+
+      const universeId = String(req.body?.universeId || "").trim();
+      const teamId = Number(req.body?.teamId);
+      const quarter = Number(req.body?.quarter);
+      const role = String(req.body?.role || "President").trim();
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1) {
+        return res.status(400).json({ error: "universeId, teamId, and a positive integer quarter are required." });
+      }
+
+      const readJson = (value: unknown) => {
+        if (typeof value !== "string") return value || {};
+        try { return JSON.parse(value); } catch { return {}; }
+      };
+      const optionalRows = (sql: string, ...params: any[]) => {
+        try { return d1.prepare(sql).all(...params) || []; } catch { return []; }
+      };
+      const scorecards = optionalRows(
+        "SELECT quarter, overall_score, dimensions_json, raw_metrics_json FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?) ORDER BY quarter",
+        universeId, String(teamId), quarter - 1, quarter
+      ).map((row: any) => ({ ...row, dimensions: readJson(row.dimensions_json), rawMetrics: readJson(row.raw_metrics_json) }));
+      const plans = optionalRows(
+        "SELECT quarter, plan_json, updated_at FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?, ?) ORDER BY quarter",
+        universeId, teamId, quarter - 1, quarter, quarter + 1
+      ).map((row: any) => ({ quarter: row.quarter, updatedAt: row.updated_at, plan: readJson(row.plan_json) }));
+      const proForma = optionalRows(
+        "SELECT quarter, statement_json, updated_at FROM pro_forma_statements WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?) ORDER BY quarter",
+        universeId, teamId, quarter, quarter + 1
+      ).map((row: any) => ({ quarter: row.quarter, updatedAt: row.updated_at, statement: readJson(row.statement_json) }));
+      const decisions = optionalRows(
+        "SELECT quarter, decision_json, submitted_at, submitted_by FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC LIMIT 20",
+        universeId, teamId, quarter
+      ).map((row: any) => ({ quarter: row.quarter, submittedAt: row.submitted_at, submittedBy: row.submitted_by, decision: readJson(row.decision_json) }));
+
+      const sourceData = { universeId, teamId, quarter, role, scorecards, strategyPlans: plans, proForma, decisions };
+      const systemPrompt = `You are a business consultant writing a concise executive summary for an instructor presentation in an EV venture simulation. Write for a business-school audience. Use only the supplied data; never invent metrics or decisions. Explain cause and effect, distinguish actual results from forecasts, and call out missing data as uncertainty. Return valid JSON only with exactly these string fields: performance, decisions, nextQuarter, uncertainties. Each field must contain 1-2 polished paragraphs, with no markdown headings or bullet lists.`;
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1400,
+          system: systemPrompt,
+          messages: [{ role: "user", content: `Prepare the quarterly briefing for the ${role}.\n\nD1 data:\n${JSON.stringify(sourceData, null, 2)}` }]
+        })
+      });
+      if (!response.ok) throw new Error(`Anthropic request failed (${response.status}).`);
+      const payload: any = await response.json();
+      const text = payload?.content?.find((item: any) => item.type === "text")?.text || "{}";
+      const parsed = readJson(text.replace(/^```json\s*|\s*```$/g, ""));
+      return res.json({ sourceData, sections: {
+        performance: String(parsed.performance || "Performance data was retrieved, but no summary was generated."),
+        decisions: String(parsed.decisions || "No decision rationale was available for this quarter."),
+        nextQuarter: String(parsed.nextQuarter || "No next-quarter plan was available."),
+        uncertainties: String(parsed.uncertainties || "No additional uncertainties were identified by the model.")
+      } });
+    } catch (err: any) {
+      console.error("Executive briefing API error:", err);
+      return res.status(500).json({ error: err.message || "Failed to generate executive briefing." });
+    }
+  });
+
   // Vite middleware setup for development vs production
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

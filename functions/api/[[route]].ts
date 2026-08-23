@@ -7,6 +7,7 @@ import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "..
 interface Env {
   DB: any; // Cloudflare D1Database binding
   GEMINI_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
   NODE_ENV?: string;
   VEHICLE_REDESIGN_FEE?: string;
 }
@@ -1115,6 +1116,34 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         : "SELECT * FROM ad_violations ORDER BY created_at DESC";
       const rows = await env.DB.prepare(query).bind(...(universeId ? [universeId] : [])).all();
       return new Response(JSON.stringify({ violations: rows.results || [] }), { status: 200, headers: corsHeaders });
+    }
+
+    // Gemini advisor endpoint (Cloudflare Edge compatible)
+    if (path === "/api/executive-briefing" && method === "POST") {
+      const apiKey = env.ANTHROPIC_API_KEY;
+      if (!apiKey) return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 400, headers: corsHeaders });
+      const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; role?: string };
+      const universeId = String(body.universeId || "").trim();
+      const teamId = Number(body.teamId);
+      const quarter = Number(body.quarter);
+      const role = String(body.role || "President").trim();
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1) {
+        return new Response(JSON.stringify({ error: "universeId, teamId, and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      }
+      const readJson = (value: unknown) => { try { return typeof value === "string" ? JSON.parse(value) : value || {}; } catch { return {}; } };
+      const rows = async (sql: string, ...params: any[]) => { try { const result = await env.DB.prepare(sql).bind(...params).all(); return result.results || []; } catch { return []; } };
+      const scorecards = (await rows("SELECT quarter, overall_score, dimensions_json, raw_metrics_json FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?) ORDER BY quarter", universeId, String(teamId), quarter - 1, quarter)).map((row: any) => ({ ...row, dimensions: readJson(row.dimensions_json), rawMetrics: readJson(row.raw_metrics_json) }));
+      const strategyPlans = (await rows("SELECT quarter, plan_json, updated_at FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?, ?) ORDER BY quarter", universeId, teamId, quarter - 1, quarter, quarter + 1)).map((row: any) => ({ quarter: row.quarter, updatedAt: row.updated_at, plan: readJson(row.plan_json) }));
+      const proForma = (await rows("SELECT quarter, statement_json, updated_at FROM pro_forma_statements WHERE universe_id = ? AND team_i = ? AND quarter IN (?, ?) ORDER BY quarter", universeId, teamId, quarter, quarter + 1)).map((row: any) => ({ quarter: row.quarter, updatedAt: row.updated_at, statement: readJson(row.statement_json) }));
+      const decisions = (await rows("SELECT quarter, decision_json, submitted_at, submitted_by FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC LIMIT 20", universeId, teamId, quarter)).map((row: any) => ({ quarter: row.quarter, submittedAt: row.submitted_at, submittedBy: row.submitted_by, decision: readJson(row.decision_json) }));
+      const sourceData = { universeId, teamId, quarter, role, scorecards, strategyPlans, proForma, decisions };
+      const system = "You are a business consultant writing a concise executive summary for an instructor presentation in an EV venture simulation. Use only the supplied data; never invent metrics or decisions. Distinguish actual results from forecasts and call out missing data. Return valid JSON only with exactly these string fields: performance, decisions, nextQuarter, uncertainties. Each field must contain 1-2 polished paragraphs with no markdown headings or bullet lists.";
+      const aiRes = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }, body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1400, system, messages: [{ role: "user", content: `Prepare the quarterly briefing for the ${role}.\n\nD1 data:\n${JSON.stringify(sourceData, null, 2)}` }] }) });
+      if (!aiRes.ok) return new Response(JSON.stringify({ error: `Anthropic request failed (${aiRes.status}).` }), { status: 502, headers: corsHeaders });
+      const aiData: any = await aiRes.json();
+      const text = aiData?.content?.find((item: any) => item.type === "text")?.text || "{}";
+      const parsed = readJson(text.replace(/^```json\s*|\s*```$/g, "")) as any;
+      return new Response(JSON.stringify({ sourceData, sections: { performance: String(parsed.performance || "Performance data was retrieved, but no summary was generated."), decisions: String(parsed.decisions || "No decision rationale was available for this quarter."), nextQuarter: String(parsed.nextQuarter || "No next-quarter plan was available."), uncertainties: String(parsed.uncertainties || "No additional uncertainties were identified by the model.") } }), { status: 200, headers: corsHeaders });
     }
 
     // Gemini advisor endpoint (Cloudflare Edge compatible)

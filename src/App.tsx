@@ -598,7 +598,7 @@ export default function App() {
         )}
 
         {activeTab === "performance" && (
-          <PerformanceTab team={currentTeam} gameState={gameState} universeId={universe.id} onNotify={showNotification} />
+          <PerformanceTab team={currentTeam} gameState={gameState} universeId={universe.id} onNotify={showNotification} functionalRole={Object.entries(currentTeam.roles || {}).find(([, memberName]) => memberName === currentUser?.name)?.[0] || "President"} />
         )}
 
         {activeTab === "roster" && (
