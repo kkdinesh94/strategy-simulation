@@ -61,6 +61,16 @@ function decisionDashboardReducer(
   return { revision: state.revision + 1, lastChangedAt: Date.now() };
 }
 
+function decisionAreaForField(field: string): string {
+  if (/price|ad|media|campaign|claim|segment/i.test(field)) return "Marketing";
+  if (/prod|capacity|plant|quality|facility|outlet|centre/i.test(field)) return "Operations";
+  if (/debt|loan|cash|budget|finance|dividend|equity/i.test(field)) return "Finance";
+  if (/hr|hire|training|salary|staff|productivity/i.test(field)) return "Human Resources";
+  if (/sales|channel|distribution|territory/i.test(field)) return "Sales";
+  if (/rd|research|license|technology|battery|charging/i.test(field)) return "R&D";
+  return "Strategy";
+}
+
 export default function App() {
   // Authentication & Session State
   const [currentUser, setCurrentUser] = useState<User | null>(() => loadCurrentUser());
@@ -339,6 +349,21 @@ export default function App() {
   };
 
   const handleUpdateCurrentTeam = (updatedTeam: TeamState) => {
+    const changes = Object.keys({ ...(currentTeam.dec || {}), ...(updatedTeam.dec || {}) })
+      .filter((field) => JSON.stringify(currentTeam.dec?.[field]) !== JSON.stringify(updatedTeam.dec?.[field]))
+      .map((field) => ({
+        decisionArea: decisionAreaForField(field),
+        fieldChanged: field,
+        oldValue: currentTeam.dec?.[field] ?? "",
+        newValue: updatedTeam.dec?.[field] ?? ""
+      }));
+    if (changes.length) {
+      fetch("/api/decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId: updatedTeam.i, quarter: gameState.quarter, changes })
+      }).catch(() => {});
+    }
     const updatedTeams = [...gameState.teams];
     updatedTeams[activeTeamIdx] = updatedTeam;
     const newGs: GameState = {

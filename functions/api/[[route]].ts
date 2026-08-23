@@ -97,6 +97,11 @@ function readJson(value: unknown): any {
   try { return JSON.parse(value); } catch { return {}; }
 }
 
+function auditValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value ?? ""); } catch { return String(value ?? ""); }
+}
+
 function modelMetrics(model: any, components: Map<string, any>): { range: number; charging: number; autonomy: number; price: number; hasDcFastCharge: boolean } {
   const config = model?.cfg || {};
   const componentIds = Array.isArray(model?.componentIds) ? model.componentIds : [];
@@ -414,6 +419,64 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
         { status: 200, headers: corsHeaders }
       );
+    }
+
+    if (path === "/api/decisions" && (method === "GET" || method === "POST" || method === "PUT")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      await env.DB.exec(`
+        CREATE TABLE IF NOT EXISTS decision_audit_log (
+          log_id TEXT PRIMARY KEY,
+          team_id TEXT,
+          quarter INTEGER,
+          decision_area TEXT,
+          field_changed TEXT,
+          old_value TEXT,
+          new_value TEXT,
+          timestamp TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp);
+      `);
+
+      if (method === "GET") {
+        const teamId = String(url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
+        const quarter = Number(url.searchParams.get("quarter"));
+        const area = String(url.searchParams.get("decisionArea") || url.searchParams.get("decision_area") || "").trim();
+        if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+        const params: any[] = [teamId, quarter];
+        let query = "SELECT log_id, team_id, quarter, decision_area, field_changed, old_value, new_value, timestamp FROM decision_audit_log WHERE team_id = ? AND quarter = ?";
+        if (area) { query += " AND decision_area = ?"; params.push(area); }
+        query += " ORDER BY timestamp DESC, log_id DESC";
+        const rows = await env.DB.prepare(query).bind(...params).all();
+        return new Response(JSON.stringify({ decisions: rows.results || [] }), { status: 200, headers: corsHeaders });
+      }
+
+      const body = await request.json() as any;
+      const teamId = String(body.teamId ?? body.team_id ?? "").trim();
+      const quarter = Number(body.quarter);
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+
+      const decisionArea = String(body.decisionArea ?? body.decision_area ?? body.area ?? "General").trim() || "General";
+      let changes: any[] = Array.isArray(body.changes) ? body.changes : [];
+      if (!changes.length && body.oldDecision && body.newDecision && typeof body.oldDecision === "object" && typeof body.newDecision === "object") {
+        const fields = new Set([...Object.keys(body.oldDecision), ...Object.keys(body.newDecision)]);
+        changes = [...fields].filter((field) => auditValue(body.oldDecision[field]) !== auditValue(body.newDecision[field])).map((field) => ({ fieldChanged: field, oldValue: body.oldDecision[field], newValue: body.newDecision[field] }));
+      }
+      if (!changes.length) changes = [{ fieldChanged: body.fieldChanged ?? body.field_changed ?? "decision", oldValue: body.oldValue ?? body.old_value ?? "", newValue: body.newValue ?? body.new_value ?? body.decision ?? body.value ?? "" }];
+
+      const timestamp = new Date().toISOString();
+      await env.DB.batch(changes.map((change: any) => env.DB.prepare(
+        "INSERT INTO decision_audit_log (log_id, team_id, quarter, decision_area, field_changed, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        crypto.randomUUID(),
+        teamId,
+        quarter,
+        String(change.decisionArea ?? change.decision_area ?? decisionArea).trim() || decisionArea,
+        String(change.fieldChanged ?? change.field_changed ?? change.field ?? "decision"),
+        auditValue(change.oldValue ?? change.old_value),
+        auditValue(change.newValue ?? change.new_value),
+        timestamp
+      )));
+      return new Response(JSON.stringify({ success: true, logged: changes.length, teamId, quarter }), { status: 200, headers: corsHeaders });
     }
 
     if (path === "/api/process-quarter" && method === "POST") {
@@ -762,6 +825,17 @@ export async function onRequest(context: { request: Request; env: Env; params: {
             submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
             submitted_by TEXT NOT NULL
         );
+          CREATE TABLE IF NOT EXISTS decision_audit_log (
+            log_id TEXT PRIMARY KEY,
+            team_id TEXT,
+            quarter INTEGER,
+            decision_area TEXT,
+            field_changed TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            timestamp TEXT
+          );
+          CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp);
         CREATE TABLE IF NOT EXISTS strategy_plans (
           id TEXT PRIMARY KEY,
           universe_id TEXT NOT NULL,

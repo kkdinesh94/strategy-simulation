@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS team_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_team_decisions_lookup ON team_decisions(universe_id, team_i, quarter);
 
+CREATE TABLE IF NOT EXISTS decision_audit_log (
+    log_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    quarter INTEGER,
+    decision_area TEXT,
+    field_changed TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    timestamp TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp);
+
 CREATE TABLE IF NOT EXISTS strategy_plans (
     id TEXT PRIMARY KEY,
     universe_id TEXT NOT NULL,
