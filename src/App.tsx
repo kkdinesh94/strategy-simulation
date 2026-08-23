@@ -536,6 +536,8 @@ export default function App() {
             team={currentTeam}
             gameState={gameState}
             onChange={handleUpdateCurrentTeam}
+            universeId={universe.id}
+            onNotify={showNotification}
           />
         )}
 

@@ -91,6 +91,21 @@ CREATE TABLE IF NOT EXISTS production_facilities (
 CREATE INDEX IF NOT EXISTS idx_production_facilities_team ON production_facilities(team_id);
 CREATE INDEX IF NOT EXISTS idx_production_facilities_location ON production_facilities(location);
 
+-- 3c. Demand-pull production scheduler inputs and 65-day projections
+CREATE TABLE IF NOT EXISTS production_schedules (
+    schedule_id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_i INTEGER NOT NULL,
+    quarter INTEGER NOT NULL,
+    inputs_json TEXT NOT NULL,
+    outputs_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (universe_id, team_i, quarter)
+);
+
+CREATE INDEX IF NOT EXISTS idx_production_schedules_lookup ON production_schedules(universe_id, team_i, quarter);
+
 INSERT OR IGNORE INTO production_facilities (
     facility_id, team_id, location, fixed_capacity_per_day,
     operating_capacity_per_day, quarter_built, build_cost,

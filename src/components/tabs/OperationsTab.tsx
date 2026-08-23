@@ -5,17 +5,22 @@ import { reliabilityOf } from "../../engine/simulationEngine";
 import { Factory, ShieldCheck, Wrench, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { OperationsVisualizer } from "../OperationsVisualizer";
 import FacilityLocationWizard from "../FacilityLocationWizard";
+import ProductionScheduler from "../ProductionScheduler";
 
 interface OperationsTabProps {
   team: TeamState;
   gameState: GameState;
   onChange: (updatedTeam: TeamState) => void;
+  universeId?: string;
+  onNotify?: (message: string) => void;
 }
 
 export const OperationsTab: React.FC<OperationsTabProps> = ({
   team,
   gameState,
-  onChange
+  onChange,
+  universeId,
+  onNotify
 }) => {
   const isLocked = team.dec.locked;
   const isQ1 = gameState.quarter === 1;
@@ -107,8 +112,8 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
         onSelect={handleFacilitySelect}
       />
 
-      {/* Production Scheduling */}
-      <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
+      <ProductionScheduler team={team} gameState={gameState} universeId={universeId} onChange={onChange} onNotify={onNotify} />
+      <div className="hidden">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-[#1F2022]">
             Model Production Schedule (Units / Quarter)

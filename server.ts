@@ -24,6 +24,40 @@ async function startServer() {
     });
   });
 
+  app.post("/api/production-schedules", (req, res) => {
+    try {
+      const { universeId, teamId, quarter, inputs, outputs } = req.body || {};
+      const teamI = Number(teamId);
+      const quarterNumber = Number(quarter);
+      if (!String(universeId || "").trim() || !Number.isInteger(teamI) || !Number.isInteger(quarterNumber) || quarterNumber < 1 || !inputs || !outputs) {
+        return res.status(400).json({ error: "universeId, teamId, quarter, inputs, and outputs are required." });
+      }
+      d1.exec("CREATE TABLE IF NOT EXISTS production_schedules (schedule_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, inputs_json TEXT NOT NULL, outputs_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const scheduleId = `${universeId}:${teamI}:${quarterNumber}`;
+      d1.prepare(`INSERT INTO production_schedules (schedule_id, universe_id, team_i, quarter, inputs_json, outputs_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET inputs_json = excluded.inputs_json, outputs_json = excluded.outputs_json, updated_at = datetime('now')`)
+        .run(scheduleId, String(universeId), teamI, quarterNumber, JSON.stringify(inputs), JSON.stringify(outputs));
+      return res.json({ success: true, scheduleId });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/production-schedules", (req, res) => {
+    try {
+      const universeId = String(req.query.universeId || "").trim();
+      const teamI = Number(req.query.teamId);
+      const quarterNumber = Number(req.query.quarter);
+      if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarterNumber)) return res.status(400).json({ error: "universeId, teamId, and quarter are required." });
+      const row: any = d1.prepare("SELECT * FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ?").get(universeId, teamI, quarterNumber);
+      if (!row) return res.status(404).json({ error: "Schedule not found." });
+      return res.json({ ...row, inputs: JSON.parse(row.inputs_json), outputs: JSON.parse(row.outputs_json) });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   app.all("/api/rd/license", (req, res) => {
     try {
       d1.exec(`CREATE TABLE IF NOT EXISTS vehicle_components (component_id TEXT PRIMARY KEY, category TEXT, name TEXT, material_cost REAL, performance_score INTEGER, benefit_delivered TEXT, is_rd_unlocked INTEGER DEFAULT 0, available_from_quarter INTEGER DEFAULT 1); CREATE TABLE IF NOT EXISTS rd_projects (project_id TEXT PRIMARY KEY, name TEXT, description TEXT, component_unlocked TEXT NOT NULL); CREATE TABLE IF NOT EXISTS rd_project_completions (game_id TEXT NOT NULL, team_id TEXT NOT NULL, project_id TEXT NOT NULL, completed_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, project_id)); CREATE TABLE IF NOT EXISTS rd_license_offers (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, seller_team_id TEXT NOT NULL, buyer_team_id TEXT NOT NULL, project_id TEXT NOT NULL, license_fee REAL NOT NULL CHECK (license_fee >= 1), special_terms TEXT NOT NULL DEFAULT '', offered_quarter INTEGER NOT NULL, execute_quarter INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'offered', accepted_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS team_component_access (game_id TEXT NOT NULL, team_id TEXT NOT NULL, component_id TEXT NOT NULL, source_license_id TEXT, unlocked_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, component_id));`);

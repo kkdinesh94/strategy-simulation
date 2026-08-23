@@ -740,6 +740,34 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       }
     }
 
+    if (path === "/api/production-schedules" && method === "POST") {
+      const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; inputs?: unknown; outputs?: unknown };
+      const universeId = String(body.universeId || "").trim();
+      const teamI = Number(body.teamId);
+      const quarter = Number(body.quarter);
+      if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarter) || quarter < 1 || !body.inputs || !body.outputs) {
+        return new Response(JSON.stringify({ error: "universeId, teamId, quarter, inputs, and outputs are required." }), { status: 400, headers: corsHeaders });
+      }
+      const scheduleId = `${universeId}:${teamI}:${quarter}`;
+      await env.DB.prepare(`INSERT INTO production_schedules (schedule_id, universe_id, team_i, quarter, inputs_json, outputs_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET inputs_json = excluded.inputs_json, outputs_json = excluded.outputs_json, updated_at = datetime('now')`)
+        .bind(scheduleId, universeId, teamI, quarter, JSON.stringify(body.inputs), JSON.stringify(body.outputs)).run();
+      return new Response(JSON.stringify({ success: true, scheduleId }), { status: 200, headers: corsHeaders });
+    }
+
+    if (path === "/api/production-schedules" && method === "GET") {
+      const universeId = String(url.searchParams.get("universeId") || "").trim();
+      const teamI = Number(url.searchParams.get("teamId"));
+      const quarter = Number(url.searchParams.get("quarter"));
+      if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarter)) {
+        return new Response(JSON.stringify({ error: "universeId, teamId, and quarter are required." }), { status: 400, headers: corsHeaders });
+      }
+      const row: any = await env.DB.prepare("SELECT * FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ?").bind(universeId, teamI, quarter).first();
+      if (!row) return new Response(JSON.stringify({ error: "Schedule not found." }), { status: 404, headers: corsHeaders });
+      return new Response(JSON.stringify({ ...row, inputs: JSON.parse(row.inputs_json), outputs: JSON.parse(row.outputs_json) }), { status: 200, headers: corsHeaders });
+    }
+
     if (path.startsWith("/api/ad-campaigns/") && path.endsWith("/validate") && method === "POST") {
       const campaignId = decodeURIComponent(path.split("/").filter(Boolean).slice(-2, -1)[0] || "");
       const body = await request.json() as { teamId?: string; quarter?: number };
