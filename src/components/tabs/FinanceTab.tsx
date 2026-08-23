@@ -17,6 +17,7 @@ import { ProFormaWorkbench } from "../ProFormaWorkbench";
 import { ProFormaPanel } from "./ProFormaPanel";
 import { DecisionAuditor } from "../DecisionAuditor";
 import { FinancingPanel } from "../FinancingPanel";
+import ABCReport from "../ABCReport";
 import {
   DollarSign,
   Landmark,
@@ -677,45 +678,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
 
       {/* SUB-TAB 2: ACTIVITY BASED COSTING (ABC) */}
       {activeSubTab === "abc" && (
-        <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-4">
-          <h3 className="text-lg font-bold text-[#1F2022]">
-            Activity Based Costing (ABC) Profitability Analysis
-          </h3>
-          <p className="text-xs text-[#5A5C60]">
-            ABC assigns demand-creating expenses (advertising, warranty, development, storage) directly to the generating brand model rather than pooling them into generic corporate overhead.
-          </p>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs font-mono">
-              <thead>
-                <tr className="border-b border-[#E0DCD3] text-[#5A5C60] uppercase">
-                  <th className="text-left py-2">Model</th>
-                  <th className="text-right py-2">Unit Cost</th>
-                  <th className="text-right py-2">List Price</th>
-                  <th className="text-right py-2">Gross Margin</th>
-                  <th className="text-right py-2">Allocated Overhead</th>
-                  <th className="text-right py-2">Net Unit Profit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {team.models.map((m) => {
-                  return (
-                    <tr key={m.id} className="border-b border-[#E0DCD3]">
-                      <td className="py-2 text-left font-sans font-bold text-[#1F2022]">
-                        {m.name}
-                      </td>
-                      <td className="text-right py-2">{fmtRs(m.price * 0.65)}</td>
-                      <td className="text-right py-2">{fmtRs(m.price)}</td>
-                      <td className="text-right py-2 text-emerald-700">{fmtRs(m.price * 0.35)}</td>
-                      <td className="text-right py-2 text-[#5A5C60]">{fmtRs(m.price * 0.15)}</td>
-                      <td className="text-right py-2 font-bold text-emerald-700">{fmtRs(m.price * 0.20)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ABCReport universeId={universeId} teamId={String(team.i)} quarter={gameState.quarter} />
       )}
 
       {/* SUB-TAB 3: DEBT & CREDIT LINES */}
