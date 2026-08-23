@@ -5,6 +5,7 @@ import { reachOf, hrMults } from "../../engine/simulationEngine";
 import { Store, Users, MapPin, DollarSign, Award, Globe, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
 import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
+import SalesForceManager from "../SalesForceManager";
 
 interface SalesDistributionTabProps {
   team: TeamState;
@@ -112,6 +113,8 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
       <StoreVisualizer team={team} gameState={gameState} />
 
       <TerritoryMap team={team} />
+
+      <SalesForceManager team={team} gameState={gameState} onChange={onChange} />
 
       {/* Experience Centers & D2C E-Commerce */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

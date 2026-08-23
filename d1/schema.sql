@@ -56,6 +56,24 @@ CREATE TABLE IF NOT EXISTS team_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_team_decisions_lookup ON team_decisions(universe_id, team_i, quarter);
 
+-- 3a. Office-level sales force allocations and compensation packages
+CREATE TABLE IF NOT EXISTS sales_force (
+    record_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    office_id TEXT,
+    quarter INTEGER,
+    total_salespeople INTEGER,
+    segment_specialist_counts TEXT, -- JSON {"Urban Commuter": 2, "Fleet Manager": 1, ...}
+    support_specialists INTEGER,
+    salary_base REAL,
+    health_benefits REAL,
+    performance_bonus REAL,
+    productivity_score REAL -- computed from compensation vs. industry benchmark
+);
+
+CREATE INDEX IF NOT EXISTS idx_sales_force_team_quarter ON sales_force(team_id, quarter);
+CREATE INDEX IF NOT EXISTS idx_sales_force_office ON sales_force(team_id, office_id);
+
 -- 4. Audit & Telemetry Logs
 CREATE TABLE IF NOT EXISTS audit_logs (
     id TEXT PRIMARY KEY,
