@@ -21,6 +21,46 @@ const componentBenefitKey: Record<string, string> = {
   Safety: "autonomy"
 };
 
+function jaroWinkler(first: string, second: string): number {
+  const a = first.trim().toLowerCase();
+  const b = second.trim().toLowerCase();
+  if (a === b) return 1;
+  if (!a || !b) return 0;
+
+  const matchDistance = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+  const firstMatches = new Array(a.length).fill(false);
+  const secondMatches = new Array(b.length).fill(false);
+  let matches = 0;
+
+  for (let firstIndex = 0; firstIndex < a.length; firstIndex += 1) {
+    const start = Math.max(0, firstIndex - matchDistance);
+    const end = Math.min(firstIndex + matchDistance + 1, b.length);
+    for (let secondIndex = start; secondIndex < end; secondIndex += 1) {
+      if (secondMatches[secondIndex] || a[firstIndex] !== b[secondIndex]) continue;
+      firstMatches[firstIndex] = true;
+      secondMatches[secondIndex] = true;
+      matches += 1;
+      break;
+    }
+  }
+  if (!matches) return 0;
+
+  const firstOrdered = a.split("").filter((_, index) => firstMatches[index]);
+  const secondOrdered = b.split("").filter((_, index) => secondMatches[index]);
+  let transpositions = 0;
+  for (let index = 0; index < firstOrdered.length; index += 1) {
+    if (firstOrdered[index] !== secondOrdered[index]) transpositions += 1;
+  }
+  const jaro = (matches / a.length + matches / b.length + (matches - transpositions / 2) / matches) / 3;
+  let prefix = 0;
+  while (prefix < Math.min(4, a.length, b.length) && a[prefix] === b[prefix]) prefix += 1;
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+function normalizeComponentIds(componentIds: string[]): string[] {
+  return [...new Set(componentIds.map((componentId) => String(componentId).trim()).filter(Boolean))].sort();
+}
+
 export async function onRequest(context: { request: Request; env: Env; params: { route?: string[] } }) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -90,10 +130,12 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         quarter?: number;
         componentIds?: string[];
         multiplier?: number;
+        brandName?: string;
         submittedBy?: string;
       };
       const quarter = Number(body.quarter);
-      const componentIds = Array.isArray(body.componentIds) ? body.componentIds : [];
+      const componentIds = normalizeComponentIds(Array.isArray(body.componentIds) ? body.componentIds : []);
+      const brandName = typeof body.brandName === "string" ? body.brandName.trim() : "";
       const multiplier = Number(body.multiplier ?? 2.5);
       const redesignFee = Math.max(0, Number(env.VEHICLE_REDESIGN_FEE ?? 500));
       if (!brandId || !Number.isInteger(quarter) || quarter < 1 || !Number.isFinite(multiplier) || multiplier <= 0) {
@@ -105,16 +147,39 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         "SELECT id FROM team_decisions WHERE id = ?"
       ).bind(decisionId).first();
       const latestDecision = await env.DB.prepare(
-        "SELECT quarter FROM team_decisions WHERE id LIKE ? ORDER BY quarter DESC LIMIT 1"
-      ).bind(`vehicle-design:${brandId}:Q%`).first();
+        "SELECT quarter, decision_json FROM team_decisions WHERE id LIKE ? AND quarter < ? ORDER BY quarter DESC LIMIT 1"
+      ).bind(`vehicle-design:${brandId}:Q%`, quarter).first();
       const fee = existingQuarter ? 0 : (latestDecision ? redesignFee : 0);
+      let priorBrandName = brandId;
+      let configurationChanged = false;
+      if (latestDecision?.decision_json) {
+        try {
+          const priorDecision = JSON.parse(latestDecision.decision_json);
+          priorBrandName = typeof priorDecision.brandName === "string" && priorDecision.brandName.trim()
+            ? priorDecision.brandName.trim()
+            : brandId;
+          configurationChanged = JSON.stringify(normalizeComponentIds(priorDecision.componentIds || [])) !== JSON.stringify(componentIds);
+        } catch {
+          configurationChanged = true;
+        }
+      }
+      if (configurationChanged && (!brandName || brandName.toLowerCase() === priorBrandName.toLowerCase())) {
+        return new Response(JSON.stringify({
+          error: "A changed component configuration requires a new brand name.",
+          originalBrandName: priorBrandName
+        }), { status: 400, headers: corsHeaders });
+      }
+      const finalBrandName = brandName || priorBrandName;
+      const brandLoyaltyCarryOver = configurationChanged && jaroWinkler(finalBrandName, priorBrandName) >= 0.6 ? 1 : 0;
       const decision = JSON.stringify({
         type: "vehicle_design",
         brandId,
+        brandName: finalBrandName,
         quarter,
         componentIds,
         multiplier,
-        redesignFee: fee
+        redesignFee: fee,
+        brand_loyalty_carry_over: brandLoyaltyCarryOver
       });
       await env.DB.prepare(`
         INSERT INTO team_decisions (id, universe_id, team_i, quarter, decision_json, redesign_fee, submitted_by)
@@ -129,7 +194,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         fee,
         body.submittedBy || "vehicle-designer"
       ).run();
-      return new Response(JSON.stringify({ success: true, brandId, quarter, redesignFee: fee, decisionId }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ success: true, brandId, brandName: finalBrandName, quarter, redesignFee: fee, brand_loyalty_carry_over: brandLoyaltyCarryOver, decisionId }), { status: 200, headers: corsHeaders });
     }
 
     // 2. Cloudflare D1 Status

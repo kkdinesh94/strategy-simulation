@@ -51,6 +51,7 @@ export default function VehicleDesigner({
   const [segments, setSegments] = useState(DEFAULT_SEGMENTS);
   const [selectedIds, setSelectedIds] = useState([]);
   const [multiplier, setMultiplier] = useState(DEFAULT_MULTIPLIER);
+  const [brandName, setBrandName] = useState(brandId);
   const [status, setStatus] = useState("loading");
   const [message, setMessage] = useState("");
   const [saveState, setSaveState] = useState("idle");
@@ -106,7 +107,7 @@ export default function VehicleDesigner({
       const response = await fetch(`/api/vehicle-designer/brands/${encodeURIComponent(brandId)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quarter: currentQuarter, componentIds: selectedIds, multiplier })
+        body: JSON.stringify({ quarter: currentQuarter, brandName, componentIds: selectedIds, multiplier })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Unable to save vehicle design.");
@@ -126,8 +127,10 @@ export default function VehicleDesigner({
     <div className="space-y-5 text-slate-900">
       <header className="flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end">
         <div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-teal-700"><Sparkles className="h-4 w-4" /> Vehicle design / Q{currentQuarter}</div><h2 className="mt-1 text-2xl font-semibold tracking-tight">Brand Spec Sheet</h2></div>
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">Brand name <input aria-label="Brand name" type="text" value={brandName} onChange={(event) => setBrandName(event.target.value)} className="w-44 rounded-lg border border-slate-300 px-2 py-1.5" /></label>
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">Retail multiplier <input aria-label="Retail multiplier" type="number" min="1" step="0.1" value={multiplier} onChange={(event) => setMultiplier(Number(event.target.value) || 1)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-right" /></label>
       </header>
+      <p className="text-xs font-medium text-slate-500">Product-line extensions should build on the original name, for example: Model S &rarr; Model S Plus &rarr; Model S Pro.</p>
       <div className="grid gap-5 lg:grid-cols-[1fr_1.1fr]">
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="mb-4 text-sm font-bold uppercase tracking-[0.12em] text-slate-700">Available components</h3><div className="space-y-4">{Object.entries(grouped).map(([category, items]) => <div key={category}><h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-teal-700">{category}</h4><div className="space-y-2">{items.map((component) => <label key={component.id} className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-3 transition ${selectedIds.includes(component.id) ? "border-teal-500 bg-teal-50" : "border-slate-200 hover:border-slate-400"}`}><span className="flex min-w-0 items-center gap-3"><input type="checkbox" checked={selectedIds.includes(component.id)} onChange={() => toggleComponent(component.id)} className="h-4 w-4 accent-teal-600" /><span className="min-w-0"><span className="block text-sm font-semibold">{component.name}</span><span className="block truncate text-xs text-slate-500">{component.benefit}</span></span></span><span className="shrink-0 text-right text-xs"><strong className="block">{formatMoney(component.cost)}</strong><span className="text-slate-500">Score {component.performance}</span></span></label>)}</div></div>)}</div></section>
         <section className="space-y-5"><div className="rounded-xl bg-slate-950 p-5 text-white shadow-sm"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-teal-300">Current specification</p><p className="mt-2 text-sm text-slate-300">{selected.length} components selected</p></div><button type="button" onClick={saveDesign} disabled={saveState === "saving"} className="inline-flex items-center gap-2 rounded-lg bg-teal-400 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-60">{saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : saveState === "saved" ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />} Save design</button></div><div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3"><div><p className="text-xs text-slate-400">Material cost</p><p className="mt-1 text-lg font-semibold">{formatMoney(materialCost)}</p></div><div><p className="text-xs text-slate-400">Estimated retail</p><p className="mt-1 text-lg font-semibold">{formatMoney(retailPrice)}</p></div><div><p className="text-xs text-slate-400">Multiplier</p><p className="mt-1 text-lg font-semibold">{multiplier.toFixed(1)}x</p></div></div></div>
