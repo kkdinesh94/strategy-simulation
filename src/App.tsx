@@ -28,6 +28,7 @@ import { ProductDesignTab } from "./components/tabs/ProductDesignTab";
 import { RnDTab } from "./components/tabs/RnDTab";
 import { MarketingTab } from "./components/tabs/MarketingTab";
 import { SalesDistributionTab } from "./components/tabs/SalesDistributionTab";
+import HRDashboard from "./components/HRDashboard";
 import { OperationsTab } from "./components/tabs/OperationsTab";
 import { FinanceTab } from "./components/tabs/FinanceTab";
 import { PerformanceTab } from "./components/tabs/PerformanceTab";
@@ -537,6 +538,16 @@ export default function App() {
             gameState={gameState}
             onChange={handleUpdateCurrentTeam}
             universeId={universe.id}
+            onNotify={showNotification}
+          />
+        )}
+
+        {activeTab === "hr" && (
+          <HRDashboard
+            team={currentTeam}
+            gameState={gameState}
+            universeId={universe.id}
+            onChange={handleUpdateCurrentTeam}
             onNotify={showNotification}
           />
         )}

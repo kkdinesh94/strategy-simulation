@@ -237,6 +237,22 @@ export function maxShareBuybackLimit(t: TeamState): number {
 }
 
 export function hrMults(st: GameState, t: TeamState): { sales: number; plant: number } {
+  const defaults = {
+    sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
+    production: { salary: 2.5, benefits: 8, vacation: 18, bonus: 8, safetyBonus: 5 }
+  };
+  const value = (pkg: any, kind: "sales" | "production") => {
+    const safety = kind === "production" ? Number(pkg.safetyBonus || 0) : 0;
+    return Number(pkg.salary || 0) * (1 + Number(pkg.benefits || 0) / 100 + Number(pkg.bonus || 0) / 100 + safety / 100) + Number(pkg.vacation || 0) * 0.03;
+  };
+  if (t.hrCompensation) {
+    const packageFor = (team: TeamState, kind: "sales" | "production") => ({ ...defaults[kind], ...(team.hrCompensation?.[kind] || {}) });
+    const score = (kind: "sales" | "production") => {
+      const benchmark = st.teams.reduce((sum, team) => sum + value(packageFor(team, kind), kind), 0) / Math.max(1, st.teams.length);
+      return clamp(value(packageFor(t, kind), kind) / Math.max(0.0001, benchmark), 0.75, 1.25);
+    };
+    return { sales: score("sales"), plant: score("production") };
+  }
   const mean = (k: "sales" | "plant") =>
     st.teams.reduce((x, x2) => x + x2.hr[k], 0) / (st.teams.length || 1);
   const f = (idx: number, mn: number) => clamp(1 + 0.008 * (idx - mn), 0.75, 1.15);

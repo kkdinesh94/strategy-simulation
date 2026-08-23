@@ -56,6 +56,22 @@ CREATE TABLE IF NOT EXISTS team_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_team_decisions_lookup ON team_decisions(universe_id, team_i, quarter);
 
+-- 3a. Human resources compensation decisions and productivity inputs
+CREATE TABLE IF NOT EXISTS hr_decisions (
+    id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_i INTEGER NOT NULL,
+    quarter INTEGER NOT NULL,
+    sales_json TEXT NOT NULL,
+    production_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (universe_id, team_i, quarter),
+    FOREIGN KEY (universe_id) REFERENCES universes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_hr_decisions_lookup ON hr_decisions(universe_id, quarter, team_i);
+
 -- 3a. Office-level sales force allocations and compensation packages
 CREATE TABLE IF NOT EXISTS sales_force (
     record_id TEXT PRIMARY KEY,

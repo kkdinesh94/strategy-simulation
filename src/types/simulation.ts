@@ -282,6 +282,10 @@ export interface TeamState {
   capacity: number; // units / quarter
   ppe: number; // net property plant equipment Rs. L
   hr: { sales: number; plant: number }; // % of benchmark (80 - 130)
+  hrCompensation?: {
+    sales?: { salary: number; benefits: number; vacation: number; bonus: number };
+    production?: { salary: number; benefits: number; vacation: number; bonus: number; safetyBonus: number };
+  };
   centres: number; // count
   staff: number; // headcount
   qualityCum: number;

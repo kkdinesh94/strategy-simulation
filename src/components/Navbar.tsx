@@ -25,6 +25,7 @@ export type TabKey =
   | "rnd"
   | "marketing"
   | "sales"
+  | "hr"
   | "operations"
   | "finance"
   | "performance"
@@ -61,6 +62,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: "rnd", label: "R&D & Licensing", icon: <Cpu className="w-4 h-4 text-purple-400" /> },
     { id: "marketing", label: "Marketing & Claims", icon: <Megaphone className="w-4 h-4" /> },
     { id: "sales", label: "Sales & Outlets", icon: <Store className="w-4 h-4" /> },
+    { id: "hr", label: "HR & Productivity", icon: <Users className="w-4 h-4" /> },
     { id: "operations", label: "Operations & Quality", icon: <Factory className="w-4 h-4" /> },
     { id: "finance", label: "Finance & Pro Forma", icon: <DollarSign className="w-4 h-4 text-emerald-400" /> },
     { id: "performance", label: "Scorecard & Reports", icon: <BarChart3 className="w-4 h-4 text-amber-400" /> },
