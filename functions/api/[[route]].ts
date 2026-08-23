@@ -2,6 +2,7 @@
  * Cloudflare Pages Functions & Workers API Router
  * Handles all /api/* routes natively with Cloudflare D1 (env.DB) and Gemini AI
  */
+import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "../../src/lib/competitiveBenchmark";
 
 interface Env {
   DB: any; // Cloudflare D1Database binding
@@ -402,6 +403,26 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
         { status: 200, headers: corsHeaders }
       );
+    }
+
+    if (path === "/api/competitive-benchmark" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = method === "POST" ? await request.json() as any : {};
+      const teamId = String(body.teamId || body.team_id || url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
+      const quarter = Number(body.quarter || url.searchParams.get("quarter"));
+      const region = String(body.region || url.searchParams.get("region") || "Global").trim() || "Global";
+      const scope = String(body.scope || url.searchParams.get("scope") || (region.toLowerCase() === "global" ? "global" : "region"));
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1 || !["region", "global"].includes(scope)) return new Response(JSON.stringify({ error: "teamId, a positive integer quarter, and a valid scope are required." }), { status: 400, headers: corsHeaders });
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS competitive_benchmark_purchases (purchase_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, scope TEXT NOT NULL, cost REAL NOT NULL, report_json TEXT NOT NULL, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, region, scope))");
+      const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes ORDER BY updated_at DESC LIMIT 1").first();
+      if (!universe) return new Response(JSON.stringify({ error: "No simulation universe is available." }), { status: 404, headers: corsHeaders });
+      const purchase: any = await env.DB.prepare("SELECT * FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? AND region = ? AND scope = ?").bind(universe.id, teamId, quarter, region, scope).first();
+      const cost = COMPETITIVE_BENCHMARK_REGION_COST * (scope === "global" ? 3 : 1);
+      if (method === "GET") return new Response(JSON.stringify({ purchased: Boolean(purchase), cost, report: purchase ? readJson(purchase.report_json) : null }), { status: 200, headers: corsHeaders });
+      if (Number(body.market_research_budget || body.budget) < cost) return new Response(JSON.stringify({ error: `Allocate at least Rs. ${cost} L to purchase this report.` }), { status: 402, headers: corsHeaders });
+      const report = buildCompetitiveBenchmark(readJson(universe.game_state), quarter, region);
+      await env.DB.prepare("INSERT INTO competitive_benchmark_purchases (purchase_id, universe_id, team_id, quarter, region, scope, cost, report_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_id, quarter, region, scope) DO UPDATE SET report_json = excluded.report_json, cost = excluded.cost, purchased_at = datetime('now')").bind(`${universe.id}:${teamId}:${quarter}:${region}:${scope}`, universe.id, teamId, quarter, region, scope, cost, JSON.stringify(report)).run();
+      return new Response(JSON.stringify({ success: true, purchased: true, cost, report }), { status: 200, headers: corsHeaders });
     }
 
     if (path === "/api/fast-tests" && (method === "GET" || method === "POST")) {

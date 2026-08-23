@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
+import CompetitiveBenchmark from "../CompetitiveBenchmark";
 import {
   sharesOf,
   stockPriceOf,
@@ -38,7 +39,7 @@ interface PerformanceTabProps {
 
 export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState }) => {
   const [activeReportTab, setActiveReportTab] = useState<
-    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "intel" | "clinic" | "share" | "news"
+    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news"
   >("bsc");
   const [statementType, setStatementType] = useState<"income" | "balance" | "cashflow">("income");
   const [selectedQuarter, setSelectedQuarter] = useState<number>(
@@ -136,6 +137,17 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
           }`}
         >
           <Lock className="w-3.5 h-3.5 text-purple-600" /> Competitor Intelligence
+        </button>
+
+        <button
+          onClick={() => setActiveReportTab("benchmark")}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
+            activeReportTab === "benchmark"
+              ? "bg-[#1F2022] text-white shadow-sm"
+              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
+          }`}
+        >
+          <BarChart3 className="w-3.5 h-3.5 text-teal-600" /> Competitive Research
         </button>
 
         <button
@@ -642,6 +654,14 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
             </div>
           </div>
         </div>
+      )}
+
+      {activeReportTab === "benchmark" && (
+        <CompetitiveBenchmark
+          teamId={team.i}
+          quarter={selectedQuarter}
+          budget={team.dec.market_research_budget || 0}
+        />
       )}
 
       {/* SUB-TAB: COMPETITOR INTELLIGENCE REPORT (GATED) */}

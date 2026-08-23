@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { getD1Database } from "./server/d1Store";
+import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "./src/lib/competitiveBenchmark";
 
 dotenv.config();
 
@@ -22,6 +23,27 @@ async function startServer() {
       app: "EV Venture League Simulation",
       dbProvider: "Cloudflare D1 & SQLite 3 Ready"
     });
+  });
+
+  app.all("/api/competitive-benchmark", (req, res) => {
+    try {
+      const input = req.method === "POST" ? req.body || {} : req.query;
+      const teamId = String(input.teamId || input.team_id || "").trim();
+      const quarter = Number(input.quarter);
+      const region = String(input.region || "Global").trim() || "Global";
+      const scope = String(input.scope || (region.toLowerCase() === "global" ? "global" : "region"));
+      if (!teamId || !Number.isInteger(quarter) || quarter < 1 || !["region", "global"].includes(scope)) return res.status(400).json({ error: "teamId, a positive integer quarter, and a valid scope are required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS competitive_benchmark_purchases (purchase_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, scope TEXT NOT NULL, cost REAL NOT NULL, report_json TEXT NOT NULL, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, region, scope))");
+      const universe: any = d1.prepare("SELECT id, game_state FROM universes ORDER BY updated_at DESC LIMIT 1").get();
+      if (!universe) return res.status(404).json({ error: "No simulation universe is available." });
+      const purchase: any = d1.prepare("SELECT * FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? AND region = ? AND scope = ?").get(universe.id, teamId, quarter, region, scope);
+      if (req.method === "GET") return res.json({ purchased: Boolean(purchase), cost: COMPETITIVE_BENCHMARK_REGION_COST * (scope === "global" ? 3 : 1), report: purchase ? JSON.parse(purchase.report_json) : null });
+      const cost = COMPETITIVE_BENCHMARK_REGION_COST * (scope === "global" ? 3 : 1);
+      if (Number(input.market_research_budget || input.budget) < cost) return res.status(402).json({ error: `Allocate at least Rs. ${cost} L to purchase this report.` });
+      const report = buildCompetitiveBenchmark(JSON.parse(universe.game_state), quarter, region);
+      d1.prepare("INSERT INTO competitive_benchmark_purchases (purchase_id, universe_id, team_id, quarter, region, scope, cost, report_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_id, quarter, region, scope) DO UPDATE SET report_json = excluded.report_json, cost = excluded.cost, purchased_at = datetime('now')").run(`${universe.id}:${teamId}:${quarter}:${region}:${scope}`, universe.id, teamId, quarter, region, scope, cost, JSON.stringify(report));
+      return res.json({ success: true, purchased: true, cost, report });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
   });
 
   app.post("/api/production-schedules", (req, res) => {
