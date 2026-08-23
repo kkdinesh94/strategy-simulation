@@ -3,6 +3,7 @@ import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
 import CompetitiveBenchmark from "../CompetitiveBenchmark";
+import SWOTAnalysis from "../SWOTAnalysis";
 import {
   sharesOf,
   stockPriceOf,
@@ -35,11 +36,13 @@ import {
 interface PerformanceTabProps {
   team: TeamState;
   gameState: GameState;
+  universeId: string;
+  onNotify?: (message: string) => void;
 }
 
-export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState }) => {
+export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState, universeId, onNotify }) => {
   const [activeReportTab, setActiveReportTab] = useState<
-    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news"
+    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news" | "swot"
   >("bsc");
   const [statementType, setStatementType] = useState<"income" | "balance" | "cashflow">("income");
   const [selectedQuarter, setSelectedQuarter] = useState<number>(
@@ -80,6 +83,10 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
           }`}
         >
           <Award className="w-3.5 h-3.5 text-amber-500" /> Balanced Scorecard
+        </button>
+
+        <button onClick={() => setActiveReportTab("swot")} className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${activeReportTab === "swot" ? "bg-[#1F2022] text-white shadow-sm" : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"}`}>
+          <Target className="w-3.5 h-3.5 text-rose-600" /> SWOT Analysis
         </button>
 
         <button
@@ -579,6 +586,8 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState 
       {activeReportTab === "debrief" && (
         <ExecutiveDebrief gameState={gameState} currentTeam={team} />
       )}
+
+      {activeReportTab === "swot" && <SWOTAnalysis universeId={universeId} teamId={team.i} quarter={selectedQuarter} teamName={team.name} onNotify={onNotify} />}
 
       {/* SUB-TAB: COMPETITOR BENCHMARKS (PUBLIC) */}
       {activeReportTab === "rivals" && (

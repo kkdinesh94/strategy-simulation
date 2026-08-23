@@ -589,7 +589,7 @@ export default function App() {
         )}
 
         {activeTab === "performance" && (
-          <PerformanceTab team={currentTeam} gameState={gameState} />
+          <PerformanceTab team={currentTeam} gameState={gameState} universeId={universe.id} onNotify={showNotification} />
         )}
 
         {activeTab === "roster" && (

@@ -572,6 +572,67 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ success: true, id }), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/swot" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = method === "POST" ? await request.json() as any : {};
+      const universeId = String(body.universeId || url.searchParams.get("universeId") || "").trim();
+      const teamId = Number(body.teamId ?? url.searchParams.get("teamId"));
+      const quarter = Number(body.quarter ?? url.searchParams.get("quarter"));
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "universeId, teamId, and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS swot_records (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, swot_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes WHERE id = ?").bind(universeId).first();
+      if (!universe) return new Response(JSON.stringify({ error: "Simulation universe was not found." }), { status: 404, headers: corsHeaders });
+      const state = readJson(universe.game_state);
+      const teams = Array.isArray(state.teams) ? state.teams : [];
+      const currentTeam = teams.find((team: any) => Number(team.i) === teamId);
+      if (!currentTeam) return new Response(JSON.stringify({ error: "Team was not found in the simulation universe." }), { status: 404, headers: corsHeaders });
+      const latest = (team: any) => [...(team.hist || [])].filter((item: any) => Number(item.q) <= quarter).sort((a: any, b: any) => Number(b.q) - Number(a.q))[0] || {};
+      const number = (value: any, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+      const teamResult = latest(currentTeam);
+      const teamLabel = (team: any) => String(team.name || `Team ${Number(team.i) + 1}`);
+      const segments = Array.isArray(state.segments) ? state.segments : [];
+      const segmentName = (id: string) => segments.find((segment: any) => String(segment.id || segment.segment_id) === id)?.name || id;
+      const judgmentEntries = Object.entries(teamResult.judg || {}).map(([id, value]: [string, any]) => ({ id, score: number(value?.p) })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score);
+      const scores = teams.map((team: any) => number(latest(team).brandJ)).filter((score) => score > 0);
+      const adScores = teams.map((team: any) => number(latest(team).campJ)).filter((score) => score > 0);
+      const averageBrandJudgment = scores.reduce((sum, score) => sum + score, 0) / (scores.length || 1);
+      const averageAdJudgment = adScores.reduce((sum, score) => sum + score, 0) / (adScores.length || 1);
+      const primary = String(currentTeam.prim || "");
+      const primaryShare = number(teamResult.sharePrim || teamResult.share);
+      const currentCash = number(teamResult.cash, number(currentTeam.cash));
+      const negativeMarginBrands = (teamResult.modelRows || []).filter((model: any) => number(model.price) < number(model.cost)).map((model: any) => `${model.name || "Unnamed brand"} has an estimated negative unit margin`);
+      const cityNetwork = ["Delhi / NCR", "Bengaluru / Chennai", "Mumbai / Pune", "Hyderabad", "Kolkata", "Ahmedabad"];
+      const uncoveredCities = cityNetwork.slice(Math.max(0, Math.min(cityNetwork.length, number(currentTeam.centres)))).slice(0, 3);
+      const uncontestedSegments = ["urban_commuter", "fleet_operator", "performance_enthusiast", "tech_pioneer", "eco_advocate"].filter((segmentId) => !teams.some((team: any) => number(latest(team).judg?.[segmentId]?.p) > 80)).map(segmentName);
+      const actionSummary = (team: any) => {
+        const result = latest(team);
+        const decision = team.dec || {};
+        const actions: string[] = [];
+        if (number(decision.ad) > 250 || number(result.campJ) >= 75) actions.push("aggressive demand generation");
+        if (number(result.rndSpend) > 0 || (team.rnd || []).length > 0) actions.push("technology-led R&D investment");
+        if (number(decision.newCentres) > 0 || number(team.centres) >= 6) actions.push("network expansion");
+        if (number(result.reliab) >= 0.75 || number(team.qualityCum) > 0) actions.push("quality and reliability differentiation");
+        if ((team.models || []).some((model: any) => number(model.price) >= 50000)) actions.push("premium positioning");
+        return actions.length ? actions.join(", ") : "measured, low-commitment posture";
+      };
+      const rivals = teams.filter((team: any) => Number(team.i) !== teamId).map((team: any) => ({ teamId: team.i, name: teamLabel(team), posture: actionSummary(team), evidence: { advertising: number(team.dec?.ad), rndSpend: number(latest(team).rndSpend), centres: number(team.centres), reliability: Math.round(number(latest(team).reliab) * 100) } }));
+      const detected = {
+        strengths: [...judgmentEntries.slice(0, 3).map((entry) => `${segmentName(entry.id)} brand judgment is ${Math.round(entry.score)}/100`), `Reliability rating is ${Math.round(number(teamResult.reliab) * 100)}/100`, `${Math.round(primaryShare * (primaryShare <= 1 ? 100 : 1))}% share in ${segmentName(primary)}`],
+        weaknesses: [...negativeMarginBrands, ...(currentCash < 1000 ? [`Low cash position: Rs. ${Math.round(currentCash)} L`] : []), ...(number(teamResult.campJ) > 0 && number(teamResult.campJ) < averageAdJudgment ? [`Ad judgment below the league average (${Math.round(teamResult.campJ)} vs ${Math.round(averageAdJudgment)})`] : [])],
+        opportunities: [...(uncoveredCities.length ? [`Uncontested city coverage: ${uncoveredCities.join(", ")}`] : []), ...(uncontestedSegments.length ? [`No team exceeds 80 brand judgment in: ${uncontestedSegments.join(", ")}`] : []), ...(averageBrandJudgment ? [`League average brand judgment is ${Math.round(averageBrandJudgment)}/100`] : [])],
+        threats: teams.filter((team: any) => Number(team.i) !== teamId && (number(latest(team).rndSpend) > number(teamResult.rndSpend) || number(latest(team).reliab) > number(teamResult.reliab))).slice(0, 4).map((team: any) => `${teamLabel(team)} has superior ${number(latest(team).rndSpend) > number(teamResult.rndSpend) ? "R&D investment" : "reliability rating"}`)
+      };
+      const row: any = await env.DB.prepare("SELECT swot_json, updated_at FROM swot_records WHERE universe_id = ? AND team_i = ? AND quarter = ?").bind(universeId, teamId, quarter).first();
+      if (method === "GET") return new Response(JSON.stringify({ swot: row ? readJson(row.swot_json) : detected, detected, competitors: rivals, updatedAt: row?.updated_at || null }), { status: 200, headers: corsHeaders });
+      const swot = body.swot;
+      const quadrants = ["strengths", "weaknesses", "opportunities", "threats"];
+      if (!swot || typeof swot !== "object" || quadrants.some((key) => !Array.isArray(swot[key]) || swot[key].some((item: any) => typeof item !== "string" || item.trim().length > 240))) return new Response(JSON.stringify({ error: "Each SWOT quadrant must be an array of text items no longer than 240 characters." }), { status: 400, headers: corsHeaders });
+      const normalized = Object.fromEntries(quadrants.map((key) => [key, swot[key].map((item: string) => item.trim()).filter(Boolean).slice(0, 20)]));
+      const id = `${universeId}:${teamId}:${quarter}`;
+      await env.DB.prepare("INSERT INTO swot_records (id, universe_id, team_i, quarter, swot_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET swot_json = excluded.swot_json, updated_at = datetime('now')").bind(id, universeId, teamId, quarter, JSON.stringify(normalized)).run();
+      return new Response(JSON.stringify({ success: true, swot: normalized, updatedAt: new Date().toISOString() }), { status: 200, headers: corsHeaders });
+    }
+
     if (path === "/api/d1/status" || path === "/api/d1/health") {
       if (!env.DB) {
         return new Response(
