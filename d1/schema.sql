@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS team_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_team_decisions_lookup ON team_decisions(universe_id, team_i, quarter);
 
+CREATE TABLE IF NOT EXISTS pro_forma_statements (
+    id TEXT PRIMARY KEY,
+    universe_id TEXT NOT NULL,
+    team_i INTEGER NOT NULL,
+    quarter INTEGER NOT NULL,
+    statement_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (universe_id, team_i, quarter),
+    FOREIGN KEY (universe_id) REFERENCES universes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i);
+
 -- 3a. Human resources compensation decisions and productivity inputs
 CREATE TABLE IF NOT EXISTS hr_decisions (
     id TEXT PRIMARY KEY,

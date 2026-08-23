@@ -452,6 +452,17 @@ export async function onRequest(context: { request: Request; env: Env; params: {
             submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
             submitted_by TEXT NOT NULL
         );
+          CREATE TABLE IF NOT EXISTS pro_forma_statements (
+            id TEXT PRIMARY KEY,
+            universe_id TEXT NOT NULL,
+            team_i INTEGER NOT NULL,
+            quarter INTEGER NOT NULL,
+            statement_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (universe_id, team_i, quarter)
+          );
+          CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i);
           CREATE TABLE IF NOT EXISTS hr_decisions (
             id TEXT PRIMARY KEY,
             universe_id TEXT NOT NULL,
@@ -577,6 +588,23 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
         return new Response(JSON.stringify({ success: true, universeId: universe.id }), { status: 200, headers: corsHeaders });
       }
+    }
+
+    if (path === "/api/d1/pro-forma-statements" && method === "POST") {
+      const body = await request.json() as { universeId?: string; teamI?: number; quarter?: number; statement?: unknown };
+      const universeId = String(body.universeId || "").trim();
+      const teamI = Number(body.teamI);
+      const quarter = Number(body.quarter);
+      if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarter) || !body.statement) {
+        return new Response(JSON.stringify({ error: "universeId, teamI, quarter, and statement are required." }), { status: 400, headers: corsHeaders });
+      }
+      const id = `pro-forma:${universeId}:${teamI}:Q${quarter}`;
+      await env.DB.prepare(`
+        INSERT INTO pro_forma_statements (id, universe_id, team_i, quarter, statement_json, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET statement_json = excluded.statement_json, updated_at = datetime('now')
+      `).bind(id, universeId, teamI, quarter, JSON.stringify(body.statement)).run();
+      return new Response(JSON.stringify({ success: true, id }), { status: 200, headers: corsHeaders });
     }
 
     // 5. Users API (D1)

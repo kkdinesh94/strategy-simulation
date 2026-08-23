@@ -14,6 +14,7 @@ import {
   maxShareBuybackLimit
 } from "../../engine/simulationEngine";
 import { ProFormaWorkbench } from "../ProFormaWorkbench";
+import { ProFormaPanel } from "./ProFormaPanel";
 import { DecisionAuditor } from "../DecisionAuditor";
 import {
   DollarSign,
@@ -36,13 +37,15 @@ interface FinanceTabProps {
   gameState: GameState;
   onChange: (updatedTeam: TeamState) => void;
   onNotify: (msg: string) => void;
+  universeId: string;
 }
 
 export const FinanceTab: React.FC<FinanceTabProps> = ({
   team,
   gameState,
   onChange,
-  onNotify
+  onNotify,
+  universeId
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
     "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc"
@@ -224,7 +227,8 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
       </div>
 
       {/* SUB-TAB 1: PRO FORMA STATEMENTS */}
-      {activeSubTab === "proforma" && (
+      {activeSubTab === "proforma" && <ProFormaPanel team={team} gameState={gameState} universeId={universeId} onNotify={onNotify} />}
+      {false && activeSubTab === "proforma" && (
         <div className="space-y-6">
           {/* Executive Financial Ratios Overview Card */}
           <div className="bg-[#FAF8F5] text-[#1F2022] p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4 font-sans">

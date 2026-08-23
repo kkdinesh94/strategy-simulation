@@ -28,6 +28,20 @@ export interface MigrationSummary {
   errors?: string[];
 }
 
+export async function saveProFormaStatement(statement: { universeId: string; teamI: number; quarter: number; statement: unknown }): Promise<boolean> {
+  try {
+    const res = await safeD1Fetch("/api/d1/pro-forma-statements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(statement)
+    });
+    return Boolean(res && res.ok);
+  } catch (err) {
+    console.warn("Cloudflare D1 pro forma save note:", err);
+    return false;
+  }
+}
+
 const D1_CONFIG_STORAGE_KEY = "ev_venture_league_d1_config_v1";
 
 export interface D1Config {
