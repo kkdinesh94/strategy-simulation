@@ -633,6 +633,22 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ success: true, swot: normalized, updatedAt: new Date().toISOString() }), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/balanced-scorecard" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = await request.json() as { universeId?: string; quarter?: number; records?: any[] };
+      const universeId = String(body.universeId || "").trim();
+      const quarter = Number(body.quarter);
+      const records = Array.isArray(body.records) ? body.records.slice(0, 100) : [];
+      if (!universeId || !Number.isInteger(quarter) || quarter < 4 || !records.length) return new Response(JSON.stringify({ error: "universeId, Q4-or-later quarter, and scorecard records are required." }), { status: 400, headers: corsHeaders });
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      await env.DB.batch(records.map((record: any) => {
+        const teamId = String(record.teamId || "").trim();
+        const id = `${universeId}:${teamId}:${quarter}`;
+        return env.DB.prepare("INSERT INTO balanced_scorecard (id, universe_id, team_i, quarter, team_name, overall_score, dimensions_json, raw_metrics_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET team_name = excluded.team_name, overall_score = excluded.overall_score, dimensions_json = excluded.dimensions_json, raw_metrics_json = excluded.raw_metrics_json, updated_at = datetime('now')").bind(id, universeId, teamId, quarter, String(record.teamName || teamId), Number(record.score) || 0, JSON.stringify(record.dimensions || {}), JSON.stringify(record.raw || {}));
+      }));
+      return new Response(JSON.stringify({ success: true, quarter, saved: records.length }), { status: 200, headers: corsHeaders });
+    }
+
     if (path === "/api/d1/status" || path === "/api/d1/health") {
       if (!env.DB) {
         return new Response(
@@ -721,6 +737,20 @@ export async function onRequest(context: { request: Request; env: Env; params: {
             UNIQUE (universe_id, team_i, quarter)
           );
           CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i);
+          CREATE TABLE IF NOT EXISTS balanced_scorecard (
+            id TEXT PRIMARY KEY,
+            universe_id TEXT NOT NULL,
+            team_i TEXT NOT NULL,
+            quarter INTEGER NOT NULL,
+            team_name TEXT NOT NULL,
+            overall_score REAL NOT NULL,
+            dimensions_json TEXT NOT NULL,
+            raw_metrics_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE (universe_id, team_i, quarter)
+          );
+          CREATE INDEX IF NOT EXISTS idx_balanced_scorecard_lookup ON balanced_scorecard(universe_id, quarter, team_i);
           CREATE TABLE IF NOT EXISTS hr_decisions (
             id TEXT PRIMARY KEY,
             universe_id TEXT NOT NULL,

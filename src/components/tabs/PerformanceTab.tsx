@@ -4,6 +4,7 @@ import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
 import CompetitiveBenchmark from "../CompetitiveBenchmark";
 import SWOTAnalysis from "../SWOTAnalysis";
+import BalancedScorecard from "../BalancedScorecard";
 import {
   sharesOf,
   stockPriceOf,
@@ -57,18 +58,6 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
   const hasIntelReport = !!(lastResult && lastResult.intel && lastResult.intel.length > 0);
   const hasClinicReport = !!(lastResult && lastResult.clinic && lastResult.clinic.length > 0);
-
-  const bscLabels: Record<string, string> = {
-    FP: "Financial Performance",
-    MP: "Market Performance (Target Segments)",
-    ME: "Marketing Effectiveness",
-    IF: "Investment in Future",
-    W: "Wealth Creation",
-    HR: "Human Resource Management",
-    AM: "Asset Management",
-    MFG: "Manufacturing Productivity",
-    FR: "Financial Risk"
-  };
 
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
@@ -837,56 +826,13 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
         </div>
       )}
 
-      {/* BSC DEEP DIVE */}
-      {activeReportTab === "bsc" && lastResult && (
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-[#1F2022]">
-                  Balanced Scorecard Performance Breakdown
-                </h3>
-                <p className="text-xs text-[#5A5C60]">
-                  Total Business Performance = Product of all 9 performance indicators. A score of zero in any indicator zeroes out Total Performance.
-                </p>
-              </div>
-
-              <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-center font-mono">
-                <div className="text-[10px] uppercase text-emerald-800 font-bold">
-                  Quarter {lastResult.q} Total Score
-                </div>
-                <div className="text-3xl font-extrabold text-emerald-700">
-                  {lastResult.bsc.total.toFixed(1)}
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {Object.keys(bscLabels).map((key) => {
-                const score = lastResult.bsc.parts[key] || 0;
-                return (
-                  <div
-                    key={key}
-                    className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E5E1D8] space-y-1"
-                  >
-                    <div className="text-xs font-mono text-[#5A5C60] uppercase">
-                      {bscLabels[key]}
-                    </div>
-                    <div className="text-xl font-bold font-mono text-[#1F2022]">
-                      {score.toFixed(2)}
-                    </div>
-                    <div className="w-full bg-[#E0DCD3] h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-emerald-600 h-full"
-                        style={{ width: `${Math.min(100, (score / 3) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      {activeReportTab === "bsc" && (
+        <BalancedScorecard
+          team={team}
+          gameState={gameState}
+          universeId={universeId}
+          quarter={selectedQuarter}
+        />
       )}
 
       {/* MARKET SHARE & DEMAND */}

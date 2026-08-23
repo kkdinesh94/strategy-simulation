@@ -75,6 +75,22 @@ async function startServer() {
     } catch (err: any) { return res.status(500).json({ error: err.message }); }
   });
 
+  app.post("/api/balanced-scorecard", (req, res) => {
+    try {
+      const universeId = String(req.body?.universeId || "").trim();
+      const quarter = Number(req.body?.quarter);
+      const records = Array.isArray(req.body?.records) ? req.body.records.slice(0, 100) : [];
+      if (!universeId || !Number.isInteger(quarter) || quarter < 4 || !records.length) return res.status(400).json({ error: "universeId, Q4-or-later quarter, and scorecard records are required." });
+      d1.exec("CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      for (const record of records) {
+        const teamId = String(record.teamId || "").trim();
+        const id = `${universeId}:${teamId}:${quarter}`;
+        d1.prepare("INSERT INTO balanced_scorecard (id, universe_id, team_i, quarter, team_name, overall_score, dimensions_json, raw_metrics_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET team_name = excluded.team_name, overall_score = excluded.overall_score, dimensions_json = excluded.dimensions_json, raw_metrics_json = excluded.raw_metrics_json, updated_at = datetime('now')").run(id, universeId, teamId, quarter, String(record.teamName || teamId), Number(record.score) || 0, JSON.stringify(record.dimensions || {}), JSON.stringify(record.raw || {}));
+      }
+      return res.json({ success: true, quarter, saved: records.length });
+    } catch (err: any) { return res.status(500).json({ error: err.message }); }
+  });
+
   app.post("/api/production-schedules", (req, res) => {
     try {
       const { universeId, teamId, quarter, inputs, outputs } = req.body || {};
