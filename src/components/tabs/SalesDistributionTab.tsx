@@ -7,6 +7,7 @@ import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
 import SalesForceManager from "../SalesForceManager";
 import SalesPricingPanel, { SALES_REGIONS } from "../SalesPricingPanel";
+import WebSalesCenter from "../WebSalesCenter";
 
 interface SalesDistributionTabProps {
   team: TeamState;
@@ -112,6 +113,8 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
       {/* Store & Outlet Visualizer */}
       <StoreVisualizer team={team} gameState={gameState} />
+
+      <WebSalesCenter team={team} gameState={gameState} />
 
       <TerritoryMap team={team} />
 

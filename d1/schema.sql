@@ -284,7 +284,24 @@ CREATE TABLE IF NOT EXISTS app_settings (
 INSERT OR IGNORE INTO app_settings (key, value) VALUES
 ('active_provider', 'cloudflare_d1'),
 ('d1_schema_version', '1.0.0'),
-('app_title', 'EV Venture League Simulation');
+('app_title', 'EV Venture League Simulation'),
+('web_sales_center_config', '{"monthlyCosts":{"base":2.5,"onlineConfigurator":1.5,"orderTracking":1.0,"secureCheckout":2.0,"tollFreeSupport":3.0,"perStaff":0.75},"demand":{"perStaff":0.015,"featureBoosts":{"onlineConfigurator":0.04,"orderTracking":0.03,"secureCheckout":0.02,"tollFreeSupport":0.025}}');
+
+-- 8a. Team web sales center and digital capability decisions
+CREATE TABLE IF NOT EXISTS web_sales_center (
+    wsc_id TEXT PRIMARY KEY,
+    team_id TEXT,
+    quarter INTEGER,
+    is_active INTEGER DEFAULT 0,
+    online_configurator INTEGER DEFAULT 0,
+    order_tracking INTEGER DEFAULT 0,
+    secure_checkout INTEGER DEFAULT 0,
+    toll_free_support INTEGER DEFAULT 0,
+    staff_count INTEGER,
+    monthly_cost REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_sales_center_team_quarter ON web_sales_center(team_id, quarter);
 
 -- 9. Global Sales Offices & Market Territories
 CREATE TABLE IF NOT EXISTS sales_offices (
