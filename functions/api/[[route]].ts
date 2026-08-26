@@ -794,6 +794,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // 2. Cloudflare D1 Status
     if (path === "/api/strategy-plans" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding DB is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = String(url.searchParams.get("universeId") || "").trim();
       const teamId = Number(url.searchParams.get("teamId"));
       const quarter = Number(url.searchParams.get("quarter"));
@@ -802,12 +803,15 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ plan: row ? JSON.parse(row.plan_json) : null, updatedAt: row?.updated_at || null }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/strategy-plans" && method === "POST") {
-      const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; plan?: any };
+      const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; plan?: any; isDraft?: boolean };
       const universeId = String(body.universeId || "").trim(); const teamId = Number(body.teamId); const quarter = Number(body.quarter); const plan = body.plan;
+      const isDraft = Boolean(body.isDraft);
       if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1 || !plan || typeof plan !== "object") return new Response(JSON.stringify({ error: "universeId, teamId, quarter, and plan are required." }), { status: 400, headers: corsHeaders });
-      if (String(plan.mission || "").trim().split(/\s+/).filter(Boolean).length > 200) return new Response(JSON.stringify({ error: "Mission statement cannot exceed 200 words." }), { status: 400, headers: corsHeaders });
-      const priorityTotal = ["Marketing", "Sales", "Manufacturing", "R&D", "Human Resources"].reduce((sum, name) => sum + Number(plan.priorities?.[name] || 0), 0);
-      if (priorityTotal !== 100) return new Response(JSON.stringify({ error: "Functional priorities must total 100 points." }), { status: 400, headers: corsHeaders });
+      if (!isDraft && String(plan.mission || "").trim().split(/\s+/).filter(Boolean).length > 200) return new Response(JSON.stringify({ error: "Mission exceeds 200 words." }), { status: 400, headers: corsHeaders });
+      if (!isDraft) {
+        const priorityTotal = ["Marketing", "Sales", "Manufacturing", "R&D", "Human Resources"].reduce((sum, name) => sum + Number(plan.priorities?.[name] || 0), 0);
+        if (priorityTotal !== 100) return new Response(JSON.stringify({ error: "Functional priorities must total 100." }), { status: 400, headers: corsHeaders });
+      }
       const id = `${universeId}:${teamId}:${quarter}`;
       await env.DB.prepare("INSERT INTO strategy_plans (id, universe_id, team_i, quarter, plan_json) VALUES (?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET plan_json = excluded.plan_json, updated_at = datetime('now')").bind(id, universeId, teamId, quarter, JSON.stringify(plan)).run();
       return new Response(JSON.stringify({ success: true, id }), { status: 200, headers: corsHeaders });
