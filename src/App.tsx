@@ -38,13 +38,12 @@ import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
-import QuarterChecklist from "./components/QuarterChecklist";
 import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
 import ChargingStrategy from "./components/ChargingStrategy";
 import BatteryLifecycle from "./components/BatteryLifecycle";
-import { ProFormaPanel } from "./components/tabs/ProFormaPanel";
+import RightPanel from "./components/RightPanel";
 
 type DecisionDashboardState = {
   revision: number;
@@ -535,15 +534,9 @@ export default function App() {
         />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="flex flex-col items-stretch gap-6 lg:flex-row lg:items-start">
-          <QuarterChecklist
-            universeId={universe.id}
-            teamId={currentTeam.i}
-            quarter={gameState.quarter}
-            onNavigate={setActiveTab}
-          />
-          <div className="min-w-0 flex-1 space-y-6">
+      <main className="flex-1 overflow-hidden">
+        <div style={{ display: "flex", flex: 1, gap: 0, overflow: "hidden", height: "100%" }}>
+          <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
         {/* Toast Notification */}
         {notification && (
           <div className="p-3 bg-[#1F2022] text-white rounded-xl shadow-lg border border-slate-700 flex items-center justify-between text-xs font-semibold animate-fade-in">
@@ -740,16 +733,16 @@ export default function App() {
 
         {activeTab === "help" && <HelpManualTab />}
           </div>
-          <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[23rem]">
-            <ProFormaPanel
-              team={currentTeam}
-              gameState={gameState}
-              universeId={universe.id}
-              onNotify={showNotification}
-              compact
-              decisionRevision={decisionDashboard.revision}
-            />
-          </aside>
+
+          {/* Right — persistent panel */}
+          <RightPanel
+            team={currentTeam}
+            gameState={gameState}
+            universeId={universe.id}
+            onNotify={showNotification}
+            onNavigate={setActiveTab}
+            decisionRevision={decisionDashboard.revision}
+          />
         </div>
       </main>
       </div>
