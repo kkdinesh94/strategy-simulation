@@ -23,7 +23,7 @@ import { LoginPage } from "./components/LoginPage";
 import { ExecutiveHeader } from "./components/ExecutiveHeader";
 import { Navbar, TabKey } from "./components/Navbar";
 import { UniverseRosterManager } from "./components/UniverseRosterManager";
-import { CharterTab } from "./components/tabs/CharterTab";
+import CompanySetupTab from "./components/tabs/CompanySetupTab";
 import { ProductDesignTab } from "./components/tabs/ProductDesignTab";
 import { RnDTab } from "./components/tabs/RnDTab";
 import { MarketingTab } from "./components/tabs/MarketingTab";
@@ -38,7 +38,7 @@ import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
-import StrategyWizard, { StrategySummary } from "./components/StrategyWizard";
+import { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
 import ChargingStrategy from "./components/ChargingStrategy";
@@ -571,17 +571,7 @@ export default function App() {
         />
 
         {activeTab === "strategy" && (
-          <StrategyWizard
-            universeId={universe.id}
-            teamId={currentTeam.i}
-            quarter={gameState.quarter}
-            teamName={currentTeam.name}
-            onNotify={showNotification}
-          />
-        )}
-
-        {activeTab === "charter" && (
-          <CharterTab
+          <CompanySetupTab
             team={currentTeam}
             gameState={gameState}
             currentUser={currentUser}
@@ -589,6 +579,22 @@ export default function App() {
             universe={universe}
             onChange={handleUpdateCurrentTeam}
             onNotify={showNotification}
+            universeId={universe.id}
+            initialStep={1}
+          />
+        )}
+
+        {activeTab === "charter" && (
+          <CompanySetupTab
+            team={currentTeam}
+            gameState={gameState}
+            currentUser={currentUser}
+            allUsers={allUsers}
+            universe={universe}
+            onChange={handleUpdateCurrentTeam}
+            onNotify={showNotification}
+            universeId={universe.id}
+            initialStep={2}
           />
         )}
 

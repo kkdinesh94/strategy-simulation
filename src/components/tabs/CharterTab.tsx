@@ -1,11 +1,9 @@
 import React from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { User, Universe } from "../../types/auth";
-import { SEGMENTS } from "../../engine/catalog";
 import { loadUsers } from "../../lib/authStore";
 import {
   Users,
-  Target,
   Compass,
   Award,
   Building,
@@ -128,14 +126,7 @@ export const CharterTab: React.FC<CharterTabProps> = ({
     if (onNotify) onNotify(`Assigned ${trimmed} to ${roleKey}`);
   };
 
-  const handleTextChange = (field: "vision" | "mission" | "goals", value: string) => {
-    onChange({
-      ...team,
-      [field]: value
-    });
-  };
-
-  const handleSegmentChange = (field: "prim" | "sec", value: string) => {
+  const handleTextChange = (field: "goals", value: string) => {
     onChange({
       ...team,
       [field]: value
@@ -346,111 +337,24 @@ export const CharterTab: React.FC<CharterTabProps> = ({
         )}
       </div>
 
-      {/* Target Segment Selection */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
-        <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
-          <Target className="w-5 h-5 text-emerald-600" />
-          <h3 className="text-base font-bold text-[#1F2022]">
-            Target Market Selection
-          </h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-xs font-mono font-bold uppercase text-[#5A5C60] mb-2">
-              Primary Target Segment (Rank #1 Focus)
-            </label>
-            <select
-              value={team.prim}
-              disabled={isLocked || !isQ1}
-              onChange={(e) => handleSegmentChange("prim", e.target.value)}
-              className="w-full p-2.5 text-sm bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl font-bold text-[#1F2022]"
-            >
-              {SEGMENTS.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({Math.round(s.pct * 100)}% of Total Market)
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-[#5A5C60] mt-2">
-              {SEGMENTS.find((s) => s.id === team.prim)?.name} requires a dedicated marketing mix and product line tailored to its specific needs.
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-bold uppercase text-[#5A5C60] mb-2">
-              Secondary Target Segment (Rank #2 Focus)
-            </label>
-            <select
-              value={team.sec}
-              disabled={isLocked || !isQ1}
-              onChange={(e) => handleSegmentChange("sec", e.target.value)}
-              className="w-full p-2.5 text-sm bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl font-bold text-[#1F2022]"
-            >
-              {SEGMENTS.map((s) => (
-                <option key={s.id} value={s.id} disabled={s.id === team.prim}>
-                  {s.name} ({Math.round(s.pct * 100)}% of Total Market)
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-[#5A5C60] mt-2">
-              Must be different from primary segment. Provides additional volume and diversifies market risk.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Vision & Mission Charter */}
+      {/* Top Ranked Corporate Objectives */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
         <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
           <Award className="w-5 h-5 text-amber-600" />
           <h3 className="text-base font-bold text-[#1F2022]">
-            Corporate Charter & Mission Statements
+            Top Ranked Corporate Objectives
           </h3>
         </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-mono font-bold uppercase text-[#5A5C60] mb-1">
-              Corporate Vision Statement
-            </label>
-            <textarea
-              rows={2}
-              value={team.vision}
-              disabled={isLocked || !isQ1}
-              onChange={(e) => handleTextChange("vision", e.target.value)}
-              placeholder="e.g. To become the most trusted, sustainable electric two-wheeler manufacturer in Asia..."
-              className="w-full p-3 text-sm bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#1F2022]"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-bold uppercase text-[#5A5C60] mb-1">
-              Corporate Mission Statement
-            </label>
-            <textarea
-              rows={2}
-              value={team.mission}
-              disabled={isLocked || !isQ1}
-              onChange={(e) => handleTextChange("mission", e.target.value)}
-              placeholder="e.g. We design, manufacture, and distribute high-efficiency electric scooters engineered for urban commuters and daily fleet riders..."
-              className="w-full p-3 text-sm bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#1F2022]"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-mono font-bold uppercase text-[#5A5C60] mb-1">
-              Top Ranked Corporate Objectives
-            </label>
-            <input
-              type="text"
-              value={team.goals}
-              disabled={isLocked || !isQ1}
-              onChange={(e) => handleTextChange("goals", e.target.value)}
-              placeholder="e.g. 1) Market share leadership in Commuters, 2) Positive EBITDA by Q6, 3) 95%+ Reliability"
-              className="w-full p-3 text-sm font-medium bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#1F2022]"
-            />
-          </div>
+        <div>
+          <input
+            type="text"
+            value={team.goals}
+            disabled={isLocked || !isQ1}
+            onChange={(e) => handleTextChange("goals", e.target.value)}
+            placeholder="e.g. 1) Market share leadership in Commuters, 2) Positive EBITDA by Q6, 3) 95%+ Reliability"
+            className="w-full p-3 text-sm font-medium bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#1F2022]"
+          />
         </div>
       </div>
     </div>

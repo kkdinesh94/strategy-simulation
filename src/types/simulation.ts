@@ -278,6 +278,7 @@ export interface TeamState {
   arch: string;
   vision: string;
   mission: string;
+  tagline?: string;
   goals: string;
   prim: string;
   sec: string;
