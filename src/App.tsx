@@ -496,7 +496,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] text-[#1F2022] flex flex-col font-sans">
+    <div className="h-screen bg-[#FAF8F5] text-[#1F2022] flex flex-col font-sans">
       {/* Executive Header Ticker */}
       <ExecutiveHeader
         team={currentTeam}
@@ -515,22 +515,27 @@ export default function App() {
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
 
-      {/* Navigation Bar */}
-      <Navbar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onResetGame={handleResetGame}
-        isInstructorMode={isInstructorMode}
-        onToggleInstructorMode={() => {
-          setIsInstructorMode(!isInstructorMode);
-          if (!isInstructorMode) setActiveTab("instructor");
-        }}
-        canManageRoster={currentUser.role === "instructor" || currentUser.role === "admin"}
-        isAdmin={currentUser.role === "admin"}
-      />
+      {/* Sidebar + Main Content Row */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Vertical Sidebar Navigation */}
+        <Navbar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onResetGame={handleResetGame}
+          isInstructorMode={isInstructorMode}
+          onToggleInstructorMode={() => {
+            setIsInstructorMode(!isInstructorMode);
+            if (!isInstructorMode) setActiveTab("instructor");
+          }}
+          canManageRoster={currentUser.role === "instructor" || currentUser.role === "admin"}
+          isAdmin={currentUser.role === "admin"}
+          teamName={currentTeam.name}
+          teamIndex={activeTeamIdx}
+          quarter={gameState.quarter}
+        />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6">
         <div className="flex flex-col items-stretch gap-6 lg:flex-row lg:items-start">
           <QuarterChecklist
             universeId={universe.id}
@@ -747,6 +752,7 @@ export default function App() {
           </aside>
         </div>
       </main>
+      </div>
 
       {/* Pre-Submission Decision Summary Sheet Modal */}
       <PreSubmissionSummaryModal
