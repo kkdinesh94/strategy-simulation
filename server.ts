@@ -292,24 +292,8 @@ async function startServer() {
   ];
 
   function ensureMarketSurveySeed(universeId: string, quarter: number) {
-    d1.exec(`CREATE TABLE IF NOT EXISTS market_survey_results (
-      survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL,
-      precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')),
-      purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL,
-      benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL,
-      benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL,
-      media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL,
-      media_ev_forums_pref REAL, media_youtube_pref REAL,
-      wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (universe_id, quarter, precision_level, segment_id)
-    );
-    CREATE TABLE IF NOT EXISTS market_survey_purchases (
-      id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL,
-      precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')),
-      cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (universe_id, team_id, quarter, precision_level)
-    );`);
+    d1.exec("CREATE TABLE IF NOT EXISTS market_survey_results (survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')), purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL, benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL, benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL, media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL, media_ev_forums_pref REAL, media_youtube_pref REAL, wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, quarter, precision_level, segment_id))");
+    d1.exec("CREATE TABLE IF NOT EXISTS market_survey_purchases (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')), cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, precision_level))");
     const existing: any = d1.prepare("SELECT COUNT(*) AS count FROM market_survey_results WHERE universe_id = ? AND quarter = ?").get(universeId, quarter);
     if (Number(existing?.count) > 0) return;
     const insert = d1.prepare(`INSERT OR IGNORE INTO market_survey_results (survey_id, universe_id, quarter, precision_level, purchase_cost, segment_id, benefit_range_importance, benefit_charging_importance, benefit_price_importance, benefit_autonomy_importance, benefit_design_importance, benefit_reliability_importance, media_social_pref, media_auto_press_pref, media_business_press_pref, media_ev_forums_pref, media_youtube_pref, wtp_min, wtp_expected, wtp_max, segment_size_units, error_margin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
