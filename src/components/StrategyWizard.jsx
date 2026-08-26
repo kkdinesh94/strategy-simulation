@@ -207,3 +207,11 @@ export function StrategySummary({ universeId, teamId, quarter, onOpen }) {
     <button type="button" className="strategy-summary-action" onClick={onOpen}>{plan ? "Review plan" : "Start planning"}<ArrowRight size={16} /></button>
   </div>;
 }
+// FIX: Auto-save draft to localStorage inside updatePlan so data
+// survives tab navigation. Key format: ev_strategy_draft_{universeId}_{teamId}_{quarter}
+// Return the next state object after writing to localStorage.
+const updatePlan = (changes) => setPlan((current) => {
+  const next = { ...current, ...changes };
+  localStorage.setItem(draftKey(universeId, teamId, quarter), JSON.stringify(next));
+  return next;
+});
