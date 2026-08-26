@@ -1,15 +1,47 @@
 import React, { useState } from "react";
-import { TeamState, ScooterModel, AddonId } from "../../types/simulation";
-import { CATALOG, ADDONS, TECHS, techById, SEGMENTS, ARCHETYPES, fmtRs } from "../../engine/catalog";
+import { TeamState, ScooterModel, AddonId, SegmentDef } from "../../types/simulation";
+import { CATALOG, ADDONS, TECHS, techById, SEGMENTS, ARCHETYPES, TEAM_COLORS, CLAIMS, fmtRs } from "../../engine/catalog";
 import { scoreModel, qualityFit, priceFit, enforceModelRules, mkModel, unitCost } from "../../engine/simulationEngine";
 import { ScooterVisualizer } from "../ScooterVisualizer";
-import { Plus, Edit3, Trash2, ShieldCheck, AlertCircle, Wrench, Cpu, Zap, CheckCircle2, Clock, Lock, FlaskConical, X } from "lucide-react";
+import { Plus, Edit3, AlertCircle, Wrench, Cpu, Zap, CheckCircle2, Clock, Lock, FlaskConical, X } from "lucide-react";
 
 interface ProductDesignTabProps {
   team: TeamState;
   onChange: (updatedTeam: TeamState) => void;
   onNotify: (msg: string) => void;
 }
+
+const SHORT_BENEFIT: Record<string, string> = {
+  perf: "Performance",
+  range: "Range",
+  charge: "Charging",
+  tech: "Tech",
+  build: "Build",
+  comfort: "Comfort",
+  safety: "Safety",
+  econ: "Economy"
+};
+
+const SEGMENT_COLORS: Record<string, string> = {
+  S1: "#3B82F6",
+  S2: "#10B981",
+  S3: "#22C55E",
+  S4: "#F59E0B",
+  S5: "#8B5CF6"
+};
+
+const fitColor = (score: number) => (score >= 70 ? "#22C55E" : score >= 40 ? "#F59E0B" : "#EF4444");
+const fitBarClass = (score: number) => (score >= 70 ? "bg-emerald-500" : score >= 40 ? "bg-amber-500" : "bg-red-500");
+
+const MiniFitBar: React.FC<{ label: string; score: number }> = ({ label, score }) => (
+  <div className="flex items-center gap-1.5">
+    <span className="text-[9px] text-[#8A8C90] w-14 shrink-0">{label}</span>
+    <div className="flex-1 bg-slate-200 rounded-full overflow-hidden" style={{ height: 4 }}>
+      <div className={`h-full rounded-full ${fitBarClass(score)}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
+    </div>
+    <span className="text-[9px] font-mono font-semibold text-[#5A5C60] w-6 text-right shrink-0">{score}</span>
+  </div>
+);
 
 export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
   team,
@@ -26,6 +58,11 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
 
   const [isLaunchModalOpen, setIsLaunchModalOpen] = useState<boolean>(false);
   const [launchNameInput, setLaunchNameInput] = useState<string>("");
+
+  // New-brand inline creation form (left column)
+  const [showAddBrandForm, setShowAddBrandForm] = useState<boolean>(false);
+  const [newBrandSegmentId, setNewBrandSegmentId] = useState<string>("");
+  const [newBrandName, setNewBrandName] = useState<string>("");
 
   const currentModel = team.models[activeModelIdx] || team.models[0];
 
@@ -89,6 +126,13 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
 
     m.equippedTechs = newEquipped;
     updatedModels[activeModelIdx] = m;
+    onChange({ ...team, models: updatedModels });
+  };
+
+  const handleTargetSegmentChange = (segId: string) => {
+    if (isLocked) return;
+    const updatedModels = [...team.models];
+    updatedModels[activeModelIdx] = { ...updatedModels[activeModelIdx], targetSegment: segId };
     onChange({ ...team, models: updatedModels });
   };
 
@@ -200,66 +244,360 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
     onNotify(`New model "${modelName}" launched! Rs. 50 L development charge applied.`);
   };
 
+  const handleCreateBrandForSegment = () => {
+    if (isLocked || team.models.length >= 3) return;
+    if (!newBrandSegmentId || !newBrandName.trim()) return;
+
+    const baseArch = ARCHETYPES.commuter;
+    const modelName = newBrandName.trim() || `Model ${team.models.length + 1}`;
+    const newM = mkModel(modelName, baseArch.cfg, ["boot"], 110000);
+    newM.isNew = true;
+    newM.targetSegment = newBrandSegmentId;
+
+    const updatedModels = [...team.models, newM];
+    const updatedProd = { ...team.dec.prod, [newM.id]: 0 };
+
+    onChange({
+      ...team,
+      models: updatedModels,
+      dec: {
+        ...team.dec,
+        prod: updatedProd,
+        devCost: (team.dec.devCost || 0) + 50
+      }
+    });
+
+    setActiveModelIdx(updatedModels.length - 1);
+    setShowAddBrandForm(false);
+    const targetName = SEGMENTS.find((s) => s.id === newBrandSegmentId)?.name || newBrandSegmentId;
+    setNewBrandName("");
+    setNewBrandSegmentId("");
+    onNotify(`New brand "${modelName}" launched targeting ${targetName}! Rs. 50 L development charge applied.`);
+  };
+
   const scores = currentModel ? scoreModel(currentModel, team) : {};
   const currentCost = currentModel ? unitCost(currentModel) : 0;
   const margin = currentModel ? currentModel.price - currentCost : 0;
   const marginPct = currentModel && currentModel.price > 0 ? (margin / currentModel.price) * 100 : 0;
 
+  const targetSegId = currentModel ? currentModel.targetSegment ?? "S2" : "S2";
+  const targetSeg: SegmentDef = SEGMENTS.find((s) => s.id === targetSegId) || SEGMENTS[1];
+  const topBenefitEntries = Object.entries(targetSeg.w).sort(([, a], [, b]) => b - a);
+  const topBenefitKey = topBenefitEntries[0]?.[0] || "perf";
+  const topNeeds = topBenefitEntries.slice(0, 3).map(([key, val]) => `${CLAIMS[key] ?? key}: ${val}`);
+  const currentTopBenefitScore = scores[topBenefitKey] || 0;
+
+  const isOptionBetter = (cat: string, optId: string): boolean => {
+    if (!currentModel) return false;
+    if ((currentModel.cfg as any)[cat] === optId) return false;
+    const hypCfg: any = { ...currentModel.cfg, [cat]: optId };
+    const hypothetical: ScooterModel = { ...currentModel, cfg: hypCfg };
+    const hypScores = scoreModel(hypothetical, team);
+    return (hypScores[topBenefitKey] || 0) > currentTopBenefitScore;
+  };
+
+  const bestUpgrade = (() => {
+    if (!currentModel) return null;
+    const baseFit = qualityFit(scores, targetSeg);
+    let best: { cat: string; delta: number } | null = null;
+    for (const cat of Object.keys(CATALOG)) {
+      const category = CATALOG[cat];
+      const currentOptId = (currentModel.cfg as any)[cat];
+      const currentOpt = category.opts.find((o) => o.id === currentOptId);
+      if (!currentOpt) continue;
+      const candidates = category.opts.filter((o) => o.cost > currentOpt.cost && (!o.req || o.req(currentModel)));
+      if (candidates.length === 0) continue;
+      const nextOpt = candidates.reduce((min, o) => (o.cost < min.cost ? o : min));
+      const hypCfg: any = { ...currentModel.cfg, [cat]: nextOpt.id };
+      const hypothetical: ScooterModel = { ...currentModel, cfg: hypCfg };
+      const hypScores = scoreModel(hypothetical, team);
+      const delta = qualityFit(hypScores, targetSeg) - baseFit;
+      if (delta > 0 && (!best || delta > best.delta)) {
+        best = { cat, delta };
+      }
+    }
+    return best;
+  })();
+
+  const currentTargetFitPct = Math.round(qualityFit(scores, targetSeg) * 100);
+
+  const unassignedSegments = SEGMENTS.filter(
+    (s) => !team.models.find((m) => (m.targetSegment ?? "S2") === s.id)
+  );
+
   return (
-    <div className="space-y-6">
-      {/* Product Line Header Tabs */}
-      <div className="bg-white p-4 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          {team.models.map((m, idx) => (
-            <button
-              key={m.id || idx}
-              onClick={() => setActiveModelIdx(idx)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-2 ${
-                activeModelIdx === idx
-                  ? "bg-[#1F2022] text-white shadow-sm font-medium"
-                  : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
-              }`}
-            >
-              <span>{m.name}</span>
-              <span className="text-[10px] opacity-80">({fmtRs(m.price)})</span>
-            </button>
-          ))}
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-bold text-[#1F2022] font-mono uppercase tracking-wider">Brand Portfolio</h2>
+        {team.models.length < 3 && !isLocked && (
+          <button
+            onClick={openLaunchModal}
+            className="px-3.5 py-2 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1 shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" /> Launch Model ({team.models.length}/3)
+          </button>
+        )}
+      </div>
 
-          {team.models.length < 3 && !isLocked && (
-            <button
-              onClick={openLaunchModal}
-              className="px-3.5 py-2 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1 shadow-sm"
+      {/* Portfolio Coverage Bar */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {SEGMENTS.map((segment) => {
+          const assignedBrand = team.models.find((m) => (m.targetSegment ?? "S2") === segment.id);
+          const segColor = SEGMENT_COLORS[segment.id] || "#8A8C90";
+          if (assignedBrand) {
+            return (
+              <div
+                key={segment.id}
+                className="bg-[#EAF3DE] rounded-lg p-3 text-center"
+                style={{ border: `1px solid ${segColor}` }}
+              >
+                <div className="text-[10px] text-[#5A5C60] font-mono uppercase truncate">{segment.name}</div>
+                <div className="text-xs font-bold text-[#1A4731] truncate mt-0.5">{assignedBrand.name}</div>
+              </div>
+            );
+          }
+          return (
+            <div
+              key={segment.id}
+              className="bg-[#FAF8F5] border border-dashed border-[#D6D3D1] rounded-lg p-3 text-center"
             >
-              <Plus className="w-3.5 h-3.5" /> Launch Model ({team.models.length}/3)
-            </button>
-          )}
-        </div>
-
-        <div className="text-xs font-mono text-[#5A5C60]">
-          Max 3 models in product line (Good / Better / Best)
-        </div>
+              <div className="text-[10px] text-[#5A5C60] font-mono uppercase truncate">{segment.name}</div>
+              <div className="text-[10px] italic text-[#9CA3AF] mt-0.5">No brand yet</div>
+            </div>
+          );
+        })}
       </div>
 
       {currentModel && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Configurator Options & Addons */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Core Component Specs */}
-            <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-[#1F2022]">
-                    BOM Component Specification
-                  </h3>
+        <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 240px", gap: "12px" }}>
+          {/* LEFT COLUMN: Brand List */}
+          <div className="space-y-2">
+            {team.models.map((m, idx) => {
+              const isActive = idx === activeModelIdx;
+              const mScores = scoreModel(m, team);
+              const mTargetSeg = SEGMENTS.find((s) => s.id === (m.targetSegment ?? "S2")) || SEGMENTS[1];
+              const segFitScore = Math.round(qualityFit(mScores, mTargetSeg) * 100);
+              const priceFitScore = Math.round(priceFit(m.price, mTargetSeg) * 100);
+              const dotColor = TEAM_COLORS[idx % TEAM_COLORS.length];
+
+              return (
+                <button
+                  key={m.id || idx}
+                  type="button"
+                  onClick={() => setActiveModelIdx(idx)}
+                  className={`w-full text-left p-2.5 rounded-lg border transition ${
+                    isActive ? "border-[#3B82F6] bg-[#EFF6FF]" : "border-[#E5E1D8] bg-white hover:bg-[#FAF8F5]"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
+                    <span className="text-xs font-medium text-[#1F2022] truncate">{m.name}</span>
+                  </div>
+                  <div className="text-[10px] text-[#5A5C60] mb-1.5 truncate">→ {mTargetSeg.name}</div>
+                  <div className="space-y-1">
+                    <MiniFitBar label="Segment fit" score={segFitScore} />
+                    <MiniFitBar label="Price fit" score={priceFitScore} />
+                  </div>
+                </button>
+              );
+            })}
+
+            {!showAddBrandForm ? (
+              team.models.length < 3 &&
+              !isLocked && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddBrandForm(true)}
+                  className="w-full px-3 py-2 bg-blue-50 text-blue-800 border border-blue-200 rounded-lg text-[11px] font-semibold hover:bg-blue-100 transition flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add brand for new segment
+                </button>
+              )
+            ) : (
+              <div className="p-3 bg-white border border-[#E0DCD3] rounded-lg space-y-2">
+                <div className="text-[10px] font-mono font-semibold uppercase text-[#5A5C60]">
+                  New brand segment
                 </div>
+                <div className="flex flex-wrap gap-1">
+                  {unassignedSegments.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setNewBrandSegmentId(s.id)}
+                      className={`px-2 py-1 rounded-full text-[10px] font-semibold border transition ${
+                        newBrandSegmentId === s.id
+                          ? "bg-[#1F2022] text-white border-[#1F2022]"
+                          : "bg-[#FAF8F5] text-[#1F2022] border-[#E0DCD3] hover:bg-slate-100"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={newBrandName}
+                  onChange={(e) => setNewBrandName(e.target.value)}
+                  placeholder="Brand name"
+                  maxLength={30}
+                  className="w-full px-2 py-1.5 text-xs border border-[#E0DCD3] rounded-lg bg-[#FAF8F5] focus:outline-none focus:border-[#1F2022]"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={!newBrandSegmentId || !newBrandName.trim()}
+                    onClick={handleCreateBrandForSegment}
+                    className="flex-1 px-3 py-1.5 bg-[#1F2022] hover:bg-[#343538] text-white text-xs font-semibold rounded-lg disabled:opacity-40 transition"
+                  >
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddBrandForm(false);
+                      setNewBrandName("");
+                      setNewBrandSegmentId("");
+                    }}
+                    className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-[#FAF8F5]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CENTRE COLUMN: Component Editor */}
+          <div className="space-y-4 min-w-0">
+            {/* Header: brand name + segment badge + segment selector + rename */}
+            <div className="bg-white p-4 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-[13px] font-bold text-[#1F2022] truncate">{currentModel.name}</span>
+                <span className="px-3 py-1 text-xs font-semibold rounded-full bg-[#EAF3DE] text-[#1A4731] border border-[#27500A] whitespace-nowrap">
+                  Targeting: {targetSeg.name}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <label className="text-[11px] font-mono text-[#5A5C60]">Target segment:</label>
+                <select
+                  value={targetSegId}
+                  disabled={isLocked}
+                  onChange={(e) => handleTargetSegmentChange(e.target.value)}
+                  className="px-2 py-1 text-xs bg-[#FAF8F5] border border-[#E0DCD3] rounded-lg font-medium text-[#1F2022] focus:outline-none focus:border-[#C83E2B]"
+                >
+                  {SEGMENTS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
                 <button
                   onClick={openRenameModal}
                   disabled={isLocked}
                   className="px-3 py-1 bg-[#FAF8F5] hover:bg-slate-100 text-[#1F2022] border border-[#E0DCD3] text-xs font-semibold rounded-lg transition flex items-center gap-1"
                 >
-                  <Edit3 className="w-3.5 h-3.5" /> Rename Brand
+                  <Edit3 className="w-3.5 h-3.5" /> Rename
                 </button>
+              </div>
+            </div>
+
+            {/* Segment context banner */}
+            <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg px-3 py-2 text-xs text-[#1F2022]">
+              <strong>{targetSeg.name}</strong> customers need most: {topNeeds.join(" · ")}. Design your components
+              to match these priorities.
+            </div>
+
+            {/* Unit Economics & Pricing */}
+            <div className="bg-white p-5 rounded-xl border border-[#E5E1D8] shadow-sm space-y-3">
+              <h3 className="text-xs font-mono font-semibold uppercase text-[#5A5C60]">
+                Unit Economics & Margin
+              </h3>
+
+              <div className="space-y-2 text-xs font-mono">
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3]">
+                  <span className="text-[#5A5C60]">BOM Materials & Assembly:</span>
+                  <span className="font-bold text-[#1F2022]">{fmtRs(currentCost)}</span>
+                </div>
+
+                <div className="flex justify-between items-center py-2 border-b border-[#E0DCD3]">
+                  <div>
+                    <span className="text-[#5A5C60] font-semibold">Retail Selling Price:</span>
+                    <div className="text-[10px] text-[#8A8C90]">Type price directly or use ±500</div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#5A5C60] font-mono text-xs">Rs.</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={priceInput}
+                      disabled={isLocked}
+                      onChange={handlePriceInputChange}
+                      onBlur={handlePriceInputBlur}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.currentTarget.blur();
+                        } else if (e.key === "ArrowUp") {
+                          e.preventDefault();
+                          handlePriceStep(500);
+                        } else if (e.key === "ArrowDown") {
+                          e.preventDefault();
+                          handlePriceStep(-500);
+                        }
+                      }}
+                      placeholder="110000"
+                      className="w-24 px-2 py-1 text-right border border-[#E0DCD3] rounded-lg font-bold font-mono bg-white text-[#1F2022] focus:outline-none focus:ring-2 focus:ring-[#C83E2B]/30 focus:border-[#C83E2B] transition shadow-2xs"
+                    />
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        type="button"
+                        disabled={isLocked || currentModel.price >= 200000}
+                        onClick={() => handlePriceStep(500)}
+                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
+                        title="Increase price by Rs. 500 (or press Up arrow)"
+                      >
+                        +500
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLocked || currentModel.price <= 55000}
+                        onClick={() => handlePriceStep(-500)}
+                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
+                        title="Decrease price by Rs. 500 (or press Down arrow)"
+                      >
+                        -500
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between py-1 border-b border-[#E0DCD3]">
+                  <span className="text-[#5A5C60]">Gross Contribution / Unit:</span>
+                  <span className={`font-bold ${margin <= 0 ? "text-red-600" : "text-emerald-700"}`}>
+                    {fmtRs(margin)} ({marginPct.toFixed(1)}%)
+                  </span>
+                </div>
+              </div>
+
+              {marginPct < 12 && (
+                <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    Warning: Gross margin is below 12%. The auditor requires at least 12% margin to cover fixed
+                    operating overhead.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Core Component Specs */}
+            <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Wrench className="w-5 h-5 text-blue-600" />
+                <h3 className="text-lg font-bold text-[#1F2022]">
+                  BOM Component Specification
+                </h3>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -277,26 +615,49 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
                           <span className="text-[10px] text-[#C83E2B] font-bold">Highlighted in Visualizer</span>
                         )}
                       </label>
-                      <select
-                        value={(currentModel.cfg as any)[cat]}
-                        disabled={isLocked}
-                        onFocus={() => setFocusedCategory(cat)}
-                        onChange={(e) => handleCfgChange(cat, e.target.value)}
-                        className="w-full p-2 text-xs bg-[#FAF8F5] border border-[#E0DCD3] rounded-lg font-medium text-[#1F2022] focus:outline-none focus:border-[#C83E2B] focus:bg-white transition"
-                      >
+                      <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
                         {category.opts.map((o) => {
                           const isReqOk = !o.req || o.req(currentModel);
+                          const isSelected = (currentModel.cfg as any)[cat] === o.id;
+                          const isBetter = !isSelected && isReqOk && isOptionBetter(cat, o.id);
+                          const disabled = isLocked || !isReqOk;
+
                           return (
-                            <option
+                            <button
                               key={o.id}
-                              value={o.id}
-                              disabled={!isReqOk}
+                              type="button"
+                              disabled={disabled}
+                              onFocus={() => setFocusedCategory(cat)}
+                              onClick={() => handleCfgChange(cat, o.id)}
+                              className={`w-full text-left px-2.5 py-1.5 rounded-lg border text-[11px] transition ${
+                                isSelected
+                                  ? "border-[#C83E2B] bg-[#FDEEE9] font-semibold text-[#1F2022]"
+                                  : !isReqOk
+                                  ? "border-[#E0DCD3] bg-[#F3F2EF] text-[#9CA3AF] cursor-not-allowed"
+                                  : isLocked
+                                  ? "border-[#E0DCD3] bg-[#FAF8F5] text-[#1F2022] opacity-60 cursor-not-allowed"
+                                  : "border-[#E0DCD3] bg-white hover:bg-[#FAF8F5] text-[#1F2022]"
+                              }`}
                             >
-                              {o.name} · {o.cost === 0 ? "Incl." : fmtRs(o.cost)}
-                            </option>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate">{o.name}</span>
+                                <span className="font-mono text-[10px] shrink-0">
+                                  {o.cost === 0 ? "Incl." : fmtRs(o.cost)}
+                                </span>
+                              </div>
+                              {!isReqOk ? (
+                                <div className="flex items-center gap-1 text-[10px] text-[#9CA3AF] mt-0.5">
+                                  <Lock className="w-3 h-3" /> Unlock via R&D
+                                </div>
+                              ) : isBetter ? (
+                                <div className="text-[10px] text-emerald-600 font-semibold mt-0.5">
+                                  ✓ Better {SHORT_BENEFIT[topBenefitKey] ?? topBenefitKey}
+                                </div>
+                              ) : null}
+                            </button>
                           );
                         })}
-                      </select>
+                      </div>
                     </div>
                   );
                 })}
@@ -459,10 +820,7 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
                 })}
               </div>
             </div>
-          </div>
 
-          {/* Right Column: Visualizer, Costing, and Segment Fit */}
-          <div className="space-y-6">
             {/* Visual Preview Card */}
             <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm text-center">
               <h3 className="text-xs font-mono font-semibold uppercase text-[#5A5C60] mb-3">
@@ -504,132 +862,46 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
                 );
               })()}
             </div>
+          </div>
 
-            {/* Financial Unit Economics */}
-            <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-3">
-              <h3 className="text-xs font-mono font-semibold uppercase text-[#5A5C60]">
-                Unit Economics & Margin
-              </h3>
-
-              <div className="space-y-2 text-xs font-mono">
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3]">
-                  <span className="text-[#5A5C60]">BOM Materials & Assembly:</span>
-                  <span className="font-bold text-[#1F2022]">{fmtRs(currentCost)}</span>
-                </div>
-
-                <div className="flex justify-between items-center py-2 border-b border-[#E0DCD3]">
-                  <div>
-                    <span className="text-[#5A5C60] font-semibold">Retail Selling Price:</span>
-                    <div className="text-[10px] text-[#8A8C90]">Type price directly or use ±500</div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[#5A5C60] font-mono text-xs">Rs.</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={priceInput}
-                      disabled={isLocked}
-                      onChange={handlePriceInputChange}
-                      onBlur={handlePriceInputBlur}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.currentTarget.blur();
-                        } else if (e.key === "ArrowUp") {
-                          e.preventDefault();
-                          handlePriceStep(500);
-                        } else if (e.key === "ArrowDown") {
-                          e.preventDefault();
-                          handlePriceStep(-500);
-                        }
-                      }}
-                      placeholder="110000"
-                      className="w-24 px-2 py-1 text-right border border-[#E0DCD3] rounded-lg font-bold font-mono bg-white text-[#1F2022] focus:outline-none focus:ring-2 focus:ring-[#C83E2B]/30 focus:border-[#C83E2B] transition shadow-2xs"
-                    />
-                    <div className="flex flex-col gap-0.5">
-                      <button
-                        type="button"
-                        disabled={isLocked || currentModel.price >= 200000}
-                        onClick={() => handlePriceStep(500)}
-                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
-                        title="Increase price by Rs. 500 (or press Up arrow)"
-                      >
-                        +500
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isLocked || currentModel.price <= 55000}
-                        onClick={() => handlePriceStep(-500)}
-                        className="px-1.5 py-0.5 text-[9px] font-bold bg-[#FAF8F5] hover:bg-slate-200 text-[#1F2022] border border-[#E0DCD3] rounded leading-none disabled:opacity-40 transition cursor-pointer"
-                        title="Decrease price by Rs. 500 (or press Down arrow)"
-                      >
-                        -500
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3]">
-                  <span className="text-[#5A5C60]">Gross Contribution / Unit:</span>
-                  <span className={`font-bold ${margin <= 0 ? "text-red-600" : "text-emerald-700"}`}>
-                    {fmtRs(margin)} ({marginPct.toFixed(1)}%)
-                  </span>
-                </div>
-              </div>
-
-              {marginPct < 12 && (
-                <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>
-                    Warning: Gross margin is below 12%. The auditor requires at least 12% margin to cover fixed operating overhead.
-                  </span>
-                </div>
-              )}
+          {/* RIGHT COLUMN: All-segment fit panel */}
+          <div className="bg-white p-4 rounded-xl border border-[#E5E1D8] shadow-sm space-y-3 h-fit">
+            <div>
+              <h3 className="text-xs font-bold text-[#1F2022]">Segment fit — {currentModel.name}</h3>
+              <p className="text-[10px] text-[#5A5C60] mt-0.5">How this brand scores across all 5 segments</p>
             </div>
 
-            {/* Segment Fit Preview */}
-            <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm space-y-3">
-              <h3 className="text-xs font-mono font-semibold uppercase text-[#5A5C60]">
-                Segment Fit Ratings (0.00 - 1.00)
-              </h3>
-
-              <div className="space-y-2">
-                {SEGMENTS.map((s) => {
-                  const qScore = qualityFit(scores, s);
-                  const pScore = priceFit(currentModel.price, s);
-                  const isPrim = team.prim === s.id;
-                  const isSec = team.sec === s.id;
-
-                  return (
-                    <div
-                      key={s.id}
-                      className={`p-2 rounded-lg border text-xs ${
-                        isPrim
-                          ? "border-emerald-500 bg-emerald-50/50"
-                          : isSec
-                          ? "border-blue-500 bg-blue-50/50"
-                          : "border-[#E0DCD3]"
-                      }`}
-                    >
-                      <div className="flex justify-between font-semibold mb-1">
-                        <span>
-                          {s.name} {isPrim && "◂ Primary"} {isSec && "◂ Secondary"}
-                        </span>
-                        <span className="font-mono">
-                          Quality {qScore.toFixed(2)} | Price {pScore.toFixed(2)}
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden flex">
-                        <div
-                          className="bg-emerald-500 h-full"
-                          style={{ width: `${Math.min(100, qScore * 100)}%` }}
-                        />
-                      </div>
+            <div className="space-y-2.5">
+              {SEGMENTS.map((seg) => {
+                const fit = Math.round(qualityFit(scores, seg) * 100);
+                const color = fitColor(fit);
+                const isTarget = targetSegId === seg.id;
+                return (
+                  <div key={seg.id}>
+                    <div className="flex items-center justify-between text-[10px] mb-1">
+                      <span className="font-medium text-[#1F2022] truncate">
+                        {seg.name} {isTarget && <span className="text-amber-500">★</span>}
+                      </span>
+                      <span className="font-mono font-semibold shrink-0" style={{ color }}>
+                        {fit}
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="w-full bg-slate-200 rounded-full overflow-hidden" style={{ height: 6 }}>
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${Math.min(100, Math.max(0, fit))}%`, backgroundColor: color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
+            {bestUpgrade && currentTargetFitPct < 70 && (
+              <div className="bg-[#FFFBEB] border border-[#FCD34D] rounded-lg px-3 py-2 text-[11px] text-amber-900">
+                Tip: upgrading {CATALOG[bestUpgrade.cat].label} could push {targetSeg.name} fit above 70.
+              </div>
+            )}
           </div>
         </div>
       )}

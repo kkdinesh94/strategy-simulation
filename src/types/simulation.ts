@@ -82,6 +82,7 @@ export interface ScooterModel {
   lastHash?: string | null;
   inv: number; // unsold units
   isNew?: boolean;
+  targetSegment?: string; // segment id e.g. "S1", "S2" — defaults to "S2"
 }
 
 export interface TeamMember {
