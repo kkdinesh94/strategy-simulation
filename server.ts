@@ -282,6 +282,87 @@ async function startServer() {
     }
   });
 
+  const MARKET_SURVEY_COST: Record<string, number> = { low: 5, medium: 15, high: 30 };
+  const MARKET_SURVEY_SEGMENTS = [
+    { id: "urban_commuter", benefits: [110, 115, 130, 70, 85, 120], media: [105, 80, 70, 115, 120], wtp: [800000, 1100000, 1400000], size: 5200 },
+    { id: "fleet_operator", benefits: [120, 130, 125, 80, 60, 140], media: [80, 90, 125, 100, 70], wtp: [900000, 1300000, 1700000], size: 3800 },
+    { id: "performance_enthusiast", benefits: [95, 90, 60, 85, 130, 100], media: [120, 130, 80, 110, 125], wtp: [1500000, 2200000, 3000000], size: 2100 },
+    { id: "tech_pioneer", benefits: [130, 95, 70, 145, 110, 90], media: [130, 100, 90, 140, 135], wtp: [1200000, 1800000, 2500000], size: 1900 },
+    { id: "eco_advocate", benefits: [110, 80, 90, 85, 100, 115], media: [115, 95, 105, 120, 100], wtp: [1000000, 1500000, 2000000], size: 2000 }
+  ];
+
+  function ensureMarketSurveySeed(universeId: string, quarter: number) {
+    d1.exec(`CREATE TABLE IF NOT EXISTS market_survey_results (
+      survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL,
+      precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')),
+      purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL,
+      benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL,
+      benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL,
+      media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL,
+      media_ev_forums_pref REAL, media_youtube_pref REAL,
+      wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (universe_id, quarter, precision_level, segment_id)
+    );
+    CREATE TABLE IF NOT EXISTS market_survey_purchases (
+      id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL,
+      precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')),
+      cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (universe_id, team_id, quarter, precision_level)
+    );`);
+    const existing: any = d1.prepare("SELECT COUNT(*) AS count FROM market_survey_results WHERE universe_id = ? AND quarter = ?").get(universeId, quarter);
+    if (Number(existing?.count) > 0) return;
+    const insert = d1.prepare(`INSERT OR IGNORE INTO market_survey_results (survey_id, universe_id, quarter, precision_level, purchase_cost, segment_id, benefit_range_importance, benefit_charging_importance, benefit_price_importance, benefit_autonomy_importance, benefit_design_importance, benefit_reliability_importance, media_social_pref, media_auto_press_pref, media_business_press_pref, media_ev_forums_pref, media_youtube_pref, wtp_min, wtp_expected, wtp_max, segment_size_units, error_margin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const tiers: [string, number, number][] = [["low", 5, 0.15], ["medium", 15, 0.08], ["high", 30, 0.04]];
+    for (const [level, cost, margin] of tiers) {
+      for (const segment of MARKET_SURVEY_SEGMENTS) {
+        insert.run(
+          `${universeId}:${quarter}:${level}:${segment.id}`, universeId, quarter, level, cost, segment.id,
+          ...segment.benefits, ...segment.media, ...segment.wtp, segment.size, margin
+        );
+      }
+    }
+  }
+
+  app.get("/api/market-survey", (req, res) => {
+    try {
+      const universeId = String(req.query.universe_id || "").trim();
+      const quarter = Number(req.query.quarter);
+      const precision = String(req.query.precision || "low").trim();
+      if (!universeId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
+        return res.status(400).json({ error: "universe_id, a positive integer quarter, and a valid precision are required." });
+      }
+      ensureMarketSurveySeed(universeId, quarter);
+      const results = d1.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").all(universeId, quarter, precision);
+      if (!results.length) return res.json({ results: [], purchased: false });
+      return res.json({ results, purchased: true, error_margin: results[0].error_margin });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Market survey could not be loaded." });
+    }
+  });
+
+  app.post("/api/market-survey/purchase", (req, res) => {
+    try {
+      const universeId = String(req.body?.universe_id || "").trim();
+      const teamId = String(req.body?.team_id ?? "").trim();
+      const quarter = Number(req.body?.quarter);
+      const precisionLevel = String(req.body?.precision_level || "").trim();
+      if (!universeId || !teamId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precisionLevel)) {
+        return res.status(400).json({ error: "universe_id, team_id, a positive integer quarter, and a valid precision_level are required." });
+      }
+      ensureMarketSurveySeed(universeId, quarter);
+      const purchaseCost = MARKET_SURVEY_COST[precisionLevel];
+      const existingRows: any = d1.prepare("SELECT COUNT(*) AS count FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ?").get(universeId, quarter, precisionLevel);
+      if (!existingRows || Number(existingRows.count) === 0) {
+        return res.status(404).json({ error: "No market survey data is available for this universe, quarter, and precision level." });
+      }
+      d1.prepare("INSERT INTO market_survey_purchases (id, universe_id, team_id, quarter, precision_level, cost) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_id, quarter, precision_level) DO UPDATE SET cost = excluded.cost, purchased_at = datetime('now')").run(`${universeId}:${teamId}:${quarter}:${precisionLevel}`, universeId, teamId, quarter, precisionLevel, purchaseCost);
+      return res.json({ success: true, cost: purchaseCost });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message || "Market survey purchase failed." });
+    }
+  });
+
   // Cloudflare D1 Status & Diagnostics
   app.get("/api/d1/status", (_req, res) => {
     try {
