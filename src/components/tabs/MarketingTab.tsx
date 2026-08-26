@@ -1,26 +1,30 @@
-import React from "react";
+import React, { useState } from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, CLAIMS } from "../../engine/catalog";
-import { Megaphone, AlertTriangle, Eye, Sparkles } from "lucide-react";
+import { Megaphone, AlertTriangle, ChevronDown, ChevronUp, Eye, Sparkles, TrendingUp } from "lucide-react";
 import { MarketingVisualizer } from "../MarketingVisualizer";
 import MediaPlanner from "../MediaPlanner";
 import FastTestReport from "../FastTestReport";
+import MarketSurveyReport from "../MarketSurveyReport";
 
 interface MarketingTabProps {
   team: TeamState;
   gameState: GameState;
   onChange: (updatedTeam: TeamState) => void;
   onNotify: (msg: string) => void;
+  universeId: string;
 }
 
 export const MarketingTab: React.FC<MarketingTabProps> = ({
   team,
   gameState,
   onChange,
-  onNotify
+  onNotify,
+  universeId
 }) => {
   const isLocked = team.dec.locked;
   const isEarlyGame = gameState.quarter <= 3;
+  const [showMarketSurvey, setShowMarketSurvey] = useState(false);
 
   const handleAdBudgetChange = (val: number) => {
     if (isLocked) return;
@@ -97,6 +101,27 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {gameState.quarter >= 1 && (
+        <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowMarketSurvey((current) => !current)}
+            className="w-full flex items-center justify-between gap-3 p-4 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-700" />
+              <span className="text-lg font-bold text-[#1F2022]">Market Opportunity Analysis</span>
+            </div>
+            {showMarketSurvey ? <ChevronUp className="w-5 h-5 text-[#5A5C60]" /> : <ChevronDown className="w-5 h-5 text-[#5A5C60]" />}
+          </button>
+          {showMarketSurvey && (
+            <div className="px-4 pb-4">
+              <MarketSurveyReport universeId={universeId} teamId={team.i} quarter={gameState.quarter} onNotify={onNotify} />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Marketing Visualizer Component */}
       <MarketingVisualizer team={team} gameState={gameState} />
 

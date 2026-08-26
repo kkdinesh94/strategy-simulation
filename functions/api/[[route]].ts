@@ -659,6 +659,62 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ success: true, purchased: resultsList.length > 0, results: resultsList }), { status: 200, headers: corsHeaders });
     }
 
+    const MARKET_SURVEY_COST: Record<string, number> = { low: 5, medium: 15, high: 30 };
+
+    if (path === "/api/market-survey" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      const quarter = Number(url.searchParams.get("quarter"));
+      const precision = String(url.searchParams.get("precision") || "low").trim();
+      if (!universeId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
+        return new Response(JSON.stringify({ error: "universe_id, a positive integer quarter, and a valid precision are required." }), { status: 400, headers: corsHeaders });
+      }
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS market_survey_results (
+        survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL,
+        precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')),
+        purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL,
+        benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL,
+        benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL,
+        media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL,
+        media_ev_forums_pref REAL, media_youtube_pref REAL,
+        wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (universe_id, quarter, precision_level, segment_id)
+      );`);
+      const rows = await env.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").bind(universeId, quarter, precision).all();
+      const results = (rows.results || []) as any[];
+      if (!results.length) return new Response(JSON.stringify({ results: [], purchased: false }), { status: 200, headers: corsHeaders });
+      return new Response(JSON.stringify({ results, purchased: true, error_margin: results[0].error_margin }), { status: 200, headers: corsHeaders });
+    }
+
+    if (path === "/api/market-survey/purchase" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = await request.json() as any;
+      const universeId = String(body.universe_id || "").trim();
+      const teamId = String(body.team_id ?? "").trim();
+      const quarter = Number(body.quarter);
+      const precisionLevel = String(body.precision_level || "").trim();
+      if (!universeId || !teamId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precisionLevel)) {
+        return new Response(JSON.stringify({ error: "universe_id, team_id, a positive integer quarter, and a valid precision_level are required." }), { status: 400, headers: corsHeaders });
+      }
+      const purchaseCost = MARKET_SURVEY_COST[precisionLevel];
+
+      const existingRows = await env.DB.prepare("SELECT COUNT(*) AS count FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ?").bind(universeId, quarter, precisionLevel).first();
+      if (!existingRows || Number(existingRows.count) === 0) {
+        return new Response(JSON.stringify({ error: "No market survey data is available for this universe, quarter, and precision level." }), { status: 404, headers: corsHeaders });
+      }
+
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS market_survey_purchases (
+        id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL,
+        precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')),
+        cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (universe_id, team_id, quarter, precision_level)
+      );`);
+      await env.DB.prepare("INSERT INTO market_survey_purchases (id, universe_id, team_id, quarter, precision_level, cost) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_id, quarter, precision_level) DO UPDATE SET cost = excluded.cost, purchased_at = datetime('now')").bind(`${universeId}:${teamId}:${quarter}:${precisionLevel}`, universeId, teamId, quarter, precisionLevel, purchaseCost).run();
+
+      return new Response(JSON.stringify({ success: true, cost: purchaseCost }), { status: 200, headers: corsHeaders });
+    }
+
     // Vehicle designer catalog and brand save API.
     if (path === "/api/vehicle-designer" && method === "GET") {
       const requestedQuarter = Number(url.searchParams.get("quarter") || 1);
