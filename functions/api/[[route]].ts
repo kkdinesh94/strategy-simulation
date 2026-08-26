@@ -423,19 +423,8 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     if (path === "/api/decisions" && (method === "GET" || method === "POST" || method === "PUT")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      await env.DB.exec(`
-        CREATE TABLE IF NOT EXISTS decision_audit_log (
-          log_id TEXT PRIMARY KEY,
-          team_id TEXT,
-          quarter INTEGER,
-          decision_area TEXT,
-          field_changed TEXT,
-          old_value TEXT,
-          new_value TEXT,
-          timestamp TEXT
-        );
-        CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp);
-      `);
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS decision_audit_log (log_id TEXT PRIMARY KEY, team_id TEXT, quarter INTEGER, decision_area TEXT, field_changed TEXT, old_value TEXT, new_value TEXT, timestamp TEXT)");
+      await env.DB.exec("CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp)");
 
       if (method === "GET") {
         const teamId = String(url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
@@ -494,17 +483,8 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     if (path === "/api/visibility-settings" && (method === "GET" || method === "POST")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
-        id TEXT PRIMARY KEY,
-        game_id TEXT NOT NULL UNIQUE,
-        reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
-        reveal_sales_data INTEGER NOT NULL DEFAULT 0,
-        reveal_financials INTEGER NOT NULL DEFAULT 0,
-        reveal_rd_projects INTEGER NOT NULL DEFAULT 0,
-        competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-      );
-      CREATE INDEX IF NOT EXISTS idx_visibility_settings_game ON visibility_settings(game_id);`);
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS visibility_settings (id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0, reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0, reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
+      await env.DB.exec("CREATE INDEX IF NOT EXISTS idx_visibility_settings_game ON visibility_settings(game_id)");
 
       if (method === "GET") {
         const gameId = String(url.searchParams.get("game_id") || url.searchParams.get("universe_id") || "").trim();
@@ -594,12 +574,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
       const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id") || body.game_id || body.universe_id || universe.id;
       if (resolvedGameId) {
-        await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
-          id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
-          reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0,
-          reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );`);
+        await env.DB.exec("CREATE TABLE IF NOT EXISTS visibility_settings (id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0, reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0, reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
         const visRow = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(resolvedGameId).first();
         if (method === "GET" && visRow && Number(visRow.competitive_benchmark_purchasable) === 0) {
           return new Response(JSON.stringify({ error: "Competitive benchmark reports have been disabled by the instructor." }), { status: 403, headers: corsHeaders });
@@ -636,12 +611,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         gameIdToUse = universe?.id;
       }
       if (gameIdToUse) {
-        await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
-          id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
-          reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0,
-          reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );`);
+        await env.DB.exec("CREATE TABLE IF NOT EXISTS visibility_settings (id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0, reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0, reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
         const visRow = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(gameIdToUse).first();
         const revealSalesData = visRow ? Number(visRow.reveal_sales_data) : 0;
         if (revealSalesData === 0) {
@@ -966,165 +936,27 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       if (!env.DB) {
         return new Response(JSON.stringify({ error: "No D1 DB binding found" }), { status: 500, headers: corsHeaders });
       }
-      await env.DB.exec(`
-        CREATE TABLE IF NOT EXISTS universes (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            code TEXT NOT NULL,
-            instructor_email TEXT NOT NULL,
-            max_teams INTEGER NOT NULL DEFAULT 10,
-            max_members_per_team INTEGER NOT NULL DEFAULT 8,
-            game_state TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            email TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            institution TEXT DEFAULT '',
-            universe_id TEXT NOT NULL,
-            team_i INTEGER NOT NULL DEFAULT -1,
-            password TEXT NOT NULL,
-            last_active_at TEXT,
-            active_minutes INTEGER NOT NULL DEFAULT 0,
-            is_online INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS team_decisions (
-            id TEXT PRIMARY KEY,
-            universe_id TEXT NOT NULL,
-            team_i INTEGER NOT NULL,
-            quarter INTEGER NOT NULL,
-            decision_json TEXT NOT NULL,
-            redesign_fee REAL NOT NULL DEFAULT 0,
-            submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
-            submitted_by TEXT NOT NULL
-        );
-          CREATE TABLE IF NOT EXISTS decision_audit_log (
-            log_id TEXT PRIMARY KEY,
-            team_id TEXT,
-            quarter INTEGER,
-            decision_area TEXT,
-            field_changed TEXT,
-            old_value TEXT,
-            new_value TEXT,
-            timestamp TEXT
-          );
-          CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp);
-        CREATE TABLE IF NOT EXISTS strategy_plans (
-          id TEXT PRIMARY KEY,
-          universe_id TEXT NOT NULL,
-          team_i INTEGER NOT NULL,
-          quarter INTEGER NOT NULL,
-          plan_json TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-          UNIQUE (universe_id, team_i, quarter)
-        );
-          CREATE TABLE IF NOT EXISTS pro_forma_statements (
-            id TEXT PRIMARY KEY,
-            universe_id TEXT NOT NULL,
-            team_i INTEGER NOT NULL,
-            quarter INTEGER NOT NULL,
-            statement_json TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE (universe_id, team_i, quarter)
-          );
-          CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i);
-          CREATE TABLE IF NOT EXISTS balanced_scorecard (
-            id TEXT PRIMARY KEY,
-            universe_id TEXT NOT NULL,
-            team_i TEXT NOT NULL,
-            quarter INTEGER NOT NULL,
-            team_name TEXT NOT NULL,
-            overall_score REAL NOT NULL,
-            dimensions_json TEXT NOT NULL,
-            raw_metrics_json TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE (universe_id, team_i, quarter)
-          );
-          CREATE INDEX IF NOT EXISTS idx_balanced_scorecard_lookup ON balanced_scorecard(universe_id, quarter, team_i);
-          CREATE TABLE IF NOT EXISTS hr_decisions (
-            id TEXT PRIMARY KEY,
-            universe_id TEXT NOT NULL,
-            team_i INTEGER NOT NULL,
-            quarter INTEGER NOT NULL,
-            sales_json TEXT NOT NULL,
-            production_json TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE (universe_id, team_i, quarter)
-          );
-          CREATE INDEX IF NOT EXISTS idx_hr_decisions_lookup ON hr_decisions(universe_id, quarter, team_i);
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id TEXT PRIMARY KEY,
-            universe_id TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            action TEXT NOT NULL,
-            details_json TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS market_segments (
-          segment_id TEXT PRIMARY KEY,
-          name TEXT,
-          description TEXT,
-          price_sensitivity INTEGER,
-          range_priority INTEGER,
-          charging_speed_priority INTEGER,
-          autonomy_priority INTEGER,
-          brand_image_priority INTEGER,
-          typical_buyer_persona TEXT,
-          segment_size_pct REAL
-        );
-        CREATE TABLE IF NOT EXISTS vehicle_components (
-          component_id TEXT PRIMARY KEY,
-          category TEXT,
-          name TEXT,
-          material_cost REAL,
-          performance_score INTEGER,
-          benefit_delivered TEXT,
-          is_rd_unlocked INTEGER DEFAULT 0,
-          available_from_quarter INTEGER DEFAULT 1
-        );
-        CREATE TABLE IF NOT EXISTS ad_campaigns (
-          campaign_id TEXT PRIMARY KEY,
-          universe_id TEXT,
-          team_id TEXT,
-          quarter INTEGER,
-          segment_target TEXT,
-          brand_mentioned TEXT,
-          benefit_1 TEXT,
-          benefit_2 TEXT,
-          benefit_3 TEXT,
-          benefit_4 TEXT,
-          benefit_5 TEXT,
-          ad_judgment INTEGER
-        );
-        CREATE TABLE IF NOT EXISTS ad_violations (
-          violation_id TEXT PRIMARY KEY,
-          campaign_id TEXT NOT NULL,
-          universe_id TEXT NOT NULL,
-          team_id TEXT NOT NULL,
-          claim TEXT NOT NULL,
-          quarter INTEGER NOT NULL,
-          offense_number INTEGER NOT NULL,
-          penalty_type TEXT NOT NULL,
-          fine_pct REAL NOT NULL DEFAULT 0,
-          fine_amount REAL NOT NULL DEFAULT 0,
-          ban_until_quarter INTEGER NOT NULL,
-          reason TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-      `);
+      const initStatements = [
+        "CREATE TABLE IF NOT EXISTS universes (id TEXT PRIMARY KEY, name TEXT NOT NULL, code TEXT NOT NULL, instructor_email TEXT NOT NULL, max_teams INTEGER NOT NULL DEFAULT 10, max_members_per_team INTEGER NOT NULL DEFAULT 8, game_state TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL, institution TEXT DEFAULT '', universe_id TEXT NOT NULL, team_i INTEGER NOT NULL DEFAULT -1, password TEXT NOT NULL, last_active_at TEXT, active_minutes INTEGER NOT NULL DEFAULT 0, is_online INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        "CREATE TABLE IF NOT EXISTS team_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, decision_json TEXT NOT NULL, redesign_fee REAL NOT NULL DEFAULT 0, submitted_at TEXT NOT NULL DEFAULT (datetime('now')), submitted_by TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS decision_audit_log (log_id TEXT PRIMARY KEY, team_id TEXT, quarter INTEGER, decision_area TEXT, field_changed TEXT, old_value TEXT, new_value TEXT, timestamp TEXT)",
+        "CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp)",
+        "CREATE TABLE IF NOT EXISTS strategy_plans (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, plan_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))",
+        "CREATE TABLE IF NOT EXISTS pro_forma_statements (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, statement_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))",
+        "CREATE INDEX IF NOT EXISTS idx_pro_forma_lookup ON pro_forma_statements(universe_id, quarter, team_i)",
+        "CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))",
+        "CREATE INDEX IF NOT EXISTS idx_balanced_scorecard_lookup ON balanced_scorecard(universe_id, quarter, team_i)",
+        "CREATE TABLE IF NOT EXISTS hr_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, sales_json TEXT NOT NULL, production_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))",
+        "CREATE INDEX IF NOT EXISTS idx_hr_decisions_lookup ON hr_decisions(universe_id, quarter, team_i)",
+        "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, user_id TEXT NOT NULL, action TEXT NOT NULL, details_json TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        "CREATE TABLE IF NOT EXISTS market_segments (segment_id TEXT PRIMARY KEY, name TEXT, description TEXT, price_sensitivity INTEGER, range_priority INTEGER, charging_speed_priority INTEGER, autonomy_priority INTEGER, brand_image_priority INTEGER, typical_buyer_persona TEXT, segment_size_pct REAL)",
+        "CREATE TABLE IF NOT EXISTS vehicle_components (component_id TEXT PRIMARY KEY, category TEXT, name TEXT, material_cost REAL, performance_score INTEGER, benefit_delivered TEXT, is_rd_unlocked INTEGER DEFAULT 0, available_from_quarter INTEGER DEFAULT 1)",
+        "CREATE TABLE IF NOT EXISTS ad_campaigns (campaign_id TEXT PRIMARY KEY, universe_id TEXT, team_id TEXT, quarter INTEGER, segment_target TEXT, brand_mentioned TEXT, benefit_1 TEXT, benefit_2 TEXT, benefit_3 TEXT, benefit_4 TEXT, benefit_5 TEXT, ad_judgment INTEGER)",
+        "CREATE TABLE IF NOT EXISTS ad_violations (violation_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, claim TEXT NOT NULL, quarter INTEGER NOT NULL, offense_number INTEGER NOT NULL, penalty_type TEXT NOT NULL, fine_pct REAL NOT NULL DEFAULT 0, fine_amount REAL NOT NULL DEFAULT 0, ban_until_quarter INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))"
+      ];
+      for (const statement of initStatements) await env.DB.exec(statement);
       return new Response(JSON.stringify({ success: true, message: "D1 Schema successfully initialized." }), {
         status: 200,
         headers: corsHeaders

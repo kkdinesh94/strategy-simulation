@@ -24,6 +24,8 @@ const CULTURE_VALUES = [
 
 const OBJECTIVES = ["Market Presence", "Profit", "Cash", "Shareholder Value"];
 const FUNCTIONS = ["Marketing", "Sales", "Manufacturing", "R&D", "Human Resources"];
+// localStorage draft key — scoped per team, universe, and quarter
+const draftKey = (universeId, teamId, quarter) => `ev_strategy_draft_${universeId}_${teamId}_${quarter}`;
 const EMPTY_PLAN = {
   mission: "",
   culture: [],
@@ -38,9 +40,6 @@ const EMPTY_PLAN = {
 function wordCount(value) {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
 }
-
-const draftKey = (universeId, teamId, quarter) =>
-  `ev_strategy_draft_${universeId}_${teamId}_${quarter}`;
 
 function normalizePlan(value) {
   return {
@@ -61,6 +60,7 @@ export default function StrategyWizard({ universeId, teamId, quarter, teamName, 
 
   const priorityTotal = useMemo(() => FUNCTIONS.reduce((sum, name) => sum + Number(plan.priorities[name] || 0), 0), [plan.priorities]);
   const missionWords = wordCount(plan.mission);
+  // updatePlan: merge changes into plan state AND write draft to localStorage immediately
   const updatePlan = (changes) => setPlan((current) => {
     const next = { ...current, ...changes };
     localStorage.setItem(draftKey(universeId, teamId, quarter), JSON.stringify(next));
