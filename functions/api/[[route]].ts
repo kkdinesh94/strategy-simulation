@@ -492,6 +492,94 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       }
     }
 
+    if (path === "/api/visibility-settings" && (method === "GET" || method === "POST")) {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
+        id TEXT PRIMARY KEY,
+        game_id TEXT NOT NULL UNIQUE,
+        reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
+        reveal_sales_data INTEGER NOT NULL DEFAULT 0,
+        reveal_financials INTEGER NOT NULL DEFAULT 0,
+        reveal_rd_projects INTEGER NOT NULL DEFAULT 0,
+        competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_visibility_settings_game ON visibility_settings(game_id);`);
+
+      if (method === "GET") {
+        const gameId = String(url.searchParams.get("game_id") || url.searchParams.get("universe_id") || "").trim();
+        if (!gameId) return new Response(JSON.stringify({ error: "game_id parameter is required." }), { status: 400, headers: corsHeaders });
+        const row = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(gameId).first();
+        if (row) {
+          return new Response(JSON.stringify({ settings: row }), { status: 200, headers: corsHeaders });
+        }
+        return new Response(JSON.stringify({
+          settings: {
+            id: gameId,
+            game_id: gameId,
+            reveal_brand_specs: 0,
+            reveal_sales_data: 0,
+            reveal_financials: 0,
+            reveal_rd_projects: 0,
+            competitive_benchmark_purchasable: 1,
+            updated_at: new Date().toISOString()
+          }
+        }), { status: 200, headers: corsHeaders });
+      }
+
+      if (method === "POST") {
+        const body = await request.json() as any;
+        const gameId = String(body.game_id || "").trim();
+        if (!gameId) return new Response(JSON.stringify({ error: "game_id is required." }), { status: 400, headers: corsHeaders });
+
+        const flags = [
+          body.reveal_brand_specs,
+          body.reveal_sales_data,
+          body.reveal_financials,
+          body.reveal_rd_projects,
+          body.competitive_benchmark_purchasable
+        ];
+
+        const isValidFlag = (val: any) => val === 0 || val === 1 || val === "0" || val === "1";
+        if (!flags.every(isValidFlag)) {
+          return new Response(JSON.stringify({ error: "All flag values must be 0 or 1." }), { status: 400, headers: corsHeaders });
+        }
+
+        const reveal_brand_specs = Number(body.reveal_brand_specs);
+        const reveal_sales_data = Number(body.reveal_sales_data);
+        const reveal_financials = Number(body.reveal_financials);
+        const reveal_rd_projects = Number(body.reveal_rd_projects);
+        const competitive_benchmark_purchasable = Number(body.competitive_benchmark_purchasable);
+        const now = new Date().toISOString();
+
+        await env.DB.prepare(`
+          INSERT INTO visibility_settings (id, game_id, reveal_brand_specs, reveal_sales_data, reveal_financials, reveal_rd_projects, competitive_benchmark_purchasable, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            game_id = excluded.game_id,
+            reveal_brand_specs = excluded.reveal_brand_specs,
+            reveal_sales_data = excluded.reveal_sales_data,
+            reveal_financials = excluded.reveal_financials,
+            reveal_rd_projects = excluded.reveal_rd_projects,
+            competitive_benchmark_purchasable = excluded.competitive_benchmark_purchasable,
+            updated_at = excluded.updated_at
+        `).bind(gameId, gameId, reveal_brand_specs, reveal_sales_data, reveal_financials, reveal_rd_projects, competitive_benchmark_purchasable, now).run();
+
+        const settings = {
+          id: gameId,
+          game_id: gameId,
+          reveal_brand_specs,
+          reveal_sales_data,
+          reveal_financials,
+          reveal_rd_projects,
+          competitive_benchmark_purchasable,
+          updated_at: now
+        };
+
+        return new Response(JSON.stringify({ success: true, settings }), { status: 200, headers: corsHeaders });
+      }
+    }
+
     if (path === "/api/competitive-benchmark" && (method === "GET" || method === "POST")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = method === "POST" ? await request.json() as any : {};
@@ -503,6 +591,21 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       await env.DB.exec("CREATE TABLE IF NOT EXISTS competitive_benchmark_purchases (purchase_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, scope TEXT NOT NULL, cost REAL NOT NULL, report_json TEXT NOT NULL, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, region, scope))");
       const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes ORDER BY updated_at DESC LIMIT 1").first();
       if (!universe) return new Response(JSON.stringify({ error: "No simulation universe is available." }), { status: 404, headers: corsHeaders });
+
+      const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id") || body.game_id || body.universe_id || universe.id;
+      if (resolvedGameId) {
+        await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
+          id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
+          reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0,
+          reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );`);
+        const visRow = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(resolvedGameId).first();
+        if (method === "GET" && visRow && Number(visRow.competitive_benchmark_purchasable) === 0) {
+          return new Response(JSON.stringify({ error: "Competitive benchmark reports have been disabled by the instructor." }), { status: 403, headers: corsHeaders });
+        }
+      }
+
       const purchase: any = await env.DB.prepare("SELECT * FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? AND region = ? AND scope = ?").bind(universe.id, teamId, quarter, region, scope).first();
       const cost = COMPETITIVE_BENCHMARK_REGION_COST * (scope === "global" ? 3 : 1);
       if (method === "GET") return new Response(JSON.stringify({ purchased: Boolean(purchase), cost, report: purchase ? readJson(purchase.report_json) : null }), { status: 200, headers: corsHeaders });
@@ -524,7 +627,36 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         return new Response(JSON.stringify({ success: true, purchased: true, results }), { status: 200, headers: corsHeaders });
       }
       const resultRows = await env.DB.prepare("SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id").bind(teamId, quarter, region).all();
-      return new Response(JSON.stringify({ success: true, purchased: (resultRows.results || []).length > 0, results: resultRows.results || [] }), { status: 200, headers: corsHeaders });
+      let resultsList = (resultRows.results || []) as any[];
+
+      const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id");
+      let gameIdToUse = resolvedGameId;
+      if (!gameIdToUse) {
+        const universe: any = await env.DB.prepare("SELECT id FROM universes ORDER BY updated_at DESC LIMIT 1").first();
+        gameIdToUse = universe?.id;
+      }
+      if (gameIdToUse) {
+        await env.DB.exec(`CREATE TABLE IF NOT EXISTS visibility_settings (
+          id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0,
+          reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0,
+          reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );`);
+        const visRow = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(gameIdToUse).first();
+        const revealSalesData = visRow ? Number(visRow.reveal_sales_data) : 0;
+        if (revealSalesData === 0) {
+          resultsList = resultsList.map((row: any) => {
+            const isOwnTeam = String(row.team_id || row.teamId) === teamId;
+            if (!isOwnTeam) {
+              const { unit_sales, units_sold, unit_sales_data, ...rest } = row;
+              return rest;
+            }
+            return row;
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, purchased: resultsList.length > 0, results: resultsList }), { status: 200, headers: corsHeaders });
     }
 
     // Vehicle designer catalog and brand save API.

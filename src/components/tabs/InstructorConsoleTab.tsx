@@ -6,6 +6,7 @@ import { simulateQuarter, cumBSC, equityOf, newState } from "../../engine/simula
 import { loadUsers, saveActiveUniverse, saveUniverses, getAccessibleUniverses, DEFAULT_10_TEAMS } from "../../lib/authStore";
 import { saveUniverseUnified } from "../../lib/dbProvider";
 import { isUserOnline, formatLastActive, getFullTimestamp, formatActiveTime } from "../../lib/presence";
+import VisibilitySettingsPanel from "../VisibilitySettingsPanel";
 import {
   Play,
   Lock,
@@ -623,6 +624,9 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
           })}
         </div>
       </div>
+
+      {/* Instructor Visibility Controls */}
+      <VisibilitySettingsPanel universeId={universe.id} onNotify={onNotify} />
 
       {/* Export / Import State */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
