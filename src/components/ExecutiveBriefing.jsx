@@ -48,7 +48,7 @@ export default function ExecutiveBriefing({ team, gameState, universeId, role: i
     URL.revokeObjectURL(link.href);
   };
 
-  const section = (title, key) => <section className="space-y-2" key={key}>
+  const section = (title, key) => <section className="briefing-section space-y-2" key={key}>
     <h4 className="text-sm font-bold text-[#1F2022]">{title}</h4>
     <p className="whitespace-pre-line text-xs leading-6 text-[#4A4C50]">{sections[key] || "Generate the briefing to populate this section."}</p>
   </section>;
@@ -60,7 +60,7 @@ export default function ExecutiveBriefing({ team, gameState, universeId, role: i
     </div>
     <div className="flex flex-wrap items-end gap-3 print:hidden"><label className="space-y-1 text-xs font-semibold">Presentation role<select value={role} onChange={(event) => setRole(event.target.value)} className="mt-1 block rounded-lg border border-[#E0DCD3] bg-white px-3 py-2 text-xs font-normal">{ROLES.map((item) => <option key={item}>{item}</option>)}</select></label><button onClick={generate} disabled={status === "loading"} className="flex items-center gap-1.5 rounded-lg bg-[#1F2022] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60">{status === "loading" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : status === "ready" ? <RefreshCw className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}{status === "ready" ? "Regenerate briefing" : "Generate briefing"}</button></div>
     {error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</p>}
-    <div className="grid gap-6 md:grid-cols-2">{section("Performance vs. prior-quarter goals", "performance")}{section("Key decisions and rationale", "decisions")}{section("Next-quarter plans", "nextQuarter")}{section("Questions and uncertainties to flag", "uncertainties")}</div>
+    <div id="executive-briefing-print-area" className="grid gap-6 md:grid-cols-2">{section("Performance vs. prior-quarter goals", "performance")}{section("Key decisions and rationale", "decisions")}{section("Next-quarter plans", "nextQuarter")}{section("Questions and uncertainties to flag", "uncertainties")}</div>
     {sourceData && <p className="text-[10px] text-[#7A7C80] print:hidden">Source records: {sourceData.scorecards?.length || 0} scorecard snapshots, {sourceData.strategyPlans?.length || 0} strategy plans, {sourceData.proForma?.length || 0} pro forma records, {sourceData.decisions?.length || 0} decision records.</p>}
   </section>;
 }
