@@ -17,6 +17,7 @@ import { ProFormaWorkbench } from "../ProFormaWorkbench";
 import { ProFormaPanel } from "./ProFormaPanel";
 import { DecisionAuditor } from "../DecisionAuditor";
 import { FinancingPanel } from "../FinancingPanel";
+import { DecisionComparison } from "../DecisionComparison";
 import ABCReport from "../ABCReport";
 import {
   DollarSign,
@@ -146,6 +147,8 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
 
   return (
     <div className="space-y-6 font-sans">
+      <DecisionComparison team={team} gameState={gameState} />
+
       {/* Sub-Tab Selector */}
       <div className="bg-white p-3 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center gap-2">
         <button

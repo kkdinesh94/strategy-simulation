@@ -4,6 +4,7 @@ import { CAP_BLOCK, fmtRs } from "../../engine/catalog";
 import { reliabilityOf } from "../../engine/simulationEngine";
 import { Factory, ShieldCheck, Wrench, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { OperationsVisualizer } from "../OperationsVisualizer";
+import { DecisionComparison } from "../DecisionComparison";
 import FacilityLocationWizard from "../FacilityLocationWizard";
 import ProductionScheduler from "../ProductionScheduler";
 import QualityDashboard from "../QualityDashboard";
@@ -102,6 +103,8 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
           </div>
         </div>
       </div>
+
+      <DecisionComparison team={team} gameState={gameState} />
 
       {/* Operations & Assembly Line Visualizer */}
       <OperationsVisualizer team={team} gameState={gameState} />
