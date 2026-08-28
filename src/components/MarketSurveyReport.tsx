@@ -112,7 +112,7 @@ export default function MarketSurveyReport({ universeId, teamId, quarter, onNoti
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/market-survey?universe_id=${encodeURIComponent(universeId)}&quarter=${quarter}&precision=${level}`);
+      const response = await fetch(`/api/market-survey?universe_id=${encodeURIComponent(universeId)}&team_id=${encodeURIComponent(String(teamId))}&quarter=${quarter}&precision=${level}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Market survey could not be loaded.");
       const rows: SurveyRow[] = payload.results || [];

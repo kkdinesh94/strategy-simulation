@@ -4,6 +4,97 @@
  */
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "../../src/lib/competitiveBenchmark";
 import { runQuarterWorkflow } from "../../src/lib/processQuarter";
+import { SEGMENTS } from "../../src/engine/catalog";
+
+const MARKET_SURVEY_ERROR_MARGIN: Record<string, number> = { low: 0.15, medium: 0.08, high: 0.04 };
+
+// Maps the EV market-survey segment ids onto the closest scooter-catalog segment
+// (matched by whichever catalog segment weighs that persona's defining trait highest),
+// used only when a universe has no seeded/prior market_survey_results to base a quarter on.
+const MARKET_SURVEY_CATALOG_FALLBACK: Record<string, string> = {
+  urban_commuter: "S2",
+  fleet_operator: "S5",
+  performance_enthusiast: "S4",
+  tech_pioneer: "S1",
+  eco_advocate: "S3"
+};
+
+function marketSurveyHashSeed(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) hash = (Math.imul(31, hash) + str.charCodeAt(i)) | 0;
+  return hash >>> 0;
+}
+
+function marketSurveyRng(seed: number): () => number {
+  let a = seed;
+  return function random() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Builds a synthetic Q1-equivalent base row from the scooter catalog when no market_survey_results exist for a universe. */
+function marketSurveyCatalogFallbackBase(segmentId: string, precisionLevel: string, purchaseCost: number): Record<string, number | string> {
+  const errorMargin = MARKET_SURVEY_ERROR_MARGIN[precisionLevel] ?? 0.15;
+  const catalogId = MARKET_SURVEY_CATALOG_FALLBACK[segmentId] || SEGMENTS[0].id;
+  const seg = SEGMENTS.find((candidate) => candidate.id === catalogId) || SEGMENTS[0];
+  const scale = (weight: number) => Math.round(50 + Number(weight || 0) * 3);
+  const [wtpMinBase, wtpMaxBase] = seg.wtp;
+  return {
+    precision_level: precisionLevel,
+    purchase_cost: purchaseCost,
+    segment_id: segmentId,
+    benefit_range_importance: scale(seg.w.range),
+    benefit_charging_importance: scale(seg.w.charge),
+    benefit_price_importance: scale(seg.w.econ),
+    benefit_autonomy_importance: scale(seg.w.tech),
+    benefit_design_importance: scale(seg.w.build),
+    benefit_reliability_importance: scale(seg.w.safety),
+    media_social_pref: scale(seg.w.tech),
+    media_auto_press_pref: scale(seg.w.perf),
+    media_business_press_pref: scale(seg.w.econ),
+    media_ev_forums_pref: scale(seg.w.range),
+    media_youtube_pref: scale(seg.w.build),
+    wtp_min: Math.round(wtpMinBase * 10),
+    wtp_expected: Math.round(((wtpMinBase + wtpMaxBase) / 2) * 10),
+    wtp_max: Math.round(wtpMaxBase * 10),
+    segment_size_units: Math.round(seg.pct * 20000),
+    error_margin: errorMargin
+  };
+}
+
+/** Deterministically derives one quarter's market-survey row from a base row, so the same team always sees the same numbers for a given quarter. */
+function marketSurveyVaryForQuarter(base: Record<string, any>, universeId: string, quarter: number, segmentId: string, precisionLevel: string, purchaseCost: number): Record<string, any> {
+  const errorMargin = Number(base.error_margin ?? MARKET_SURVEY_ERROR_MARGIN[precisionLevel] ?? 0.15);
+  const rng = marketSurveyRng(marketSurveyHashSeed(`${universeId}:${quarter}:${segmentId}`));
+  const vary = (value: unknown) => Math.round(Number(value || 0) * (1 + (rng() * 2 - 1) * errorMargin));
+  return {
+    survey_id: `${universeId}:${quarter}:${precisionLevel}:${segmentId}`,
+    universe_id: universeId,
+    quarter,
+    precision_level: precisionLevel,
+    purchase_cost: purchaseCost,
+    segment_id: segmentId,
+    benefit_range_importance: vary(base.benefit_range_importance),
+    benefit_charging_importance: vary(base.benefit_charging_importance),
+    benefit_price_importance: vary(base.benefit_price_importance),
+    benefit_autonomy_importance: vary(base.benefit_autonomy_importance),
+    benefit_design_importance: vary(base.benefit_design_importance),
+    benefit_reliability_importance: vary(base.benefit_reliability_importance),
+    media_social_pref: vary(base.media_social_pref),
+    media_auto_press_pref: vary(base.media_auto_press_pref),
+    media_business_press_pref: vary(base.media_business_press_pref),
+    media_ev_forums_pref: vary(base.media_ev_forums_pref),
+    media_youtube_pref: vary(base.media_youtube_pref),
+    wtp_min: vary(base.wtp_min),
+    wtp_expected: vary(base.wtp_expected),
+    wtp_max: vary(base.wtp_max),
+    segment_size_units: vary(base.segment_size_units),
+    error_margin: errorMargin
+  };
+}
 
 interface Env {
   DB: any; // Cloudflare D1Database binding
@@ -634,16 +725,52 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     if (path === "/api/market-survey" && method === "GET") {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      const teamId = String(url.searchParams.get("team_id") || "").trim();
       const quarter = Number(url.searchParams.get("quarter"));
       const precision = String(url.searchParams.get("precision") || "low").trim();
-      if (!universeId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
-        return new Response(JSON.stringify({ error: "universe_id, a positive integer quarter, and a valid precision are required." }), { status: 400, headers: corsHeaders });
+      if (!universeId || !teamId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
+        return new Response(JSON.stringify({ error: "universe_id, team_id, a positive integer quarter, and a valid precision are required." }), { status: 400, headers: corsHeaders });
       }
       await env.DB.exec("CREATE TABLE IF NOT EXISTS market_survey_results (survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')), purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL, benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL, benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL, media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL, media_ev_forums_pref REAL, media_youtube_pref REAL, wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, quarter, precision_level, segment_id))");
-      const rows = await env.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").bind(universeId, quarter, precision).all();
-      const results = (rows.results || []) as any[];
-      if (!results.length) return new Response(JSON.stringify({ results: [], purchased: false }), { status: 200, headers: corsHeaders });
-      return new Response(JSON.stringify({ results, purchased: true, error_margin: results[0].error_margin }), { status: 200, headers: corsHeaders });
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS market_survey_purchases (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')), cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, precision_level))");
+
+      const purchaseRow = await env.DB.prepare("SELECT 1 FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? AND precision_level = ?").bind(universeId, teamId, quarter, precision).first();
+      const purchased = Boolean(purchaseRow);
+      if (!purchased) return new Response(JSON.stringify({ results: [], purchased: false }), { status: 200, headers: corsHeaders });
+
+      const existingRows = await env.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").bind(universeId, quarter, precision).all();
+      let results = (existingRows.results || []) as any[];
+
+      if (!results.length) {
+        const purchaseCost = MARKET_SURVEY_COST[precision];
+        const priorSegmentRows = await env.DB.prepare("SELECT DISTINCT segment_id FROM market_survey_results WHERE universe_id = ? AND precision_level = ?").bind(universeId, precision).all();
+        let segmentIds = ((priorSegmentRows.results || []) as any[]).map((row) => String(row.segment_id));
+        if (!segmentIds.length) {
+          const marketSegmentRows = await env.DB.prepare("SELECT segment_id FROM market_segments ORDER BY segment_id").all();
+          segmentIds = ((marketSegmentRows.results || []) as any[]).map((row) => String(row.segment_id));
+        }
+
+        const generated: any[] = [];
+        for (const segmentId of segmentIds) {
+          const baseRow = await env.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND precision_level = ? AND segment_id = ? ORDER BY quarter ASC LIMIT 1").bind(universeId, precision, segmentId).first();
+          const base = baseRow || marketSurveyCatalogFallbackBase(segmentId, precision, purchaseCost);
+          generated.push(marketSurveyVaryForQuarter(base as Record<string, any>, universeId, quarter, segmentId, precision, purchaseCost));
+        }
+
+        if (generated.length) {
+          await env.DB.batch(generated.map((row) => env.DB.prepare(
+            "INSERT INTO market_survey_results (survey_id, universe_id, quarter, precision_level, purchase_cost, segment_id, benefit_range_importance, benefit_charging_importance, benefit_price_importance, benefit_autonomy_importance, benefit_design_importance, benefit_reliability_importance, media_social_pref, media_auto_press_pref, media_business_press_pref, media_ev_forums_pref, media_youtube_pref, wtp_min, wtp_expected, wtp_max, segment_size_units, error_margin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(survey_id) DO NOTHING"
+          ).bind(
+            row.survey_id, row.universe_id, row.quarter, row.precision_level, row.purchase_cost, row.segment_id,
+            row.benefit_range_importance, row.benefit_charging_importance, row.benefit_price_importance, row.benefit_autonomy_importance, row.benefit_design_importance, row.benefit_reliability_importance,
+            row.media_social_pref, row.media_auto_press_pref, row.media_business_press_pref, row.media_ev_forums_pref, row.media_youtube_pref,
+            row.wtp_min, row.wtp_expected, row.wtp_max, row.segment_size_units, row.error_margin
+          )));
+        }
+        results = generated;
+      }
+
+      return new Response(JSON.stringify({ results, purchased: true, error_margin: results[0]?.error_margin }), { status: 200, headers: corsHeaders });
     }
 
     if (path === "/api/market-survey/purchase" && method === "POST") {
