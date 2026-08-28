@@ -1034,6 +1034,53 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ success: true, quarter, saved: records.length }), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/balanced-scorecard/export" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      const quarter = Number(url.searchParams.get("quarter"));
+      if (!universeId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "universe_id and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      const rows = await env.DB.prepare(
+        "SELECT u.name AS student_name, u.email AS email, b.team_name AS team_name, b.team_i AS team_index, b.quarter AS quarter, b.overall_score AS overall_score, b.dimensions_json AS dimensions_json FROM balanced_scorecard b JOIN users u ON u.universe_id = b.universe_id AND CAST(u.team_i AS TEXT) = b.team_i WHERE b.universe_id = ? AND b.quarter = ? ORDER BY b.team_i, u.name"
+      ).bind(universeId, quarter).all();
+      const records = rows.results || [];
+      const csvEscape = (value: unknown): string => {
+        const str = value === null || value === undefined ? "" : String(value);
+        return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+      };
+      const columns = ["Student Name", "Email", "Team Name", "Team Index", "Quarter", "BSC Total Score", "Financial Performance", "Financial Risk", "Market Performance", "Marketing Effectiveness", "Investment in Future", "Wealth Creation", "Asset Management", "HR Management", "Manufacturing Productivity"];
+      const lines = [columns.join(",")];
+      for (const row of records as any[]) {
+        const dims = readJson(row.dimensions_json);
+        const values = [
+          row.student_name,
+          row.email,
+          row.team_name,
+          row.team_index,
+          row.quarter,
+          Number(row.overall_score ?? 0).toFixed(1),
+          Number(dims.financialPerformance ?? 0).toFixed(2),
+          Number(dims.financialRisk ?? 0).toFixed(2),
+          Number(dims.marketPerformance ?? 0).toFixed(2),
+          Number(dims.marketingEffectiveness ?? 0).toFixed(2),
+          Number(dims.investmentFuture ?? 0).toFixed(2),
+          Number(dims.wealthCreation ?? 0).toFixed(2),
+          Number(dims.assetManagement ?? 0).toFixed(2),
+          Number(dims.hrManagement ?? 0).toFixed(2),
+          Number(dims.manufacturingProductivity ?? 0).toFixed(2)
+        ];
+        lines.push(values.map(csvEscape).join(","));
+      }
+      const csv = lines.join("\n");
+      return new Response(csv, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "text/csv",
+          "Content-Disposition": `attachment; filename="BSC_Q${quarter}_${universeId}.csv"`
+        }
+      });
+    }
+
     if (path === "/api/d1/status" || path === "/api/d1/health") {
       if (!env.DB) {
         return new Response(

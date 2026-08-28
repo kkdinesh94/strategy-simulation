@@ -54,6 +54,7 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
   onObserveTeam
 }) => {
   const [jsonExport, setJsonExport] = useState<string>("");
+  const [bscExportQuarter, setBscExportQuarter] = useState<number>(Math.max(1, gameState.quarter - 1));
   const [internalUsers, setInternalUsers] = useState<User[]>(() => loadUsers());
   const allUsers = passedAllUsers && passedAllUsers.length > 0 ? passedAllUsers : internalUsers;
 
@@ -192,6 +193,40 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
       }
     } catch (err) {
       // ignore
+    }
+  };
+
+  const handleExportBscCsv = async () => {
+    if (bscExportQuarter < 4) {
+      onNotify("No BSC data yet.");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/balanced-scorecard/export?universe_id=${encodeURIComponent(universe.id)}&quarter=${bscExportQuarter}`);
+      if (!response.ok) {
+        onNotify("No BSC data yet.");
+        return;
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) {
+        onNotify("No BSC data yet.");
+        return;
+      }
+      const text = await blob.text();
+      if (text.trim().split("\n").length <= 1) {
+        onNotify("No BSC data yet.");
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `BSC_Q${bscExportQuarter}_${universe.id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      onNotify("No BSC data yet.");
     }
   };
 
@@ -640,6 +675,40 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
 
       {/* Instructor Visibility Controls */}
       <VisibilitySettingsPanel universeId={universe.id} onNotify={onNotify} />
+
+      {/* BSC Grade Export for LMS */}
+      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-bold text-[#1F2022]">
+              Balanced Scorecard Grade Export
+            </h3>
+            <p className="text-xs text-[#5A5C60]">
+              Download per-student BSC scores as a CSV for upload to your LMS gradebook.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={bscExportQuarter}
+              onChange={(e) => setBscExportQuarter(Number(e.target.value))}
+              className="px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-purple-600"
+            >
+              {Array.from({ length: Math.max(0, gameState.quarter - 1) }, (_, idx) => idx + 1).map((q) => (
+                <option key={q} value={q}>
+                  Quarter {q}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleExportBscCsv}
+              className="px-3.5 py-1.5 bg-[#FAF8F5] hover:bg-slate-100 text-[#1F2022] border border-[#E0DCD3] text-xs font-semibold rounded-lg transition flex items-center gap-1 font-mono"
+            >
+              ⬇ Export BSC Grades (CSV)
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Export / Import State */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
