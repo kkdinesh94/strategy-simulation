@@ -84,6 +84,11 @@ export default function App() {
     const usr = loadCurrentUser();
     return usr && usr.role === "player" ? usr.teamI : 0;
   });
+  const [observingTeamIdx, setObservingTeamIdx] = useState<number | null>(null);
+  const displayedTeamIdx =
+    (currentUser?.role === "instructor" || currentUser?.role === "admin") && observingTeamIdx !== null
+      ? observingTeamIdx
+      : activeTeamIdx;
 
   const [activeTab, setActiveTab] = useState<TabKey>("charter");
   const [isInstructorMode, setIsInstructorMode] = useState<boolean>(false);
@@ -236,7 +241,7 @@ export default function App() {
 
 
   // Ensure team index is valid
-  const currentTeam = gameState.teams[activeTeamIdx] || gameState.teams[0] || {
+  const currentTeam = gameState.teams[displayedTeamIdx] || gameState.teams[0] || {
     i: 0,
     name: "Aurora EV Motors",
     color: "#2563eb",
@@ -348,6 +353,7 @@ export default function App() {
   };
 
   const handleUpdateGameState = (newGs: GameState) => {
+    if (observingTeamIdx !== null) return;
     setGameState(newGs);
     const updatedUniv: Universe = {
       ...universe,
@@ -358,6 +364,7 @@ export default function App() {
   };
 
   const handleUpdateCurrentTeam = (updatedTeam: TeamState) => {
+    if (observingTeamIdx !== null) return;
     const changes = Object.keys({ ...(currentTeam.dec || {}), ...(updatedTeam.dec || {}) })
       .filter((field) => JSON.stringify(currentTeam.dec?.[field]) !== JSON.stringify(updatedTeam.dec?.[field]))
       .map((field) => ({
@@ -384,6 +391,7 @@ export default function App() {
   };
 
   const handleLockToggle = () => {
+    if (observingTeamIdx !== null) return;
     const isCurrentlyLocked = currentTeam.dec.locked;
 
     if (!isCurrentlyLocked) {
@@ -403,6 +411,7 @@ export default function App() {
   };
 
   const finalizeLockToggle = (isCurrentlyLocked: boolean) => {
+    if (observingTeamIdx !== null) return;
     setAuditErrors([]);
     setShowPreSubmissionModal(false);
     const updatedTeam = {
@@ -423,6 +432,7 @@ export default function App() {
   };
 
   const handleOfferLicence = async (techId: string, buyerI: number, fee: number) => {
+    if (observingTeamIdx !== null) return;
     const seller = currentTeam;
     const buyer = gameState.teams[buyerI];
     if (!buyer || buyer.i === seller.i) return;
@@ -458,6 +468,7 @@ export default function App() {
   };
 
   const handleRespondLicence = async (contractId: number, accept: boolean) => {
+    if (observingTeamIdx !== null) return;
     const updatedContracts = gameState.contracts.map((c) => {
       if (c.id === contractId) {
         return { ...c, status: accept ? ("accepted" as const) : ("rejected" as const) };
@@ -474,6 +485,7 @@ export default function App() {
   };
 
   const handleResetGame = () => {
+    if (observingTeamIdx !== null) return;
     if (confirm("Reset simulation to Quarter 1 initial state for this universe?")) {
       const resetState = newState(
         gameState.teams.map((t) => ({ name: t.name, arch: t.arch, isBot: t.isBot })),
@@ -490,6 +502,7 @@ export default function App() {
   };
 
   const handleUpdateDeadline = async (deadlineISO: string | null) => {
+    if (observingTeamIdx !== null) return;
     const updatedUniv: Universe = {
       ...universe,
       deadlineISO: deadlineISO || undefined
@@ -523,6 +536,20 @@ export default function App() {
         onUpdateDeadline={handleUpdateDeadline}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
+
+      {observingTeamIdx !== null && (currentUser.role === "instructor" || currentUser.role === "admin") && (
+        <div className="px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-bold flex items-center justify-between gap-3">
+          <span>
+            Observation mode — viewing {currentTeam.name} (read-only)
+          </span>
+          <button
+            onClick={() => setObservingTeamIdx(null)}
+            className="px-3 py-1 bg-amber-900 hover:bg-amber-950 text-white text-xs font-bold rounded-lg transition"
+          >
+            Exit observation
+          </button>
+        </div>
+      )}
 
       {quarterAdvancedTo !== null && (
         <QuarterAdvancedBanner
@@ -735,6 +762,10 @@ export default function App() {
             }}
             onSelectUniverse={handleSelectUniverse}
             onNotify={showNotification}
+            onObserveTeam={(idx) => {
+              setObservingTeamIdx(idx);
+              setActiveTab("charter");
+            }}
           />
         )}
 

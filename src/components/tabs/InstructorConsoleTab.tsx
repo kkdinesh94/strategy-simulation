@@ -24,7 +24,8 @@ import {
   Globe,
   Plus,
   Check,
-  ChevronRight
+  ChevronRight,
+  Eye
 } from "lucide-react";
 
 interface InstructorConsoleTabProps {
@@ -37,6 +38,7 @@ interface InstructorConsoleTabProps {
   onUpdateUniverse?: (updatedUniv: Universe) => void;
   onSelectUniverse?: (selectedUniv: Universe) => void;
   onNotify: (msg: string) => void;
+  onObserveTeam?: (teamIdx: number) => void;
 }
 
 export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
@@ -48,7 +50,8 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
   onUpdateState,
   onUpdateUniverse,
   onSelectUniverse,
-  onNotify
+  onNotify,
+  onObserveTeam
 }) => {
   const [jsonExport, setJsonExport] = useState<string>("");
   const [internalUsers, setInternalUsers] = useState<User[]>(() => loadUsers());
@@ -618,6 +621,16 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
                   >
                     {t.dec.locked ? "Unlock" : "Lock"}
                   </button>
+
+                  {onObserveTeam && (
+                    <button
+                      onClick={() => onObserveTeam(idx)}
+                      className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-slate-100 text-[#1F2022] flex items-center gap-1"
+                      title={`Observe Team ${idx + 1}'s dashboard (read-only)`}
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Observe
+                    </button>
+                  )}
                 </div>
               </div>
             );
