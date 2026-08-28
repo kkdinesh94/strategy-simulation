@@ -1501,6 +1501,16 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ advice: text }), { status: 200, headers: corsHeaders });
     }
 
+    if (path === "/api/game-state/quarter" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ quarter: 1 }), { status: 200, headers: corsHeaders });
+      const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      if (!universeId) return new Response(JSON.stringify({ error: "universe_id is required." }), { status: 400, headers: corsHeaders });
+      const row: any = await env.DB.prepare("SELECT game_state, updated_at FROM universes WHERE id = ? LIMIT 1").bind(universeId).first();
+      if (!row) return new Response(JSON.stringify({ error: "Simulation universe was not found." }), { status: 404, headers: corsHeaders });
+      const quarter = Number(readJson(row.game_state)?.quarter) || 1;
+      return new Response(JSON.stringify({ quarter, updatedAt: row.updated_at }), { status: 200, headers: corsHeaders });
+    }
+
     return new Response(JSON.stringify({ error: "Endpoint not found: " + path }), { status: 404, headers: corsHeaders });
   } catch (error: any) {
     return new Response(JSON.stringify({ error: error.message || "Server error" }), { status: 500, headers: corsHeaders });

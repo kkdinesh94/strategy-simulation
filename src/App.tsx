@@ -44,6 +44,8 @@ import PolicyEvents from "./components/PolicyEvents";
 import ChargingStrategy from "./components/ChargingStrategy";
 import BatteryLifecycle from "./components/BatteryLifecycle";
 import RightPanel from "./components/RightPanel";
+import { QuarterAdvancedBanner } from "./components/QuarterAdvancedBanner";
+import { useQuarterPoller } from "./hooks/useQuarterPoller";
 
 type DecisionDashboardState = {
   revision: number;
@@ -182,6 +184,14 @@ export default function App() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [currentUser?.id]);
+
+  const [quarterAdvancedTo, setQuarterAdvancedTo] = useState<number | null>(null);
+  useQuarterPoller(
+    currentUser?.role === "player" ? universe.id : "",
+    gameState.quarter,
+    setQuarterAdvancedTo,
+    30000
+  );
 
   const refreshAllData = async () => {
     try {
@@ -513,6 +523,17 @@ export default function App() {
         onUpdateDeadline={handleUpdateDeadline}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
       />
+
+      {quarterAdvancedTo !== null && (
+        <QuarterAdvancedBanner
+          newQuarter={quarterAdvancedTo}
+          onRefresh={() => {
+            refreshAllData();
+            setQuarterAdvancedTo(null);
+          }}
+          onDismiss={() => setQuarterAdvancedTo(null)}
+        />
+      )}
 
       {/* Sidebar + Main Content Row */}
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
