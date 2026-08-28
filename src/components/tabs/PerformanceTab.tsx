@@ -8,6 +8,7 @@ import SWOTAnalysis from "../SWOTAnalysis";
 import BalancedScorecard from "../BalancedScorecard";
 import DecisionHistory from "../DecisionHistory";
 import PerceptualMap from "../PerceptualMap";
+import MarketShareTrends from "../MarketShareTrends";
 import {
   sharesOf,
   stockPriceOf,
@@ -49,7 +50,7 @@ interface PerformanceTabProps {
 
 export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState, universeId, onNotify, functionalRole = "President" }) => {
   const [activeReportTab, setActiveReportTab] = useState<
-    "bsc" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news" | "swot" | "history" | "market_map"
+    "bsc" | "trends" | "statements" | "valuation" | "debrief" | "rivals" | "benchmark" | "intel" | "clinic" | "share" | "news" | "swot" | "history" | "market_map"
   >("bsc");
   const [statementType, setStatementType] = useState<"income" | "balance" | "cashflow">("income");
   const [selectedQuarter, setSelectedQuarter] = useState<number>(
@@ -78,6 +79,17 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
           }`}
         >
           <Award className="w-3.5 h-3.5 text-amber-500" /> Balanced Scorecard
+        </button>
+
+        <button
+          onClick={() => setActiveReportTab("trends")}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
+            activeReportTab === "trends"
+              ? "bg-[#1F2022] text-white shadow-sm"
+              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
+          }`}
+        >
+          <TrendingUp className="w-3.5 h-3.5 text-teal-600" /> Trends
         </button>
 
         <button onClick={() => setActiveReportTab("swot")} className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${activeReportTab === "swot" ? "bg-[#1F2022] text-white shadow-sm" : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"}`}>
@@ -868,6 +880,10 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
           universeId={universeId}
           quarter={selectedQuarter}
         />
+      )}
+
+      {activeReportTab === "trends" && (
+        <MarketShareTrends gameState={gameState} currentTeamIdx={team.i} />
       )}
 
       {/* MARKET SHARE & DEMAND */}
