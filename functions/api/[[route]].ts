@@ -799,6 +799,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // Vehicle designer catalog and brand save API.
     if (path === "/api/vehicle-designer" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const requestedQuarter = Number(url.searchParams.get("quarter") || 1);
       const currentQuarter = Number.isFinite(requestedQuarter) ? Math.max(1, requestedQuarter) : 1;
       const componentRows = await env.DB.prepare(
@@ -941,6 +942,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ plan: row ? JSON.parse(row.plan_json) : null, updatedAt: row?.updated_at || null }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/strategy-plans" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; plan?: any; isDraft?: boolean };
       const universeId = String(body.universeId || "").trim(); const teamId = Number(body.teamId); const quarter = Number(body.quarter); const plan = body.plan;
       const isDraft = Boolean(body.isDraft);
@@ -1135,6 +1137,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     }
 
     if (path === "/api/d1/pro-forma-statements" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json() as { universeId?: string; teamI?: number; quarter?: number; statement?: unknown };
       const universeId = String(body.universeId || "").trim();
       const teamI = Number(body.teamI);
@@ -1265,6 +1268,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // Batch Users
     if (path === "/api/d1/users/batch" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const { users } = await request.json();
       if (Array.isArray(users)) {
         const statements = users.map((u: any) =>
@@ -1303,6 +1307,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // 6. SQL Query Execution Console (Admin)
     if (path === "/api/d1/query" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const { sql, params = [] } = await request.json();
       if (!sql || typeof sql !== "string") {
         return new Response(JSON.stringify({ error: "No SQL provided" }), { status: 400, headers: corsHeaders });
@@ -1325,6 +1330,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     }
 
     if (path === "/api/production-schedules" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; inputs?: unknown; outputs?: unknown };
       const universeId = String(body.universeId || "").trim();
       const teamI = Number(body.teamId);
@@ -1341,6 +1347,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     }
 
     if (path === "/api/production-schedules" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = String(url.searchParams.get("universeId") || "").trim();
       const teamI = Number(url.searchParams.get("teamId"));
       const quarter = Number(url.searchParams.get("quarter"));
@@ -1425,6 +1432,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     }
 
     if (path === "/api/ad-violations" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = url.searchParams.get("universe_id");
       const query = universeId
         ? "SELECT * FROM ad_violations WHERE universe_id = ? ORDER BY created_at DESC"
@@ -1435,6 +1443,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // Gemini advisor endpoint (Cloudflare Edge compatible)
     if (path === "/api/executive-briefing" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const apiKey = env.ANTHROPIC_API_KEY;
       if (!apiKey) return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 400, headers: corsHeaders });
       const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; role?: string };
