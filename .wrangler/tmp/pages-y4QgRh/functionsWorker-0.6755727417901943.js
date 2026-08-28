@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/_internal/utils.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/_internal/utils.mjs
 // @__NO_SIDE_EFFECTS__
 function createNotImplementedError(name) {
   return new Error(`[unenv] ${name} is not implemented yet!`);
@@ -26,7 +26,7 @@ function notImplementedClass(name) {
 }
 __name(notImplementedClass, "notImplementedClass");
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/perf_hooks/performance.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/perf_hooks/performance.mjs
 var _timeOrigin = globalThis.performance?.timeOrigin ?? Date.now();
 var _performanceNow = globalThis.performance?.now ? globalThis.performance.now.bind(globalThis.performance) : () => Date.now() - _timeOrigin;
 var nodeTiming = {
@@ -264,7 +264,7 @@ var PerformanceObserver = class {
 };
 var performance = globalThis.performance && "addEventListener" in globalThis.performance ? globalThis.performance : new Performance();
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/polyfill/performance.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/polyfill/performance.mjs
 if (!("__unenv__" in performance)) {
   const proto = Performance.prototype;
   for (const key of Object.getOwnPropertyNames(proto)) {
@@ -285,14 +285,14 @@ globalThis.PerformanceObserver = PerformanceObserver;
 globalThis.PerformanceObserverEntryList = PerformanceObserverEntryList;
 globalThis.PerformanceResourceTiming = PerformanceResourceTiming;
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/console.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/console.mjs
 import { Writable } from "node:stream";
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/mock/noop.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/mock/noop.mjs
 var noop_default = Object.assign(() => {
 }, { __unenv__: true });
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/console.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/console.mjs
 var _console = globalThis.console;
 var _ignoreErrors = true;
 var _stderr = new Writable();
@@ -324,7 +324,7 @@ var _times = /* @__PURE__ */ new Map();
 var _stdoutErrorHandler = noop_default;
 var _stderrErrorHandler = noop_default;
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/node/console.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/node/console.mjs
 var workerdConsole = globalThis["console"];
 var {
   assert,
@@ -365,10 +365,10 @@ Object.assign(workerdConsole, {
 });
 var console_default = workerdConsole;
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-console
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-console
 globalThis.console = console_default;
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/hrtime.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/hrtime.mjs
 var hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtime2(startTime) {
   const now = Date.now();
   const seconds = Math.trunc(now / 1e3);
@@ -387,10 +387,10 @@ var hrtime = /* @__PURE__ */ Object.assign(/* @__PURE__ */ __name(function hrtim
   return BigInt(Date.now() * 1e6);
 }, "bigint") });
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
 import { EventEmitter } from "node:events";
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/tty/read-stream.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/tty/read-stream.mjs
 var ReadStream = class {
   static {
     __name(this, "ReadStream");
@@ -407,7 +407,7 @@ var ReadStream = class {
   }
 };
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/tty/write-stream.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/tty/write-stream.mjs
 var WriteStream = class {
   static {
     __name(this, "WriteStream");
@@ -457,10 +457,10 @@ var WriteStream = class {
   }
 };
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/node-version.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/node-version.mjs
 var NODE_VERSION = "22.14.0";
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/unenv/dist/runtime/node/internal/process/process.mjs
 var Process = class _Process extends EventEmitter {
   static {
     __name(this, "Process");
@@ -695,7 +695,7 @@ var Process = class _Process extends EventEmitter {
   _linkedBinding = void 0;
 };
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/node/process.mjs
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/@cloudflare/unenv-preset/dist/runtime/node/process.mjs
 var globalProcess = globalThis["process"];
 var getBuiltinModule = globalProcess.getBuiltinModule;
 var workerdProcess = getBuiltinModule("node:process");
@@ -925,7 +925,7 @@ var _process = {
 };
 var process_default = _process;
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-process
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/_virtual_unenv_global_polyfill-@cloudflare-unenv-preset-node-process
 globalThis.process = process_default;
 
 // ../src/lib/competitiveBenchmark.ts
@@ -2020,7 +2020,8 @@ function calculateDemand(state, universeId, policies = []) {
     const coverage = Math.max(0.05, Math.min(1, reachOf(team, salesProductivity)));
     for (const model of team.models) for (const segment of SEGMENTS) {
       const scores = scoreModel(model, team);
-      const brandJudgment = Math.max(0, Math.min(100, qualityFit(scores, segment) * 100));
+      let brandJudgment = Math.max(0, Math.min(100, qualityFit(scores, segment) * 100));
+      if (model.brandLoyaltyCarryOver) brandJudgment = Math.min(100, brandJudgment * 1.05);
       const priceJudgment = Math.max(0, Math.min(100, priceFit(model.price, segment) * 100));
       const spend = (Number(team.dec.ad) || 0) * (Number(team.dec.alloc?.[segment.id]) || 0) / 100;
       const claimFit = (team.dec.claims || []).reduce((total, claim) => total + (segment.w[claim] || 0), 0) / 100;
@@ -2155,6 +2156,90 @@ async function runQuarterWorkflow(db, universeId) {
 __name(runQuarterWorkflow, "runQuarterWorkflow");
 
 // api/[[route]].ts
+var MARKET_SURVEY_ERROR_MARGIN = { low: 0.15, medium: 0.08, high: 0.04 };
+var MARKET_SURVEY_CATALOG_FALLBACK = {
+  urban_commuter: "S2",
+  fleet_operator: "S5",
+  performance_enthusiast: "S4",
+  tech_pioneer: "S1",
+  eco_advocate: "S3"
+};
+function marketSurveyHashSeed(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i += 1) hash = Math.imul(31, hash) + str.charCodeAt(i) | 0;
+  return hash >>> 0;
+}
+__name(marketSurveyHashSeed, "marketSurveyHashSeed");
+function marketSurveyRng(seed) {
+  let a = seed;
+  return /* @__PURE__ */ __name(function random() {
+    a |= 0;
+    a = a + 1831565813 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }, "random");
+}
+__name(marketSurveyRng, "marketSurveyRng");
+function marketSurveyCatalogFallbackBase(segmentId, precisionLevel, purchaseCost) {
+  const errorMargin = MARKET_SURVEY_ERROR_MARGIN[precisionLevel] ?? 0.15;
+  const catalogId = MARKET_SURVEY_CATALOG_FALLBACK[segmentId] || SEGMENTS[0].id;
+  const seg = SEGMENTS.find((candidate) => candidate.id === catalogId) || SEGMENTS[0];
+  const scale = /* @__PURE__ */ __name((weight) => Math.round(50 + Number(weight || 0) * 3), "scale");
+  const [wtpMinBase, wtpMaxBase] = seg.wtp;
+  return {
+    precision_level: precisionLevel,
+    purchase_cost: purchaseCost,
+    segment_id: segmentId,
+    benefit_range_importance: scale(seg.w.range),
+    benefit_charging_importance: scale(seg.w.charge),
+    benefit_price_importance: scale(seg.w.econ),
+    benefit_autonomy_importance: scale(seg.w.tech),
+    benefit_design_importance: scale(seg.w.build),
+    benefit_reliability_importance: scale(seg.w.safety),
+    media_social_pref: scale(seg.w.tech),
+    media_auto_press_pref: scale(seg.w.perf),
+    media_business_press_pref: scale(seg.w.econ),
+    media_ev_forums_pref: scale(seg.w.range),
+    media_youtube_pref: scale(seg.w.build),
+    wtp_min: Math.round(wtpMinBase * 10),
+    wtp_expected: Math.round((wtpMinBase + wtpMaxBase) / 2 * 10),
+    wtp_max: Math.round(wtpMaxBase * 10),
+    segment_size_units: Math.round(seg.pct * 2e4),
+    error_margin: errorMargin
+  };
+}
+__name(marketSurveyCatalogFallbackBase, "marketSurveyCatalogFallbackBase");
+function marketSurveyVaryForQuarter(base, universeId, quarter, segmentId, precisionLevel, purchaseCost) {
+  const errorMargin = Number(base.error_margin ?? MARKET_SURVEY_ERROR_MARGIN[precisionLevel] ?? 0.15);
+  const rng = marketSurveyRng(marketSurveyHashSeed(`${universeId}:${quarter}:${segmentId}`));
+  const vary = /* @__PURE__ */ __name((value) => Math.round(Number(value || 0) * (1 + (rng() * 2 - 1) * errorMargin)), "vary");
+  return {
+    survey_id: `${universeId}:${quarter}:${precisionLevel}:${segmentId}`,
+    universe_id: universeId,
+    quarter,
+    precision_level: precisionLevel,
+    purchase_cost: purchaseCost,
+    segment_id: segmentId,
+    benefit_range_importance: vary(base.benefit_range_importance),
+    benefit_charging_importance: vary(base.benefit_charging_importance),
+    benefit_price_importance: vary(base.benefit_price_importance),
+    benefit_autonomy_importance: vary(base.benefit_autonomy_importance),
+    benefit_design_importance: vary(base.benefit_design_importance),
+    benefit_reliability_importance: vary(base.benefit_reliability_importance),
+    media_social_pref: vary(base.media_social_pref),
+    media_auto_press_pref: vary(base.media_auto_press_pref),
+    media_business_press_pref: vary(base.media_business_press_pref),
+    media_ev_forums_pref: vary(base.media_ev_forums_pref),
+    media_youtube_pref: vary(base.media_youtube_pref),
+    wtp_min: vary(base.wtp_min),
+    wtp_expected: vary(base.wtp_expected),
+    wtp_max: vary(base.wtp_max),
+    segment_size_units: vary(base.segment_size_units),
+    error_margin: errorMargin
+  };
+}
+__name(marketSurveyVaryForQuarter, "marketSurveyVaryForQuarter");
 var componentBenefitKey = {
   Battery: "range",
   Charging: "charging",
@@ -2716,16 +2801,64 @@ async function onRequest(context2) {
     if (path === "/api/market-survey" && method === "GET") {
       if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = String(url.searchParams.get("universe_id") || "").trim();
+      const teamId = String(url.searchParams.get("team_id") || "").trim();
       const quarter = Number(url.searchParams.get("quarter"));
       const precision = String(url.searchParams.get("precision") || "low").trim();
-      if (!universeId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
-        return new Response(JSON.stringify({ error: "universe_id, a positive integer quarter, and a valid precision are required." }), { status: 400, headers: corsHeaders });
+      if (!universeId || !teamId || !Number.isInteger(quarter) || quarter < 1 || !["low", "medium", "high"].includes(precision)) {
+        return new Response(JSON.stringify({ error: "universe_id, team_id, a positive integer quarter, and a valid precision are required." }), { status: 400, headers: corsHeaders });
       }
       await env2.DB.exec("CREATE TABLE IF NOT EXISTS market_survey_results (survey_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL DEFAULT 'low' CHECK (precision_level IN ('low','medium','high')), purchase_cost REAL NOT NULL DEFAULT 0, segment_id TEXT NOT NULL, benefit_range_importance REAL, benefit_charging_importance REAL, benefit_price_importance REAL, benefit_autonomy_importance REAL, benefit_design_importance REAL, benefit_reliability_importance REAL, media_social_pref REAL, media_auto_press_pref REAL, media_business_press_pref REAL, media_ev_forums_pref REAL, media_youtube_pref REAL, wtp_min REAL, wtp_expected REAL, wtp_max REAL, segment_size_units INTEGER, error_margin REAL, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, quarter, precision_level, segment_id))");
-      const rows = await env2.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").bind(universeId, quarter, precision).all();
-      const results = rows.results || [];
-      if (!results.length) return new Response(JSON.stringify({ results: [], purchased: false }), { status: 200, headers: corsHeaders });
-      return new Response(JSON.stringify({ results, purchased: true, error_margin: results[0].error_margin }), { status: 200, headers: corsHeaders });
+      await env2.DB.exec("CREATE TABLE IF NOT EXISTS market_survey_purchases (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, precision_level TEXT NOT NULL CHECK (precision_level IN ('low','medium','high')), cost REAL NOT NULL DEFAULT 0, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, precision_level))");
+      const purchaseRow = await env2.DB.prepare("SELECT 1 FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? AND precision_level = ?").bind(universeId, teamId, quarter, precision).first();
+      const purchased = Boolean(purchaseRow);
+      if (!purchased) return new Response(JSON.stringify({ results: [], purchased: false }), { status: 200, headers: corsHeaders });
+      const existingRows = await env2.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND quarter = ? AND precision_level = ? ORDER BY segment_id").bind(universeId, quarter, precision).all();
+      let results = existingRows.results || [];
+      if (!results.length) {
+        const purchaseCost = MARKET_SURVEY_COST[precision];
+        const priorSegmentRows = await env2.DB.prepare("SELECT DISTINCT segment_id FROM market_survey_results WHERE universe_id = ? AND precision_level = ?").bind(universeId, precision).all();
+        let segmentIds = (priorSegmentRows.results || []).map((row) => String(row.segment_id));
+        if (!segmentIds.length) {
+          const marketSegmentRows = await env2.DB.prepare("SELECT segment_id FROM market_segments ORDER BY segment_id").all();
+          segmentIds = (marketSegmentRows.results || []).map((row) => String(row.segment_id));
+        }
+        const generated = [];
+        for (const segmentId of segmentIds) {
+          const baseRow = await env2.DB.prepare("SELECT * FROM market_survey_results WHERE universe_id = ? AND precision_level = ? AND segment_id = ? ORDER BY quarter ASC LIMIT 1").bind(universeId, precision, segmentId).first();
+          const base = baseRow || marketSurveyCatalogFallbackBase(segmentId, precision, purchaseCost);
+          generated.push(marketSurveyVaryForQuarter(base, universeId, quarter, segmentId, precision, purchaseCost));
+        }
+        if (generated.length) {
+          await env2.DB.batch(generated.map((row) => env2.DB.prepare(
+            "INSERT INTO market_survey_results (survey_id, universe_id, quarter, precision_level, purchase_cost, segment_id, benefit_range_importance, benefit_charging_importance, benefit_price_importance, benefit_autonomy_importance, benefit_design_importance, benefit_reliability_importance, media_social_pref, media_auto_press_pref, media_business_press_pref, media_ev_forums_pref, media_youtube_pref, wtp_min, wtp_expected, wtp_max, segment_size_units, error_margin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(survey_id) DO NOTHING"
+          ).bind(
+            row.survey_id,
+            row.universe_id,
+            row.quarter,
+            row.precision_level,
+            row.purchase_cost,
+            row.segment_id,
+            row.benefit_range_importance,
+            row.benefit_charging_importance,
+            row.benefit_price_importance,
+            row.benefit_autonomy_importance,
+            row.benefit_design_importance,
+            row.benefit_reliability_importance,
+            row.media_social_pref,
+            row.media_auto_press_pref,
+            row.media_business_press_pref,
+            row.media_ev_forums_pref,
+            row.media_youtube_pref,
+            row.wtp_min,
+            row.wtp_expected,
+            row.wtp_max,
+            row.segment_size_units,
+            row.error_margin
+          )));
+        }
+        results = generated;
+      }
+      return new Response(JSON.stringify({ results, purchased: true, error_margin: results[0]?.error_margin }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/market-survey/purchase" && method === "POST") {
       if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
@@ -2748,6 +2881,7 @@ async function onRequest(context2) {
       return new Response(JSON.stringify({ success: true, cost: purchaseCost }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/vehicle-designer" && method === "GET") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const requestedQuarter = Number(url.searchParams.get("quarter") || 1);
       const currentQuarter = Number.isFinite(requestedQuarter) ? Math.max(1, requestedQuarter) : 1;
       const componentRows = await env2.DB.prepare(
@@ -2879,6 +3013,7 @@ async function onRequest(context2) {
       return new Response(JSON.stringify({ plan: row ? JSON.parse(row.plan_json) : null, updatedAt: row?.updated_at || null }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/strategy-plans" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json();
       const universeId = String(body.universeId || "").trim();
       const teamId = Number(body.teamId);
@@ -3066,6 +3201,7 @@ async function onRequest(context2) {
       }
     }
     if (path === "/api/d1/pro-forma-statements" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json();
       const universeId = String(body.universeId || "").trim();
       const teamI = Number(body.teamI);
@@ -3172,6 +3308,7 @@ async function onRequest(context2) {
       });
     }
     if (path === "/api/d1/users/batch" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const { users } = await request.json();
       if (Array.isArray(users)) {
         const statements = users.map(
@@ -3208,6 +3345,7 @@ async function onRequest(context2) {
       return new Response(JSON.stringify({ success: true, count: users?.length || 0 }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/d1/query" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const { sql, params = [] } = await request.json();
       if (!sql || typeof sql !== "string") {
         return new Response(JSON.stringify({ error: "No SQL provided" }), { status: 400, headers: corsHeaders });
@@ -3228,6 +3366,7 @@ async function onRequest(context2) {
       }
     }
     if (path === "/api/production-schedules" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = await request.json();
       const universeId = String(body.universeId || "").trim();
       const teamI = Number(body.teamId);
@@ -3242,6 +3381,7 @@ async function onRequest(context2) {
       return new Response(JSON.stringify({ success: true, scheduleId }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/production-schedules" && method === "GET") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = String(url.searchParams.get("universeId") || "").trim();
       const teamI = Number(url.searchParams.get("teamId"));
       const quarter = Number(url.searchParams.get("quarter"));
@@ -3341,12 +3481,14 @@ Ad Claims Tribunal`;
       return new Response(JSON.stringify({ success: true, ruling, offenseNumber, finePct, fineAmount, banUntil, document }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/ad-violations" && method === "GET") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const universeId = url.searchParams.get("universe_id");
       const query = universeId ? "SELECT * FROM ad_violations WHERE universe_id = ? ORDER BY created_at DESC" : "SELECT * FROM ad_violations ORDER BY created_at DESC";
       const rows = await env2.DB.prepare(query).bind(...universeId ? [universeId] : []).all();
       return new Response(JSON.stringify({ violations: rows.results || [] }), { status: 200, headers: corsHeaders });
     }
     if (path === "/api/executive-briefing" && method === "POST") {
+      if (!env2.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const apiKey = env2.ANTHROPIC_API_KEY;
       if (!apiKey) return new Response(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }), { status: 400, headers: corsHeaders });
       const body = await request.json();
@@ -3428,7 +3570,7 @@ Query: ${prompt || "Analyze our current strategy."}`
 }
 __name(onRequest, "onRequest");
 
-// ../.wrangler/tmp/pages-tK6hL0/functionsRoutes-0.5336899050912722.mjs
+// ../.wrangler/tmp/pages-y4QgRh/functionsRoutes-0.1698501754069246.mjs
 var routes = [
   {
     routePath: "/api/:route*",
@@ -3439,7 +3581,7 @@ var routes = [
   }
 ];
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/path-to-regexp/dist.es2015/index.js
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/path-to-regexp/dist.es2015/index.js
 function lexer(str) {
   var tokens = [];
   var i = 0;
@@ -3765,7 +3907,7 @@ function pathToRegexp(path, keys, options) {
 }
 __name(pathToRegexp, "pathToRegexp");
 
-// C:/Users/kdine/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/templates/pages-template-worker.ts
+// C:/Users/Admin/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/wrangler/templates/pages-template-worker.ts
 var escapeRegex = /[.+?^${}()|[\]\\]/g;
 function* executeRequest(request) {
   const requestPath = new URL(request.url).pathname;

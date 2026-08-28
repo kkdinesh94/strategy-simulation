@@ -1,4 +1,4 @@
-import { onRequest as __api___route___ts_onRequest } from "D:\\Dinesh_Academic\\Projects\\GItHub\\strategy-simulation\\functions\\api\\[[route]].ts"
+import { onRequest as __api___route___ts_onRequest } from "G:\\Other computers\\My Laptop\\Dinesh_Academic\\Projects\\GItHub\\strategy-simulation\\functions\\api\\[[route]].ts"
 
 export const routes = [
     {
