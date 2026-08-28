@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { TeamState, ScooterModel, AddonId, SegmentDef } from "../../types/simulation";
 import { CATALOG, ADDONS, TECHS, techById, SEGMENTS, ARCHETYPES, TEAM_COLORS, CLAIMS, fmtRs } from "../../engine/catalog";
-import { scoreModel, qualityFit, priceFit, enforceModelRules, mkModel, unitCost } from "../../engine/simulationEngine";
+import { scoreModel, qualityFit, enforceModelRules, mkModel, unitCost } from "../../engine/simulationEngine";
 import { jaroWinklerSimilarity } from "../../lib/jaroWinkler";
 import { ScooterVisualizer } from "../ScooterVisualizer";
 import { Plus, Edit3, AlertCircle, Wrench, Cpu, Zap, CheckCircle2, Clock, Lock, FlaskConical, X } from "lucide-react";
@@ -32,17 +32,6 @@ const SEGMENT_COLORS: Record<string, string> = {
 };
 
 const fitColor = (score: number) => (score >= 70 ? "#22C55E" : score >= 40 ? "#F59E0B" : "#EF4444");
-const fitBarClass = (score: number) => (score >= 70 ? "bg-emerald-500" : score >= 40 ? "bg-amber-500" : "bg-red-500");
-
-const MiniFitBar: React.FC<{ label: string; score: number }> = ({ label, score }) => (
-  <div className="flex items-center gap-1.5">
-    <span className="text-[9px] text-[#8A8C90] w-14 shrink-0">{label}</span>
-    <div className="flex-1 bg-slate-200 rounded-full overflow-hidden" style={{ height: 4 }}>
-      <div className={`h-full rounded-full ${fitBarClass(score)}`} style={{ width: `${Math.min(100, Math.max(0, score))}%` }} />
-    </div>
-    <span className="text-[9px] font-mono font-semibold text-[#5A5C60] w-6 text-right shrink-0">{score}</span>
-  </div>
-);
 
 export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
   team,
@@ -66,6 +55,21 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
   const [newBrandName, setNewBrandName] = useState<string>("");
 
   const currentModel = team.models[activeModelIdx] || team.models[0];
+
+  // Segment currently selected in the left-column segment picker
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string>(
+    () => currentModel?.targetSegment ?? SEGMENTS[0].id
+  );
+
+  React.useEffect(() => {
+    setSelectedSegmentId(currentModel?.targetSegment ?? SEGMENTS[0].id);
+  }, [activeModelIdx, currentModel?.id, currentModel?.targetSegment]);
+
+  const handleSegmentCardClick = (segId: string) => {
+    setSelectedSegmentId(segId);
+    const matchIdx = team.models.findIndex((m) => (m.targetSegment ?? "S2") === segId);
+    if (matchIdx !== -1) setActiveModelIdx(matchIdx);
+  };
 
   // Editable price text state to allow seamless typing and backspacing
   const [priceInput, setPriceInput] = useState<string>(() => String(currentModel?.price || 110000));
@@ -288,8 +292,14 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
   const targetSeg: SegmentDef = SEGMENTS.find((s) => s.id === targetSegId) || SEGMENTS[1];
   const topBenefitEntries = Object.entries(targetSeg.w).sort(([, a], [, b]) => b - a);
   const topBenefitKey = topBenefitEntries[0]?.[0] || "perf";
-  const topNeeds = topBenefitEntries.slice(0, 3).map(([key, val]) => `${CLAIMS[key] ?? key}: ${val}`);
   const currentTopBenefitScore = scores[topBenefitKey] || 0;
+
+  // Segment picked in the left-column card — drives the context banner
+  const bannerSeg: SegmentDef = SEGMENTS.find((s) => s.id === selectedSegmentId) || targetSeg;
+  const bannerTop2 = Object.entries(bannerSeg.w)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2)
+    .map(([key, val]) => `${CLAIMS[key] ?? key}: ${val}`);
 
   const isOptionBetter = (cat: string, optId: string): boolean => {
     if (!currentModel) return false;
@@ -345,64 +355,76 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
       </div>
 
       {/* Portfolio Coverage Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {SEGMENTS.map((segment) => {
-          const assignedBrand = team.models.find((m) => (m.targetSegment ?? "S2") === segment.id);
-          const segColor = SEGMENT_COLORS[segment.id] || "#8A8C90";
-          if (assignedBrand) {
+      <div className="bg-white p-3 rounded-xl border border-[#E5E1D8] shadow-sm">
+        <div className="text-[10px] font-mono font-semibold uppercase text-[#5A5C60] mb-2">
+          Portfolio Coverage — models targeting each segment
+        </div>
+        <div className="flex gap-2">
+          {SEGMENTS.map((segment) => {
+            const count = team.models.filter((m) => (m.targetSegment ?? "S2") === segment.id).length;
+            const fillPct = team.models.length > 0 ? Math.min(100, (count / team.models.length) * 100) : 0;
+            const segColor = SEGMENT_COLORS[segment.id] || "#8A8C90";
             return (
-              <div
-                key={segment.id}
-                className="bg-[#EAF3DE] rounded-lg p-3 text-center"
-                style={{ border: `1px solid ${segColor}` }}
-              >
-                <div className="text-[10px] text-[#5A5C60] font-mono uppercase truncate">{segment.name}</div>
-                <div className="text-xs font-bold text-[#1A4731] truncate mt-0.5">{assignedBrand.name}</div>
+              <div key={segment.id} className="flex-1 min-w-0">
+                <div className="flex items-center justify-between text-[9px] text-[#5A5C60] mb-1">
+                  <span className="truncate">{segment.name}</span>
+                  <span className="font-mono font-semibold shrink-0 ml-1">{count}</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full overflow-hidden" style={{ height: 8 }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{ width: `${fillPct}%`, backgroundColor: count > 0 ? segColor : "#D6D3D1" }}
+                  />
+                </div>
               </div>
             );
-          }
-          return (
-            <div
-              key={segment.id}
-              className="bg-[#FAF8F5] border border-dashed border-[#D6D3D1] rounded-lg p-3 text-center"
-            >
-              <div className="text-[10px] text-[#5A5C60] font-mono uppercase truncate">{segment.name}</div>
-              <div className="text-[10px] italic text-[#9CA3AF] mt-0.5">No brand yet</div>
-            </div>
-          );
-        })}
+          })}
+        </div>
       </div>
 
       {currentModel && (
         <div style={{ display: "grid", gridTemplateColumns: "200px 1fr 240px", gap: "12px" }}>
-          {/* LEFT COLUMN: Brand List */}
+          {/* LEFT COLUMN: Segment Picker */}
           <div className="space-y-2">
-            {team.models.map((m, idx) => {
-              const isActive = idx === activeModelIdx;
-              const mScores = scoreModel(m, team);
-              const mTargetSeg = SEGMENTS.find((s) => s.id === (m.targetSegment ?? "S2")) || SEGMENTS[1];
-              const segFitScore = Math.round(qualityFit(mScores, mTargetSeg) * 100);
-              const priceFitScore = Math.round(priceFit(m.price, mTargetSeg) * 100);
-              const dotColor = TEAM_COLORS[idx % TEAM_COLORS.length];
+            {SEGMENTS.map((segment) => {
+              const modelsForSeg = team.models.filter((m) => (m.targetSegment ?? "S2") === segment.id);
+              const coverage = modelsForSeg.length;
+              const isSelected = selectedSegmentId === segment.id;
+              const segColor = SEGMENT_COLORS[segment.id] || "#8A8C90";
 
               return (
                 <button
-                  key={m.id || idx}
+                  key={segment.id}
                   type="button"
-                  onClick={() => setActiveModelIdx(idx)}
+                  onClick={() => handleSegmentCardClick(segment.id)}
                   className={`w-full text-left p-2.5 rounded-lg border transition ${
-                    isActive ? "border-[#3B82F6] bg-[#EFF6FF]" : "border-[#E5E1D8] bg-white hover:bg-[#FAF8F5]"
+                    isSelected ? "border-[#3B82F6] bg-[#EFF6FF]" : "border-[#E5E1D8] bg-white hover:bg-[#FAF8F5]"
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
-                    <span className="text-xs font-medium text-[#1F2022] truncate">{m.name}</span>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: segColor }} />
+                    <span className="text-xs font-medium text-[#1F2022] truncate">{segment.name}</span>
                   </div>
-                  <div className="text-[10px] text-[#5A5C60] mb-1.5 truncate">→ {mTargetSeg.name}</div>
-                  <div className="space-y-1">
-                    <MiniFitBar label="Segment fit" score={segFitScore} />
-                    <MiniFitBar label="Price fit" score={priceFitScore} />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-[#8A8C90] shrink-0">Your coverage</span>
+                    <div className="flex-1 bg-slate-200 rounded-full overflow-hidden" style={{ height: 4 }}>
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${team.models.length > 0 ? Math.min(100, (coverage / team.models.length) * 100) : 0}%`,
+                          backgroundColor: coverage > 0 ? segColor : "#D6D3D1"
+                        }}
+                      />
+                    </div>
+                    <span className="text-[9px] font-mono font-semibold text-[#5A5C60] shrink-0">
+                      {coverage}/{team.models.length}
+                    </span>
                   </div>
+                  {coverage > 0 && (
+                    <div className="text-[10px] text-[#5A5C60] mt-1 truncate">
+                      {modelsForSeg.map((m) => m.name).join(", ")}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -474,6 +496,31 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
 
           {/* CENTRE COLUMN: Component Editor */}
           <div className="space-y-4 min-w-0">
+            {/* Model tab strip — pick which brand is being edited */}
+            {team.models.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {team.models.map((m, idx) => {
+                  const isActive = idx === activeModelIdx;
+                  const dotColor = TEAM_COLORS[idx % TEAM_COLORS.length];
+                  return (
+                    <button
+                      key={m.id || idx}
+                      type="button"
+                      onClick={() => setActiveModelIdx(idx)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition flex items-center gap-1.5 ${
+                        isActive
+                          ? "border-[#3B82F6] bg-[#EFF6FF] text-[#1F2022]"
+                          : "border-[#E0DCD3] bg-white text-[#5A5C60] hover:bg-[#FAF8F5]"
+                      }`}
+                    >
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Header: brand name + segment badge + segment selector + rename */}
             <div className="bg-white p-4 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -506,10 +553,9 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
               </div>
             </div>
 
-            {/* Segment context banner */}
+            {/* Segment context banner — reflects the segment picked in the left column */}
             <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-lg px-3 py-2 text-xs text-[#1F2022]">
-              <strong>{targetSeg.name}</strong> customers need most: {topNeeds.join(" · ")}. Design your components
-              to match these priorities.
+              <strong>{bannerSeg.name}</strong> — top priorities: {bannerTop2.join(" · ")}
             </div>
 
             {/* Unit Economics & Pricing */}
