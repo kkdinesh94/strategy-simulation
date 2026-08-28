@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ClipboardList, RefreshCw } from "lucide-react";
 import { executeD1Query } from "../lib/cloudflareD1";
 
-const QUARTER_ITEMS = {
+export const QUARTER_ITEMS = {
   1: [
     ["Register team, company name and mission", "charter", "decisions"],
     ["Purchase market survey", "charter", "decisions"]
@@ -61,7 +61,7 @@ const RECORD_QUERIES = {
   scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]]
 };
 
-function quarterItems(quarter) {
+export function quarterItems(quarter) {
   if (quarter >= 9) return QUARTER_ITEMS.final;
   if (quarter >= 6) return QUARTER_ITEMS.continuous;
   return QUARTER_ITEMS[quarter] || QUARTER_ITEMS[5];

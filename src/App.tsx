@@ -38,6 +38,8 @@ import { HelpManualTab } from "./components/tabs/HelpManualTab";
 import { AIConsultantModal } from "./components/AIConsultantModal";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
+import { OnboardingModal } from "./components/OnboardingModal";
+import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding";
 import { StrategySummary } from "./components/StrategyWizard";
 import { CheckCircle, AlertTriangle } from "lucide-react";
 import PolicyEvents from "./components/PolicyEvents";
@@ -95,6 +97,7 @@ export default function App() {
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
   const [showPreSubmissionModal, setShowPreSubmissionModal] = useState<boolean>(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [auditErrors, setAuditErrors] = useState<string[]>([]);
   const [decisionDashboard, dispatchDecisionDashboard] = useReducer(decisionDashboardReducer, {
@@ -238,6 +241,15 @@ export default function App() {
       setGameState(universe.gameState);
     }
   }, [universe]);
+
+  // First-time player onboarding
+  useEffect(() => {
+    if (currentUser && currentUser.role === "player" && !hasCompletedOnboarding(currentUser.id)) {
+      setShowOnboarding(true);
+    } else {
+      setShowOnboarding(false);
+    }
+  }, [currentUser?.id, currentUser?.role]);
 
 
   // Ensure team index is valid
@@ -833,6 +845,20 @@ export default function App() {
             setAllUsers(loadUsers());
           }}
           onNotify={showNotification}
+        />
+      )}
+
+      {/* First-time Player Onboarding Modal */}
+      {currentUser && currentUser.role === "player" && (
+        <OnboardingModal
+          isOpen={showOnboarding}
+          user={currentUser}
+          team={currentTeam}
+          gameState={gameState}
+          onComplete={() => {
+            markOnboardingComplete(currentUser.id);
+            setShowOnboarding(false);
+          }}
         />
       )}
 
