@@ -83,6 +83,7 @@ export interface ScooterModel {
   inv: number; // unsold units
   isNew?: boolean;
   targetSegment?: string; // segment id e.g. "S1", "S2" — defaults to "S2"
+  brandLoyaltyCarryOver?: boolean; // set when a rename qualifies as a line extension (Jaro-Winkler >= 0.6)
 }
 
 export interface TeamMember {

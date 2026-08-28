@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { TeamState, ScooterModel, AddonId, SegmentDef } from "../../types/simulation";
 import { CATALOG, ADDONS, TECHS, techById, SEGMENTS, ARCHETYPES, TEAM_COLORS, CLAIMS, fmtRs } from "../../engine/catalog";
 import { scoreModel, qualityFit, priceFit, enforceModelRules, mkModel, unitCost } from "../../engine/simulationEngine";
+import { jaroWinklerSimilarity } from "../../lib/jaroWinkler";
 import { ScooterVisualizer } from "../ScooterVisualizer";
 import { Plus, Edit3, AlertCircle, Wrench, Cpu, Zap, CheckCircle2, Clock, Lock, FlaskConical, X } from "lucide-react";
 
@@ -200,13 +201,16 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
     e.preventDefault();
     if (isLocked) return;
     if (renameInput && renameInput.trim()) {
+      const trimmedName = renameInput.trim().substring(0, 30);
+      const brandLoyaltyCarryOver = jaroWinklerSimilarity(currentModel.name, trimmedName) >= 0.6;
       const updatedModels = [...team.models];
       updatedModels[activeModelIdx] = {
         ...updatedModels[activeModelIdx],
-        name: renameInput.trim().substring(0, 30)
+        name: trimmedName,
+        brandLoyaltyCarryOver
       };
       onChange({ ...team, models: updatedModels });
-      onNotify(`Brand name updated to "${renameInput.trim().substring(0, 30)}"`);
+      onNotify(`Brand name updated to "${trimmedName}"`);
     }
     setIsRenameModalOpen(false);
   };
@@ -939,6 +943,29 @@ export const ProductDesignTab: React.FC<ProductDesignTabProps> = ({
                   This brand name will appear in advertisement claims, market share reports, and customer choice matrices.
                 </p>
               </div>
+
+              {(() => {
+                const priorName = currentModel?.name || "";
+                const similarity = renameInput.trim() && priorName ? jaroWinklerSimilarity(priorName, renameInput.trim()) : 0;
+                const isExtension = similarity >= 0.6;
+                return (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-[#5A5C60] font-medium">
+                      <span>Brand continuity: {Math.round(similarity * 100)}%</span>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                          isExtension ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {isExtension ? "✓ Line extension — demand head-start applies" : "◌ New brand — starts with no inherited awareness"}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[#8A8C90]">
+                      e.g. ZapX → ZapX Pro qualifies. ZapX → ThunderBolt does not.
+                    </p>
+                  </div>
+                );
+              })()}
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E5E1D8]">
                 <button

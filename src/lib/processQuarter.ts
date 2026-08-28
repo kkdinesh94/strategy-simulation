@@ -77,7 +77,10 @@ export function calculateDemand(state: GameState, universeId: string, policies: 
     const coverage = Math.max(0.05, Math.min(1, reachOf(team, salesProductivity)));
     for (const model of team.models) for (const segment of SEGMENTS) {
       const scores = scoreModel(model, team);
-      const brandJudgment = Math.max(0, Math.min(100, qualityFit(scores, segment) * 100));
+      let brandJudgment = Math.max(0, Math.min(100, qualityFit(scores, segment) * 100));
+      // Line-extension naming bonus (Jaro-Winkler >= 0.6): a rename judged as a continuation
+      // of the prior brand carries over some inherited awareness instead of starting cold.
+      if (model.brandLoyaltyCarryOver) brandJudgment = Math.min(100, brandJudgment * 1.05);
       const priceJudgment = Math.max(0, Math.min(100, priceFit(model.price, segment) * 100));
       const spend = (Number(team.dec.ad) || 0) * (Number(team.dec.alloc?.[segment.id]) || 0) / 100;
       const claimFit = (team.dec.claims || []).reduce((total, claim) => total + (segment.w[claim] || 0), 0) / 100;
