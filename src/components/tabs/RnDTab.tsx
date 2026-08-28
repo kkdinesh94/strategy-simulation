@@ -3,6 +3,7 @@ import { TeamState, GameState } from "../../types/simulation";
 import { TECHS, techById, fmtRs } from "../../engine/catalog";
 import { Cpu, Handshake, CheckCircle2, Clock, Zap, DollarSign } from "lucide-react";
 import { RnDVisualizer } from "../RnDVisualizer";
+import { RDPipelineRoadmap } from "../RDPipelineRoadmap";
 import LicensingBoard from "../LicensingBoard";
 
 interface RnDTabProps {
@@ -90,6 +91,9 @@ export const RnDTab: React.FC<RnDTabProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* R&D Pipeline Gantt Roadmap */}
+      <RDPipelineRoadmap team={team} gameState={gameState} />
+
       {/* Intro Banner */}
       <div className="bg-[#FAF8F5] p-6 rounded-xl border border-[#E5E1D8] shadow-2xs">
         <div className="flex items-center gap-3 mb-2">
