@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Globe2, MapPin, Radio, Users } from "lucide-react";
+import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
+import worldTopoJson from "world-atlas/countries-110m.json";
 
 const offices = [
   ["Shanghai", "Asia-Pacific", 121.47, 31.23, 420000, "urban commuter 38%, fleet operator 24%, tech pioneer 16%", "0"],
@@ -26,13 +28,6 @@ const offices = [
 
 const regions = ["All regions", "Asia-Pacific", "North America", "Europe", "Emerging Markets"];
 const colors = { owned: "#17804f", competitor: "#c83e2b", open: "#7b8585" };
-const continents = [
-  "M 105 95 L 210 58 L 320 82 L 370 132 L 320 178 L 240 172 L 190 140 L 125 150 Z",
-  "M 390 78 L 475 53 L 555 78 L 588 130 L 545 170 L 450 160 L 410 125 Z",
-  "M 565 190 L 665 175 L 760 208 L 780 280 L 725 345 L 650 330 L 620 275 L 570 245 Z",
-  "M 160 225 L 235 215 L 275 275 L 255 355 L 205 405 L 160 340 L 175 285 Z",
-  "M 790 340 L 875 320 L 965 345 L 940 390 L 820 385 Z"
-];
 
 export default function TerritoryMap({ team }) {
   const [selected, setSelected] = useState(offices[0]);
@@ -40,7 +35,6 @@ export default function TerritoryMap({ team }) {
   const activeTeamId = String(team?.i ?? 0);
   const visibleOffices = offices.filter((office) => region === "All regions" || office.region === region);
   const statusOf = (office) => office.teamId === activeTeamId ? "owned" : office.teamId ? "competitor" : "open";
-  const point = (office) => ({ x: ((office.lon + 180) / 360) * 1000, y: ((90 - office.lat) / 180) * 440 });
 
   return <section className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#E5E1D8] pb-3">
@@ -48,11 +42,15 @@ export default function TerritoryMap({ team }) {
       <select value={region} onChange={(event) => setRegion(event.target.value)} className="rounded-lg border border-[#E0DCD3] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#1F2022]">{regions.map((item) => <option key={item}>{item}</option>)}</select>
     </div>
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px] gap-4">
-      <div className="overflow-hidden rounded-xl border border-[#D8E0DE] bg-[#eaf2f0]">
-        <svg viewBox="0 0 1000 440" role="img" aria-label="Interactive world map of EV sales office territories" className="w-full h-auto min-h-[280px]">
-          <rect width="1000" height="440" fill="#eaf2f0" />{continents.map((path) => <path key={path} d={path} fill="#cbd8d3" stroke="#aebdb7" strokeWidth="2" />)}
-          {visibleOffices.map((office) => { const { x, y } = point(office); const status = statusOf(office); return <g key={office.city} transform={`translate(${x} ${y})`} onClick={() => setSelected(office)} className="cursor-pointer"><circle r={selected.city === office.city ? 10 : 7} fill={colors[status]} stroke="white" strokeWidth="3" /><circle r="13" fill="none" stroke={colors[status]} strokeWidth="2" opacity={selected.city === office.city ? 0.7 : 0} /><title>{office.city}: {status}</title></g>; })}
-        </svg>
+      <div className="overflow-hidden rounded-xl border border-[#D8E0DE] bg-[#FAF8F5]">
+        <div role="img" aria-label="Interactive world map of EV sales office territories" className="w-full min-h-[280px]">
+          <ComposableMap projection="geoNaturalEarth1" projectionConfig={{ scale: 150 }} style={{ width: "100%", height: "auto" }}>
+            <Geographies geography={worldTopoJson}>
+              {({ geographies }) => geographies.map((geo) => <Geography key={geo.rsmKey} geography={geo} fill="#EDE9DD" stroke="#E5E1D8" strokeWidth={0.6} style={{ default: { outline: "none" }, hover: { outline: "none", fill: "#E5E1D8" }, pressed: { outline: "none" } }} />)}
+            </Geographies>
+            {visibleOffices.map((office) => { const status = statusOf(office); const isSelected = selected.city === office.city; return <Marker key={office.city} coordinates={[office.lon, office.lat]} onClick={() => setSelected(office)} style={{ default: { cursor: "pointer" }, hover: { cursor: "pointer" }, pressed: { cursor: "pointer" } }}><circle r={isSelected ? 6 : 4.5} fill={colors[status]} stroke="white" strokeWidth={1.5} /><circle r={9} fill="none" stroke={colors[status]} strokeWidth={1.5} opacity={isSelected ? 0.7 : 0} /><title>{office.city}: {status}</title></Marker>; })}
+          </ComposableMap>
+        </div>
         <div className="flex flex-wrap gap-4 border-t border-[#D8E0DE] bg-white px-4 py-3 text-[11px] font-semibold text-[#5A5C60]"><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-[#17804f]" />Owned</span><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-[#7b8585]" />Unoccupied</span><span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-[#c83e2b]" />Competitor</span></div>
       </div>
       <div className="rounded-xl border border-[#E0DCD3] bg-[#FAF8F5] p-4 space-y-4" aria-live="polite"><div><div className="text-[10px] font-mono font-bold uppercase tracking-wide text-[#7B8585]">{selected.region}</div><h4 className="mt-1 text-lg font-bold text-[#1F2022]">{selected.city}</h4></div><div className="flex items-center gap-2 text-xs font-bold" style={{ color: colors[statusOf(selected)] }}><Radio className="h-4 w-4" />{statusOf(selected) === "owned" ? "Owned office" : statusOf(selected) === "competitor" ? "Competitor office" : "Unoccupied territory"}</div><div className="grid grid-cols-2 gap-2"><div className="rounded-lg bg-white p-3"><div className="text-[10px] text-[#7B8585]">Market size</div><div className="mt-1 font-mono text-sm font-bold text-[#1F2022]">{(selected.marketSize / 1000).toFixed(0)}k</div><div className="text-[10px] text-[#7B8585]">EV units / year</div></div><div className="rounded-lg bg-white p-3"><div className="text-[10px] text-[#7B8585]">Sales team</div><div className="mt-1 flex items-center gap-1 font-mono text-sm font-bold text-[#1F2022]"><Users className="h-3.5 w-3.5" />{selected.teamId ? selected.teamId === activeTeamId ? "Your team" : "Rival" : "Open"}</div></div></div><div><div className="mb-1 text-[10px] font-bold uppercase text-[#7B8585]">Segment composition</div><p className="text-xs leading-5 text-[#3f4545]">{selected.profile}</p></div><div className="flex items-center gap-2 border-t border-[#E0DCD3] pt-3 text-[11px] text-[#5A5C60]"><MapPin className="h-4 w-4 text-indigo-600" />{selected.teamId ? "Active office network" : "Available for expansion"}</div></div>
