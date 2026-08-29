@@ -191,6 +191,33 @@ export const BASE_PLATFORM = 14000;
 export const ASSEMBLY = 4000;
 export const HR = { salesCost: 3.5, plantRate: 0.012, min: 80, max: 130 };
 export const CENTRE = { open: 40, opex: 8 };
+
+// Curated store/outlet markets. Entry cost scales with market size (bigger
+// markets cost more to enter but grant a bigger reach bonus once occupied).
+// demandBonus is added to reachOf() and split between every team present
+// in the same city, so being first into a large market is worth more.
+export const MARKETS: {
+  id: string;
+  city: string;
+  region: string;
+  lon: number;
+  lat: number;
+  marketSize: number; // EV units / year
+  entryCost: number; // Rs. L, one-time
+  demandBonus: number; // added to reachOf() when occupied, split among competitors in the city
+}[] = [
+  { id: "del", city: "Delhi-NCR", region: "India", lon: 77.1, lat: 28.6, marketSize: 480000, entryCost: 55, demandBonus: 0.096 },
+  { id: "bom", city: "Mumbai-Pune", region: "India", lon: 72.88, lat: 19.08, marketSize: 520000, entryCost: 60, demandBonus: 0.104 },
+  { id: "blr", city: "Bengaluru-Chennai", region: "India", lon: 77.59, lat: 12.97, marketSize: 400000, entryCost: 50, demandBonus: 0.08 },
+  { id: "ccu", city: "Kolkata / Tier-2", region: "India", lon: 88.36, lat: 22.57, marketSize: 220000, entryCost: 30, demandBonus: 0.044 },
+  { id: "dxb", city: "Singapore / Dubai", region: "Global Export", lon: 55.27, lat: 25.2, marketSize: 150000, entryCost: 80, demandBonus: 0.03 },
+  { id: "sha", city: "Shanghai", region: "Asia-Pacific", lon: 121.47, lat: 31.23, marketSize: 420000, entryCost: 65, demandBonus: 0.084 },
+  { id: "lon", city: "London", region: "Europe", lon: -0.13, lat: 51.51, marketSize: 390000, entryCost: 70, demandBonus: 0.078 },
+  { id: "sfo", city: "San Francisco", region: "North America", lon: -122.42, lat: 37.77, marketSize: 180000, entryCost: 58, demandBonus: 0.036 },
+  { id: "gru", city: "São Paulo", region: "Emerging Markets", lon: -46.63, lat: -23.55, marketSize: 460000, entryCost: 45, demandBonus: 0.092 },
+  { id: "nbo", city: "Nairobi", region: "Emerging Markets", lon: 36.82, lat: -1.29, marketSize: 85000, entryCost: 22, demandBonus: 0.017 }
+];
+export const DEFAULT_MARKET_IDS = ["del", "blr", "bom", "ccu"];
 export const CAP_BLOCK = { units: 500, cost: 120 };
 export const DEP_RATE = 0.04;
 export const HOLD_COST = 0.015;

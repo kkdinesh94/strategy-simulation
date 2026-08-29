@@ -22,8 +22,36 @@ import {
   HOLD_COST,
   TEAM_COLORS,
   ARCHETYPES,
+  MARKETS,
+  DEFAULT_MARKET_IDS,
   techById
 } from "./catalog";
+
+export function marketById(id: string) {
+  return MARKETS.find((m) => m.id === id);
+}
+
+// One-time entry cost to open stores in the given cities this quarter.
+export function centreOpenCost(cityIds: string[] | undefined): number {
+  if (!cityIds || cityIds.length === 0) return 0;
+  return cityIds.reduce((sum, id) => sum + (marketById(id)?.entryCost ?? CENTRE.open), 0);
+}
+
+// How many teams (including this one) currently have a store in a city.
+export function cityOccupancy(st: GameState, cityId: string): number {
+  return st.teams.reduce((n, t) => n + ((t.storeCities || []).includes(cityId) ? 1 : 0), 0);
+}
+
+// Extra reach earned from a team's occupied markets, split between every
+// team present in the same city so being first into a large market pays off.
+export function marketBonusOf(st: GameState, t: TeamState): number {
+  return (t.storeCities || []).reduce((sum, id) => {
+    const market = marketById(id);
+    if (!market) return sum;
+    const occupants = Math.max(1, cityOccupancy(st, id));
+    return sum + market.demandBonus / occupants;
+  }, 0);
+}
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 export const clamp10 = (v: number) => clamp(v, 0, 10);
@@ -259,8 +287,8 @@ export function hrMults(st: GameState, t: TeamState): { sales: number; plant: nu
   return { sales: f(t.hr.sales, mean("sales")), plant: f(t.hr.plant, mean("plant")) };
 }
 
-export function reachOf(t: { centres: number; staff: number }, salesMult?: number): number {
-  return clamp(1 - Math.exp(-(t.centres * 0.28 + t.staff * (salesMult || 1) * 0.035)), 0.15, 0.97);
+export function reachOf(t: { centres: number; staff: number }, salesMult?: number, marketBonus?: number): number {
+  return clamp(1 - Math.exp(-(t.centres * 0.28 + t.staff * (salesMult || 1) * 0.035 + (marketBonus || 0))), 0.15, 0.97);
 }
 
 export function futureInvOf(r: QuarterResult): number {
@@ -342,7 +370,7 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const dev = +t.dec.devCost || 0;
   const rnd = +t.dec.rndStartCost || 0;
   const research = (t.dec.buyIntel ? 15 : 0) + (t.dec.buyClinic ? 10 : 0);
-  const centreOpen = (+t.dec.newCentres || 0) * CENTRE.open;
+  const centreOpen = centreOpenCost(t.dec.newCentreCities);
   const capex = (+t.dec.expBlocks || 0) * CAP_BLOCK.cost;
 
   const newStaff = t.staff + (+t.dec.hire || 0);
@@ -465,6 +493,18 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
     errs.push("Bank interest rate must be between 0% and 25% per quarter.");
   }
 
+  const newCentreCities = t.dec.newCentreCities || [];
+  if (newCentreCities.length > 2) {
+    errs.push("You may open stores in at most 2 new cities per quarter.");
+  }
+  for (const id of newCentreCities) {
+    if (!marketById(id)) errs.push(`Unknown market "${id}" selected for a new store.`);
+    else if ((t.storeCities || []).includes(id)) errs.push(`Your team already has a store in ${marketById(id)!.city}.`);
+  }
+  if (new Set(newCentreCities).size !== newCentreCities.length) {
+    errs.push("Duplicate city selected for a new store this quarter.");
+  }
+
   const newStaff = t.staff + (t.dec.hire || 0);
   const newCentres = t.centres + (t.dec.newCentres || 0);
   if (newStaff > 8 * newCentres) {
@@ -481,7 +521,7 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
     const bigSpend =
       (t.dec.rndStartCost || 0) +
       (t.dec.expBlocks || 0) * CAP_BLOCK.cost +
-      (t.dec.newCentres || 0) * CENTRE.open;
+      centreOpenCost(t.dec.newCentreCities);
     if (bigSpend > 0.9 * Math.max(0, equityOf(t))) {
       errs.push(
         `Auditor limit: R&D, expansion and new centres this quarter (Rs. ${bigSpend.toFixed(
@@ -600,11 +640,13 @@ export function simulateQuarter(st: GameState) {
 
   for (const t of st.teams) {
     t.staff = Math.max(0, t.staff + (t.dec.hire || 0));
-    t.centres += t.dec.newCentres || 0;
+    const newCities = (t.dec.newCentreCities || []).filter((id) => !(t.storeCities || []).includes(id));
+    t.storeCities = [...(t.storeCities || []), ...newCities];
+    t.centres = t.storeCities.length;
   }
   for (const t of st.teams) {
     (t as any)._hrM = hrMults(st, t);
-    (t as any)._reach = reachOf(t, (t as any)._hrM.sales);
+    (t as any)._reach = reachOf(t, (t as any)._hrM.sales, marketBonusOf(st, t));
   }
 
   for (const t of st.teams) {
@@ -760,7 +802,7 @@ export function simulateQuarter(st: GameState) {
     const salesPayroll = t.staff * HR.salesCost * (t.hr.sales / 100);
     const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
     const netOpex = t.centres * CENTRE.opex;
-    const centreOpen = (t.dec.newCentres || 0) * CENTRE.open;
+    const centreOpen = centreOpenCost(t.dec.newCentreCities);
     const fixed = 50 + 0.02 * t.capacity;
     const ga = 30 + 0.02 * revenue;
     const reliab = reliabilityOf(t);
@@ -1144,6 +1186,7 @@ export function simulateQuarter(st: GameState) {
     t.dec.devCost = 0;
     t.dec.rndStartCost = 0;
     t.dec.newCentres = 0;
+    t.dec.newCentreCities = [];
     t.dec.hire = 0;
     t.dec.expBlocks = 0;
     t.dec.ltIssue = 0;
@@ -1354,10 +1397,16 @@ export function botDecide(t: TeamState, st: GameState) {
   t.hr = { sales: 105, plant: 105 };
 
   t.dec.newCentres = 0;
+  t.dec.newCentreCities = [];
   t.dec.hire = 0;
-  if (t.cash > 900 && st.quarter % 3 === 0 && t.centres < 10) {
-    t.dec.newCentres = 1;
-    t.dec.hire = 5;
+  if (t.cash > 900 && st.quarter % 3 === 0 && t.centres < MARKETS.length) {
+    const owned = t.storeCities || [];
+    const pick = [...MARKETS].filter((m) => !owned.includes(m.id)).sort((a, b) => a.entryCost - b.entryCost)[0];
+    if (pick && pick.entryCost <= Math.max(0, t.cash - 300)) {
+      t.dec.newCentres = 1;
+      t.dec.newCentreCities = [pick.id];
+      t.dec.hire = 5;
+    }
   }
 
   t.dec.rndStartCost = 0;
@@ -1503,7 +1552,8 @@ export function newState(
         capacity: 2500,
         ppe: 600,
         hr: { sales: 100, plant: 100 },
-        centres: 4,
+        centres: DEFAULT_MARKET_IDS.length,
+        storeCities: [...DEFAULT_MARKET_IDS],
         staff: 20,
         qualityCum: 0,
         techs: [],
@@ -1530,6 +1580,7 @@ export function newState(
           quality: 0,
           expBlocks: 0,
           newCentres: 0,
+          newCentreCities: [],
           hire: 0,
           bankTarget: 0,
           ltIssue: 0,

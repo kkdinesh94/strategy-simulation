@@ -1,8 +1,8 @@
 import React from "react";
 import { TeamState, GameState } from "../../types/simulation";
-import { CENTRE, HR, fmtRs } from "../../engine/catalog";
-import { reachOf, hrMults } from "../../engine/simulationEngine";
-import { Store, Users, MapPin, DollarSign, Award, Globe, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
+import { CENTRE, HR, MARKETS, fmtRs } from "../../engine/catalog";
+import { reachOf, hrMults, centreOpenCost, marketBonusOf } from "../../engine/simulationEngine";
+import { Store, Users, MapPin, DollarSign, Award, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
 import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
 import SalesForceManager from "../SalesForceManager";
@@ -22,13 +22,23 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 }) => {
   const isLocked = team.dec.locked;
 
-  const handleCentresChange = (val: number) => {
-    if (isLocked) return;
+  const ownedCities = team.storeCities || [];
+  const pendingCities = team.dec.newCentreCities || [];
+
+  const handleToggleCity = (cityId: string) => {
+    if (isLocked || ownedCities.includes(cityId)) return;
+    const already = pendingCities.includes(cityId);
+    const next = already
+      ? pendingCities.filter((id) => id !== cityId)
+      : pendingCities.length < 2
+      ? [...pendingCities, cityId]
+      : pendingCities;
     onChange({
       ...team,
       dec: {
         ...team.dec,
-        newCentres: Math.max(0, Math.min(2, Math.round(val)))
+        newCentreCities: next,
+        newCentres: next.length
       }
     });
   };
@@ -72,18 +82,14 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
   const isWebStoreActive = !!team.dec.webStore;
   const hrM = hrMults(gameState, team);
-  let netReach = reachOf({ centres: totalCentres, staff: totalStaff }, hrM.sales);
+  const marketBonus = marketBonusOf(gameState, team);
+  let netReach = reachOf({ centres: totalCentres, staff: totalStaff }, hrM.sales, marketBonus);
   if (isWebStoreActive) {
     netReach = Math.min(0.98, netReach + 0.12); // Digital web store expands reach
   }
 
-  const territories = [
-    { name: "Metro North (Delhi-NCR)", hub: "Delhi / Gurugram / Noida", demand: "High Volume, Winter Range & Commuters", cost: "Rs. 40 L / center", status: "Primary Regional Hub" },
-    { name: "Metro South (Bengaluru/Chennai)", hub: "Bengaluru / Chennai / Hyd", demand: "High Tech Adoption & Premium Commuters", cost: "Rs. 50 L / center", status: "Primary Regional Hub" },
-    { name: "Metro West (Mumbai/Pune)", hub: "Mumbai / Pune / Ahmedabad", demand: "Dense Urban Traffic & Commercial Fleets", cost: "Rs. 45 L / center", status: "Primary Regional Hub" },
-    { name: "East & Tier-2 Hubs", hub: "Kolkata / Jaipur / Kochi", demand: "Price Sensitive & Emerging EV Adoption", cost: "Rs. 30 L / center", status: "Expansion Territory" },
-    { name: "Global Export Gateway", hub: "Singapore / Dubai / EU Gateway", demand: "Premium Export Duty Cycles & High WTP", cost: "Rs. 80 L / center", status: "Global Export" }
-  ];
+  const newCentreCost = centreOpenCost(pendingCities);
+  const otherTeams = gameState.teams.filter((t) => t !== team);
 
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
@@ -116,7 +122,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
       <WebSalesCenter team={team} gameState={gameState} />
 
-      <TerritoryMap team={team} />
+      <TerritoryMap team={team} gameState={gameState} />
 
       <SalesForceManager team={team} gameState={gameState} onChange={onChange} />
 
@@ -144,22 +150,10 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
               <span className="text-[#5A5C60]">Currently Operational Centers:</span>
               <span className="font-bold text-[#1F2022]">{team.centres}</span>
             </div>
-            <div className="flex justify-between items-center py-1 border-b border-[#E5E1D8]">
-              <span className="text-[#5A5C60]">Open New Centers This Qtr (Max 2):</span>
-              <input
-                type="number"
-                min={0}
-                max={2}
-                value={team.dec.newCentres || 0}
-                disabled={isLocked}
-                onChange={(e) => handleCentresChange(+e.target.value)}
-                className="w-20 p-1.5 text-right border border-[#E0DCD3] rounded-lg font-bold text-[#1F2022] bg-[#FAF8F5]"
-              />
-            </div>
             <div className="flex justify-between py-1 border-b border-[#E5E1D8]">
-              <span className="text-[#5A5C60]">Opening Capex (Rs. 40 L / center avg):</span>
+              <span className="text-[#5A5C60]">Opening Capex ({pendingCities.length}/2 cities selected):</span>
               <span className="font-bold text-emerald-700">
-                Rs. {(team.dec.newCentres || 0) * CENTRE.open} L
+                Rs. {newCentreCost} L
               </span>
             </div>
             <div className="flex justify-between py-1">
@@ -168,6 +162,54 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
                 Rs. {totalCentres * CENTRE.opex} L / qtr
               </span>
             </div>
+          </div>
+
+          <div className="space-y-2 pt-1">
+            <div className="text-[10px] font-bold uppercase text-[#7B8585]">
+              Pick up to 2 markets to enter this quarter
+            </div>
+            {MARKETS.map((market) => {
+              const owned = ownedCities.includes(market.id);
+              const pending = pendingCities.includes(market.id);
+              const rivals = otherTeams.filter((t) => (t.storeCities || []).includes(market.id));
+              const disabled = isLocked || owned || (!pending && pendingCities.length >= 2);
+              return (
+                <label
+                  key={market.id}
+                  className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-xs ${
+                    owned
+                      ? "bg-emerald-50 border-emerald-200"
+                      : pending
+                      ? "bg-amber-50 border-amber-300"
+                      : "bg-[#FAF8F5] border-[#E0DCD3]"
+                  } ${disabled && !owned && !pending ? "opacity-50" : ""}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={owned || pending}
+                      disabled={disabled}
+                      onChange={() => handleToggleCity(market.id)}
+                      className="accent-emerald-700"
+                    />
+                    <div>
+                      <div className="font-bold text-[#1F2022]">{market.city}</div>
+                      <div className="text-[10px] text-[#5A5C60]">
+                        {market.region} · {(market.marketSize / 1000).toFixed(0)}k units/yr
+                        {rivals.length > 0 && <span className="text-red-600 font-semibold"> · {rivals.length} rival{rivals.length > 1 ? "s" : ""} here</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    {owned ? (
+                      <span className="text-[10px] font-bold text-emerald-700">Owned</span>
+                    ) : (
+                      <span className="font-bold text-[#1F2022]">Rs. {market.entryCost} L</span>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
           </div>
         </div>
 
@@ -314,46 +356,6 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
               </div>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Regional Indian & Global Territory Map */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
-        <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
-          <Globe className="w-5 h-5 text-indigo-600" />
-          <div>
-            <h3 className="text-base font-bold text-[#1F2022]">
-              Regional Indian Market Territories & Global Export Hubs
-            </h3>
-            <p className="text-xs text-[#5A5C60]">
-              Select territory locations when placing new Experience Centers based on regional demand characteristics.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {territories.map((t, idx) => (
-            <div
-              key={idx}
-              className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E5E1D8] space-y-2"
-            >
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-xs text-[#1F2022]">
-                  {t.name}
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-mono bg-indigo-50 text-indigo-800 border border-indigo-200 rounded font-semibold">
-                  {t.status}
-                </span>
-              </div>
-              <div className="text-xs text-[#1F2022] font-semibold">
-                Hub Cities: {t.hub}
-              </div>
-              <div className="text-[11px] text-[#5A5C60]">{t.demand}</div>
-              <div className="text-[10px] font-mono font-bold text-emerald-700 pt-1 border-t border-[#E0DCD3]">
-                Setup Cost: {t.cost}
-              </div>
-            </div>
-          ))}
         </div>
       </div>
     </div>

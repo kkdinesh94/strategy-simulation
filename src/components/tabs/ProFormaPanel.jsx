@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Play, Save } from "lucide-react";
-import { proFormaCalc, unitCost } from "../../engine/simulationEngine";
+import { proFormaCalc, unitCost, centreOpenCost } from "../../engine/simulationEngine";
 import { CENTRE, CAP_BLOCK, HR } from "../../engine/catalog";
 import { saveProFormaStatement } from "../../lib/cloudflareD1";
 
@@ -31,7 +31,7 @@ export function ProFormaPanel({ team, gameState, universeId, onNotify, compact =
     const operatingExpenses = totalOutflows - pf.materials;
     const netIncome = grossMargin - operatingExpenses;
     const inventory = team.models.reduce((total, model) => total + (Number(model.inv) || 0) * unitCost(model) / 100000, 0);
-    const fixedAssets = Number(team.ppe || 0) + (Number(team.dec.expBlocks) || 0) * CAP_BLOCK.cost + (Number(team.dec.newCentres) || 0) * CENTRE.open;
+    const fixedAssets = Number(team.ppe || 0) + (Number(team.dec.expBlocks) || 0) * CAP_BLOCK.cost + centreOpenCost(team.dec.newCentreCities);
     const loans = (Number(team.debt.bank) || 0) + (Number(team.debt.lt) || 0) + (Number(team.debt.shark) || 0) + inflows.debtDrawn;
     const commonStock = (Number(team.paidIn) || 0) + inflows.equityIssued;
     const retainedEarnings = (Number(team.cumProfit) || 0) + netIncome;

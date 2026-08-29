@@ -19,6 +19,7 @@ import {
   getActiveDatabaseProvider
 } from "./lib/dbProvider";
 import { newState, auditTeam, simulateQuarter } from "./engine/simulationEngine";
+import { DEFAULT_MARKET_IDS } from "./engine/catalog";
 import { LoginPage } from "./components/LoginPage";
 import { ExecutiveHeader } from "./components/ExecutiveHeader";
 import { Navbar, TabKey } from "./components/Navbar";
@@ -275,7 +276,8 @@ export default function App() {
     capacity: 2500,
     ppe: 600,
     hr: { sales: 100, plant: 100 },
-    centres: 4,
+    centres: DEFAULT_MARKET_IDS.length,
+    storeCities: [...DEFAULT_MARKET_IDS],
     staff: 20,
     qualityCum: 20,
     techs: [],
@@ -297,6 +299,7 @@ export default function App() {
       quality: 20,
       hire: 0,
       newCentres: 0,
+      newCentreCities: [],
       rndStartCost: 0,
       bankTarget: 0,
       expBlocks: 0,

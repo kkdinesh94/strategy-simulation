@@ -119,7 +119,8 @@ export interface TeamDecision {
   prod: Record<string, number>;  // modelId -> units
   quality: number; // Rs. L
   expBlocks: number; // blocks of 500 units
-  newCentres: number; // count
+  newCentres: number; // count, derived from newCentreCities.length
+  newCentreCities?: string[]; // MARKETS ids to open a store in this quarter
   webStore?: boolean; // D2C e-commerce storefront active
   hire: number; // +/- headcount
   bankTarget: number; // Rs. L
@@ -299,7 +300,8 @@ export interface TeamState {
     sales?: { salary: number; benefits: number; vacation: number; bonus: number };
     production?: { salary: number; benefits: number; vacation: number; bonus: number; safetyBonus: number };
   };
-  centres: number; // count
+  centres: number; // count, derived from storeCities.length
+  storeCities?: string[]; // MARKETS ids where this team has an open store
   staff: number; // headcount
   qualityCum: number;
   techs: string[];

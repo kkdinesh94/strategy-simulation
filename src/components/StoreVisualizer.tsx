@@ -1,6 +1,7 @@
 import React from "react";
 import { TeamState, GameState } from "../types/simulation";
-import { reachOf, hrMults } from "../engine/simulationEngine";
+import { reachOf, hrMults, marketBonusOf } from "../engine/simulationEngine";
+import { MARKETS } from "../engine/catalog";
 import { Store, MapPin, Users, Globe, Smartphone, ShoppingBag, CheckCircle2, ArrowUpRight } from "lucide-react";
 
 interface StoreVisualizerProps {
@@ -13,19 +14,22 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
   const totalCentres = team.centres + newCentres;
   const isWebStoreActive = !!team.dec.webStore;
   const hrM = hrMults(gameState, team);
-  let netReach = reachOf({ centres: totalCentres, staff: team.staff + (team.dec.hire || 0) }, hrM.sales);
+  const marketBonus = marketBonusOf(gameState, team);
+  let netReach = reachOf({ centres: totalCentres, staff: team.staff + (team.dec.hire || 0) }, hrM.sales, marketBonus);
   if (isWebStoreActive) {
     netReach = Math.min(0.98, netReach + 0.12);
   }
 
-  // Regional Hub Nodes
-  const regionHubs = [
-    { name: "Metro North", city: "Delhi / NCR", code: "DEL", active: totalCentres >= 1, isNew: newCentres > 0 && totalCentres === 1 },
-    { name: "Metro South", city: "Bengaluru / Chennai", code: "BLR", active: totalCentres >= 2, isNew: newCentres > 0 && totalCentres === 2 },
-    { name: "Metro West", city: "Mumbai / Pune", code: "BOM", active: totalCentres >= 3, isNew: newCentres > 0 && totalCentres === 3 },
-    { name: "East & Tier-2", city: "Kolkata / Kochi", code: "CCU", active: totalCentres >= 4, isNew: newCentres > 0 && totalCentres === 4 },
-    { name: "Global Export", city: "Singapore / Dubai", code: "DXB", active: totalCentres >= 5, isNew: newCentres > 0 && totalCentres >= 5 },
-  ];
+  // Real owned/opening markets, drawn from this team's actual store decisions
+  const ownedCities = team.storeCities || [];
+  const pendingCities = team.dec.newCentreCities || [];
+  const regionHubs = MARKETS.filter((m) => ownedCities.includes(m.id) || pendingCities.includes(m.id)).map((m) => ({
+    name: m.city,
+    city: m.region,
+    code: m.id.toUpperCase(),
+    active: ownedCities.includes(m.id),
+    isNew: pendingCities.includes(m.id),
+  }));
 
   return (
     <div className="bg-[#FAF8F5] border border-[#E5E1D8] rounded-2xl p-5 shadow-2xs space-y-5 select-none">
@@ -58,11 +62,14 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
             <div className="text-xs font-bold text-[#1F2022] flex items-center gap-1.5">
               <Globe className="w-4 h-4 text-indigo-600" /> Geographic Territory Network Map
             </div>
-            <span className="text-[10px] font-mono text-[#8A8C90]">5 Regional Hubs</span>
+            <span className="text-[10px] font-mono text-[#8A8C90]">{ownedCities.length} Active · {pendingCities.length} Opening</span>
           </div>
 
           {/* Map Node Diagram */}
           <div className="relative w-full bg-[#FAF8F5] border border-[#E0DCD3] rounded-lg p-4 space-y-3 overflow-hidden">
+            {regionHubs.length === 0 ? (
+              <p className="text-xs text-[#5A5C60]">No stores opened yet. Pick markets in the panel below.</p>
+            ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {regionHubs.map((hub, idx) => (
                 <div
@@ -93,14 +100,15 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
                         <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Active
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 text-[10px] font-mono bg-gray-100 text-gray-500 border border-gray-200 rounded-full">
-                        Planned
+                      <span className="px-2 py-0.5 text-[10px] font-mono bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
+                        Opening
                       </span>
                     )}
                   </div>
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 

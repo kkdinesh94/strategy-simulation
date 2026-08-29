@@ -5,7 +5,7 @@ import { saveUserUnified, deleteUserUnified, removeUserFromUniverseUnified, save
 import { ExcelUserUploader } from "./ExcelUserUploader";
 import { isUserOnline, formatLastActive, getFullTimestamp } from "../lib/presence";
 import { Users, Shield, Plus, Trash2, Bot, UserCheck, Building, Sparkles, AlertCircle, CheckCircle2, ChevronRight, Copy, Shuffle, UserPlus, Clock, X, UserMinus } from "lucide-react";
-import { ARCHETYPES, TEAM_COLORS, SEGMENTS } from "../engine/catalog";
+import { ARCHETYPES, TEAM_COLORS, SEGMENTS, DEFAULT_MARKET_IDS } from "../engine/catalog";
 import { mkModel, botDecide } from "../engine/simulationEngine";
 import { TeamState } from "../types/simulation";
 
@@ -491,7 +491,8 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
       capacity: 2500,
       ppe: 600,
       hr: { sales: 100, plant: 100 },
-      centres: 4,
+      centres: DEFAULT_MARKET_IDS.length,
+      storeCities: [...DEFAULT_MARKET_IDS],
       staff: 20,
       qualityCum: 0,
       techs: [],
@@ -515,6 +516,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
         quality: 0,
         expBlocks: 0,
         newCentres: 0,
+        newCentreCities: [],
         hire: 0,
         bankTarget: 0,
         ltIssue: 0,

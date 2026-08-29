@@ -1,7 +1,7 @@
 import React from "react";
 import { TeamState, GameState } from "../types/simulation";
 import { fmtL, fmtRs, CLAIMS_CATALOG } from "../engine/catalog";
-import { proFormaCalc, auditTeam } from "../engine/simulationEngine";
+import { proFormaCalc, auditTeam, centreOpenCost } from "../engine/simulationEngine";
 import {
   FileText,
   Lock,
@@ -213,7 +213,7 @@ export const PreSubmissionSummaryModal: React.FC<PreSubmissionSummaryModalProps>
                 </div>
                 <div className="flex justify-between py-1 border-b border-[#F0ECE1]">
                   <span className="text-[#6C6D70]">New Outlets Opening:</span>
-                  <strong className="text-amber-700">+{dec.newCentres || 0} outlets ({fmtL((dec.newCentres || 0) * 80)} L)</strong>
+                  <strong className="text-amber-700">+{dec.newCentres || 0} outlets ({fmtL(centreOpenCost(dec.newCentreCities))} L)</strong>
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-[#6C6D70]">Sales Force Headcount:</span>
