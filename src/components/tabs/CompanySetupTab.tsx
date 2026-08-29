@@ -202,7 +202,10 @@ export default function CompanySetupTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ universeId, teamId, quarter, plan })
       });
-      if (!response.ok) throw new Error("Strategy plan could not be saved.");
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "Strategy plan could not be saved.");
+      }
       setStatus("saved");
       localStorage.removeItem(draftKey(universeId, teamId, quarter));
       onNotify?.("Strategy plan saved successfully.");
