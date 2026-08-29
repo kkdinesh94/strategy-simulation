@@ -332,6 +332,14 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
               <span className="bg-white px-2 py-0.5 rounded border border-[#E0DCD3] text-[11px] font-mono text-[#3A3C40]">
                 PERIOD: Q{gameState.quarter} / {gameState.cfg.quarters}
               </span>
+              {gameState.quarter === 1 && (
+                <>
+                  <span className="text-[#C5C2BA]">•</span>
+                  <span className="bg-amber-50 px-2 py-0.5 rounded border border-amber-300 text-[11px] font-mono text-amber-800">
+                    SETUP QUARTER — sales begin Q2
+                  </span>
+                </>
+              )}
               <span className="text-[#C5C2BA]">•</span>
               <span className="text-[#6C6D70] text-xs">
                 TARGET: <strong className="text-[#1F2022] uppercase font-mono">{team.prim} / {team.sec}</strong>

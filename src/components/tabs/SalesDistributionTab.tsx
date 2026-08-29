@@ -6,7 +6,7 @@ import { Store, Users, MapPin, DollarSign, Award, ShoppingBag, CheckCircle, Smar
 import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
 import SalesForceManager from "../SalesForceManager";
-import SalesPricingPanel, { SALES_REGIONS } from "../SalesPricingPanel";
+import SalesPricingPanel from "../SalesPricingPanel";
 import WebSalesCenter from "../WebSalesCenter";
 
 interface SalesDistributionTabProps {
@@ -93,6 +93,16 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
+      {gameState.quarter === 1 && (
+        <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-start gap-3 text-xs text-amber-900">
+          <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+          <div>
+            <strong>Quarter 1 is a setup quarter.</strong> Pick the markets you're entering, size your sales staff, and lock in production capacity now.
+            Store opex, payroll and capex still apply this quarter, but no revenue is generated yet — actual market entry and sales begin in Quarter 2.
+          </div>
+        </div>
+      )}
+
       {/* Network Overview Banner */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -126,13 +136,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
       <SalesForceManager team={team} gameState={gameState} onChange={onChange} />
 
-      <div className="space-y-6">
-        {SALES_REGIONS.map((region) => (
-          <React.Fragment key={region.id}>
-            <SalesPricingPanel team={team} region={region} onChange={onChange} />
-          </React.Fragment>
-        ))}
-      </div>
+      <SalesPricingPanel team={team} />
 
       {/* Experience Centers & D2C E-Commerce */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -310,27 +314,8 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
           </div>
 
           <div className="space-y-4">
-            <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E5E1D8]">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-mono font-bold uppercase text-[#5A5C60]">
-                  Sales Staff Pay Package
-                </label>
-                <span className="text-xs font-bold font-mono text-emerald-700">
-                  {team.hr.sales}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min={HR.min}
-                max={HR.max}
-                value={team.hr.sales}
-                disabled={isLocked}
-                onChange={(e) => handleHRChange("sales", +e.target.value)}
-                className="w-full accent-emerald-700"
-              />
-              <div className="text-[11px] text-[#5A5C60] mt-1 font-mono">
-                Sales Productivity Multiplier: <strong>x{hrM.sales.toFixed(2)}</strong>
-              </div>
+            <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E5E1D8] text-[11px] text-[#5A5C60]">
+              Sales staff pay ({team.hr.sales}% · x{hrM.sales.toFixed(2)} productivity) is set via the compensation package builder in Sales Force Manager above.
             </div>
 
             <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E5E1D8]">

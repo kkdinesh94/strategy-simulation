@@ -634,7 +634,11 @@ export function seasonOf(q: number) {
 export function simulateQuarter(st: GameState) {
   const q = st.quarter;
   const season = seasonOf(q);
-  const tam = st.cfg.tam0 * Math.pow(1 + st.cfg.growth, q - 1) * season.f;
+  // Quarter 1 is a setup-only quarter: teams fix production capacity, staffing
+  // and store cities, and those costs/opex still settle normally, but no
+  // customer demand is served (tam = 0) until Quarter 2, when real market
+  // entry and selling begins.
+  const tam = q === 1 ? 0 : st.cfg.tam0 * Math.pow(1 + st.cfg.growth, q - 1) * season.f;
   const pools: Record<string, number> = {};
   SEGMENTS.forEach((s) => (pools[s.id] = tam * s.pct));
 
