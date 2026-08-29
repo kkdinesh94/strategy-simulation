@@ -9,35 +9,33 @@ const MINIMUM_CASH_LAKH = 3;
 
 export function ProFormaPanel({ team, gameState, universeId, onNotify, compact = false, decisionRevision = 0 }) {
   const [activeTab, setActiveTab] = useState("cash");
-  const [productionRun, setProductionRun] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Ending Cash here must always equal proFormaCalc(gameState, team).close (i.e. what
+  // team.cash becomes once this quarter is actually settled), so every cost/inflow
+  // line is sourced from pf directly instead of being re-derived by hand. If this
+  // drifts from settlement again, it means a field was reconstructed here instead of
+  // read off pf — fix that instead of patching the drift.
   const calculateStatement = () => {
     const pf = proFormaCalc(gameState, team);
     const forecastedUnits = team.models.reduce((total, model) => total + (Number(team.dec.prod[model.id]) || 0), 0);
     const revenue = team.models.reduce((total, model) => total + ((Number(team.dec.prod[model.id]) || 0) * Number(model.price || 0)) / 100000, 0);
-    const productionCosts = productionRun ? pf.materials : 0;
-    const salesForceSalaries = (team.staff + (Number(team.dec.hire) || 0)) * HR.salesCost * (team.hr.sales / 100);
-    const officeLeases = 50 + 0.02 * team.capacity;
-    const research = (team.dec.buyIntel ? 15 : 0) + (team.dec.buyClinic ? 10 : 0);
-    const changeover = Number(team.dec.changeoverInvestment) || 0;
-    const rnd = (Number(team.dec.devCost) || 0) + (Number(team.dec.rndStartCost) || 0);
-    const outflows = { productionCosts, advertising: Number(team.dec.ad) || 0, salesForceSalaries, officeLeases, rnd, quality: Number(team.dec.quality) || 0, changeover, research };
-    const totalOutflows = Object.values(outflows).reduce((sum, value) => sum + value, 0);
-    const inflows = { revenue, equityIssued: Number(team.dec.shareIssue) || 0, debtDrawn: (Number(team.dec.bankTarget) || 0) + (Number(team.dec.ltIssue) || 0) };
-    const totalInflows = Object.values(inflows).reduce((sum, value) => sum + value, 0);
+    const outflows = { materials: pf.materials, advertising: pf.ad, quality: pf.quality, growth: pf.growth, people: pf.people, running: pf.running, shareBuyback: pf.shareBuyback, dividends: pf.dividends };
+    const totalOutflows = pf.out;
+    const inflows = { revenue, equityIssued: pf.equityInflow, debtDrawn: pf.ltInflow };
+    const totalInflows = revenue + pf.inflow;
     const lastActual = [...(team.hist || [])].sort((a, b) => Number(b.q || 0) - Number(a.q || 0))[0];
     const openingCash = Number(lastActual?.cash ?? team.cash ?? 0);
-    const endingCash = openingCash + totalInflows - totalOutflows;
-    const grossMargin = revenue - productionCosts;
-    const operatingExpenses = totalOutflows - productionCosts;
+    const endingCash = pf.cash + totalInflows - pf.out;
+    const grossMargin = revenue - pf.materials;
+    const operatingExpenses = totalOutflows - pf.materials;
     const netIncome = grossMargin - operatingExpenses;
     const inventory = team.models.reduce((total, model) => total + (Number(model.inv) || 0) * unitCost(model) / 100000, 0);
     const fixedAssets = Number(team.ppe || 0) + (Number(team.dec.expBlocks) || 0) * CAP_BLOCK.cost + (Number(team.dec.newCentres) || 0) * CENTRE.open;
     const loans = (Number(team.debt.bank) || 0) + (Number(team.debt.lt) || 0) + (Number(team.debt.shark) || 0) + inflows.debtDrawn;
     const commonStock = (Number(team.paidIn) || 0) + inflows.equityIssued;
     const retainedEarnings = (Number(team.cumProfit) || 0) + netIncome;
-    return { quarter: gameState.quarter, forecastedUnits, inflows, outflows, totalInflows, totalOutflows, endingCash, revenue, cogs: productionCosts, grossMargin, operatingExpenses, netIncome, openingCash, lastActual, assets: { cash: endingCash, inventory, fixedAssets }, liabilities: { loans }, equity: { commonStock, retainedEarnings } };
+    return { quarter: gameState.quarter, forecastedUnits, inflows, outflows, totalInflows, totalOutflows, endingCash, revenue, cogs: pf.materials, grossMargin, operatingExpenses, netIncome, openingCash, lastActual, assets: { cash: endingCash, inventory, fixedAssets }, liabilities: { loans }, equity: { commonStock, retainedEarnings } };
   };
 
   const [statement, setStatement] = useState(() => calculateStatement());
@@ -50,23 +48,11 @@ export function ProFormaPanel({ team, gameState, universeId, onNotify, compact =
       setIsCalculating(false);
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [gameState, team, productionRun, decisionRevision]);
+  }, [gameState, team, decisionRevision]);
 
   const runSimulation = async () => {
-    setProductionRun(true);
     setSaving(true);
-    const productionCosts = proFormaCalc(gameState, team).materials;
-    const savedStatement = {
-      ...statement,
-      outflows: { ...statement.outflows, productionCosts },
-      totalOutflows: statement.totalOutflows + productionCosts,
-      endingCash: statement.endingCash - productionCosts,
-      cogs: productionCosts,
-      grossMargin: statement.revenue - productionCosts,
-      netIncome: statement.netIncome - productionCosts,
-      assets: { ...statement.assets, cash: statement.endingCash - productionCosts }
-    };
-    const saved = await saveProFormaStatement({ universeId, teamI: team.i, quarter: gameState.quarter, statement: savedStatement });
+    const saved = await saveProFormaStatement({ universeId, teamI: team.i, quarter: gameState.quarter, statement });
     setSaving(false);
     onNotify?.(saved ? "Production costs projected and pro forma saved." : "Production costs projected; D1 save was unavailable.");
   };
