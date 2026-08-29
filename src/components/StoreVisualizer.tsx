@@ -116,8 +116,36 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
           {/* SVG 2D Showroom Architectural Floorplan */}
           <div className="relative w-full bg-[#FAF8F5] border border-[#E0DCD3] rounded-lg p-3 flex flex-col items-center justify-center overflow-hidden">
             <svg viewBox="0 0 340 180" className="w-full h-auto drop-shadow-xs">
+              <defs>
+                <linearGradient id="floorplanPodiumGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#FBF9F5" />
+                  <stop offset="100%" stopColor="#EDE4D8" />
+                </linearGradient>
+                <linearGradient id="floorplanChargeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F0FDF9" />
+                  <stop offset="100%" stopColor="#D1FAE5" />
+                </linearGradient>
+                <linearGradient id="floorplanKioskGradActive" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#EEF2FF" />
+                  <stop offset="100%" stopColor="#DDE1FB" />
+                </linearGradient>
+                <linearGradient id="floorplanKioskGradInactive" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#F9FAFB" />
+                  <stop offset="100%" stopColor="#E5E7EB" />
+                </linearGradient>
+                <linearGradient id="floorplanLoungeGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#FCFDFE" />
+                  <stop offset="100%" stopColor="#EEF2F6" />
+                </linearGradient>
+                <pattern id="floorplanHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <line x1="0" y1="0" x2="0" y2="8" stroke="#DBD6C9" strokeWidth="1" opacity="0.5" />
+                </pattern>
+              </defs>
+
               {/* Outer Showroom Walls */}
               <rect x="10" y="10" width="320" height="160" rx="12" fill="#FFFFFF" stroke="#1F2022" strokeWidth="2" />
+              {/* Floor texture */}
+              <rect x="12" y="12" width="316" height="156" rx="10" fill="url(#floorplanHatch)" />
 
               {/* Glass Entrance */}
               <line x1="120" y1="170" x2="220" y2="170" stroke="#0284C7" strokeWidth="4" strokeLinecap="round" />
@@ -126,8 +154,12 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
               </text>
 
               {/* Display Podium 1 (Primary Model) */}
-              <rect x="30" y="30" width="110" height="70" rx="8" fill="#F3F0EA" stroke="#C83E2B" strokeWidth="1.5" strokeDasharray="3 2" />
+              <rect x="34" y="34" width="110" height="70" rx="8" fill="#1F2022" opacity="0.07" />
+              <rect x="30" y="30" width="110" height="70" rx="8" fill="url(#floorplanPodiumGrad)" stroke="#C83E2B" strokeWidth="1.5" strokeDasharray="3 2" />
               <circle cx="85" cy="65" r="18" fill="#C83E2B" opacity="0.15" />
+              <foreignObject x="35" y="35" width="14" height="14">
+                <ShoppingBag className="w-3.5 h-3.5 text-[#C83E2B]" />
+              </foreignObject>
               <text x="85" y="60" textAnchor="middle" fill="#1F2022" fontSize="9" fontWeight="bold">
                 EV PODIUM
               </text>
@@ -136,16 +168,24 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
               </text>
 
               {/* Fast Charging Station Bay */}
-              <rect x="160" y="30" width="70" height="50" rx="6" fill="#ECFDF5" stroke="#10B981" strokeWidth="1.5" />
-              <text x="195" y="52" textAnchor="middle" fill="#047857" fontSize="8" fontFamily="monospace" fontWeight="bold">
-                ⚡ FAST CHARGE
+              <rect x="164" y="34" width="70" height="50" rx="6" fill="#1F2022" opacity="0.07" />
+              <rect x="160" y="30" width="70" height="50" rx="6" fill="url(#floorplanChargeGrad)" stroke="#10B981" strokeWidth="1.5" />
+              <foreignObject x="165" y="35" width="14" height="14">
+                <ArrowUpRight className="w-3.5 h-3.5 text-emerald-700" />
+              </foreignObject>
+              <text x="200" y="52" textAnchor="middle" fill="#047857" fontSize="8" fontFamily="monospace" fontWeight="bold">
+                FAST CHARGE
               </text>
               <text x="195" y="64" textAnchor="middle" fill="#059669" fontSize="7">
                 HyperCharger 150kW
               </text>
 
               {/* D2C Digital Web Kiosk */}
-              <rect x="245" y="30" width="70" height="110" rx="6" fill={isWebStoreActive ? "#EEF2FF" : "#F3F4F6"} stroke={isWebStoreActive ? "#6366F1" : "#9CA3AF"} strokeWidth="1.5" />
+              <rect x="249" y="34" width="70" height="110" rx="6" fill="#1F2022" opacity="0.07" />
+              <rect x="245" y="30" width="70" height="110" rx="6" fill={isWebStoreActive ? "url(#floorplanKioskGradActive)" : "url(#floorplanKioskGradInactive)"} stroke={isWebStoreActive ? "#6366F1" : "#9CA3AF"} strokeWidth="1.5" />
+              <foreignObject x="250" y="35" width="14" height="14">
+                <Smartphone className={`w-3.5 h-3.5 ${isWebStoreActive ? "text-indigo-700" : "text-gray-500"}`} />
+              </foreignObject>
               <text x="280" y="55" textAnchor="middle" fill={isWebStoreActive ? "#4338CA" : "#6B7280"} fontSize="8" fontFamily="monospace" fontWeight="bold">
                 D2C KIOSK
               </text>
@@ -157,8 +197,12 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
               )}
 
               {/* Customer Lounge & Sales Desk */}
-              <rect x="30" y="110" width="200" height="40" rx="6" fill="#F8FAFC" stroke="#94A3B8" strokeWidth="1" />
-              <text x="130" y="132" textAnchor="middle" fill="#334155" fontSize="8" fontFamily="monospace" fontWeight="bold">
+              <rect x="34" y="114" width="200" height="40" rx="6" fill="#1F2022" opacity="0.05" />
+              <rect x="30" y="110" width="200" height="40" rx="6" fill="url(#floorplanLoungeGrad)" stroke="#94A3B8" strokeWidth="1" />
+              <foreignObject x="35" y="120" width="14" height="14">
+                <Users className="w-3.5 h-3.5 text-slate-600" />
+              </foreignObject>
+              <text x="135" y="132" textAnchor="middle" fill="#334155" fontSize="8" fontFamily="monospace" fontWeight="bold">
                 CUSTOMER LOUNGE & EXECUTIVE SALES DESK ({team.staff + (team.dec.hire || 0)} Staff)
               </text>
             </svg>
