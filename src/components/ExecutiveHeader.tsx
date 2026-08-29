@@ -201,12 +201,16 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
             )}
           </div>
 
-          <span className="text-[#C5C2BA]">•</span>
+          {isManagementRole && (
+            <>
+              <span className="text-[#C5C2BA]">•</span>
 
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-mono text-emerald-800" title="Cloudflare D1 synchronization active">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>D1 Live</span>
-          </div>
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-mono text-emerald-800" title="Cloudflare D1 synchronization active">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>D1 Live</span>
+              </div>
+            </>
+          )}
 
           {/* Quarter Deadline Countdown Timer */}
           {timeLeft && (
