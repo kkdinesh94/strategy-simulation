@@ -5,7 +5,7 @@ import { executeD1Query } from "../lib/cloudflareD1";
 export const QUARTER_ITEMS = {
   1: [
     ["Register team, company name and mission", "charter", "decisions"],
-    ["Purchase market survey", "charter", "decisions"]
+    ["Purchase market survey", "marketing", "marketSurvey"]
   ],
   2: [
     ["Review MOA", "charter", "decisions"],
@@ -54,7 +54,8 @@ const RECORD_QUERIES = {
   sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
   brands: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM brands WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
   ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]]
+  scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
+  marketSurvey: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]]
 };
 
 // These decisions live only on the in-memory team state (team.dec / team.qualityComponents),
