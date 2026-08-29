@@ -5,6 +5,7 @@
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "../../src/lib/competitiveBenchmark";
 import { runQuarterWorkflow } from "../../src/lib/processQuarter";
 import { SEGMENTS } from "../../src/engine/catalog";
+import { projectBatteryLifecycle, type BatteryDisposition } from "../../src/lib/batteryLifecycle";
 
 const MARKET_SURVEY_ERROR_MARGIN: Record<string, number> = { low: 0.15, medium: 0.08, high: 0.04 };
 
@@ -929,6 +930,43 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         return env.DB.prepare("INSERT INTO charging_network (team_id, region, quarter, charger_count, charger_type, installation_cost, quarterly_maintenance, demand_boost_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(team_id, region, quarter) DO UPDATE SET charger_count = excluded.charger_count, charger_type = excluded.charger_type, installation_cost = excluded.installation_cost, quarterly_maintenance = excluded.quarterly_maintenance, demand_boost_pct = excluded.demand_boost_pct").bind(teamId, region, quarter, count, chargerType, count * config[1], count * config[2], count * config[0]);
       }));
       return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    }
+
+    if (path === "/api/battery-lifecycle" && method === "GET") {
+      if (!env.DB) return new Response(JSON.stringify({ projections: [], decision: null, active: Number(url.searchParams.get("quarter")) >= 5 }), { status: 200, headers: corsHeaders });
+      const universeId = String(url.searchParams.get("universeId") || "").trim();
+      const teamId = Number(url.searchParams.get("teamId"));
+      const quarter = Number(url.searchParams.get("quarter"));
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "universeId, teamId, and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      if (quarter < 5) return new Response(JSON.stringify({ projections: [], decision: null, active: false }), { status: 200, headers: corsHeaders });
+      const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes WHERE id = ?").bind(universeId).first();
+      if (!universe) return new Response(JSON.stringify({ error: "Simulation universe was not found." }), { status: 404, headers: corsHeaders });
+      const state = readJson(universe.game_state);
+      const teams = Array.isArray(state.teams) ? state.teams : [];
+      const currentTeam = teams.find((team: any) => Number(team.i) === teamId);
+      if (!currentTeam) return new Response(JSON.stringify({ error: "Team was not found in the simulation universe." }), { status: 404, headers: corsHeaders });
+      const hist = Array.isArray(currentTeam.hist) ? currentTeam.hist : [];
+      const projections = [];
+      for (let q = 5; q <= quarter; q += 1) projections.push(projectBatteryLifecycle(hist, q));
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const decisionRow: any = await env.DB.prepare("SELECT disposition, quarter FROM battery_lifecycle_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ?").bind(universeId, String(teamId), quarter).first();
+      return new Response(JSON.stringify({ projections, decision: decisionRow ? { disposition: decisionRow.disposition, quarter: Number(decisionRow.quarter) } : null, active: true }), { status: 200, headers: corsHeaders });
+    }
+
+    if (path === "/api/battery-lifecycle" && method === "POST") {
+      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
+      const body = await request.json() as { universeId?: string; teamId?: number; quarter?: number; disposition?: string };
+      const universeId = String(body.universeId || "").trim();
+      const teamId = Number(body.teamId);
+      const quarter = Number(body.quarter);
+      const disposition = String(body.disposition || "") as BatteryDisposition;
+      if (!universeId || !Number.isInteger(teamId) || !Number.isInteger(quarter) || quarter < 1 || !["warranty", "repurpose", "recycle"].includes(disposition)) {
+        return new Response(JSON.stringify({ error: "universeId, teamId, quarter, and a valid disposition are required." }), { status: 400, headers: corsHeaders });
+      }
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
+      const id = `${universeId}:${teamId}:${quarter}`;
+      await env.DB.prepare("INSERT INTO battery_lifecycle_decisions (id, universe_id, team_i, quarter, disposition) VALUES (?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET disposition = excluded.disposition, updated_at = datetime('now')").bind(id, universeId, String(teamId), quarter, disposition).run();
+      return new Response(JSON.stringify({ decision: { disposition, quarter } }), { status: 200, headers: corsHeaders });
     }
 
     // 2. Cloudflare D1 Status

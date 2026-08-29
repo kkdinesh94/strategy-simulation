@@ -14,6 +14,7 @@ export default function BatteryLifecycle({ universeId, teamId, quarter, onNotify
   const [status, setStatus] = useState("idle");
 
   useEffect(() => {
+    if (quarter < 5) return;
     fetch(`/api/battery-lifecycle?universeId=${encodeURIComponent(universeId)}&teamId=${encodeURIComponent(teamId)}&quarter=${quarter}`)
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Could not load battery lifecycle data.")))
       .then((payload) => { setData(payload); if (payload.decision?.disposition) setSelection(payload.decision.disposition); })
