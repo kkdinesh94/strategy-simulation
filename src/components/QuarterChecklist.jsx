@@ -94,7 +94,7 @@ export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNa
   const title = quarter >= 9 ? "Final board report" : quarter >= 6 ? "Continuous improvement" : `Quarter ${quarter} priorities`;
 
   return (
-    <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-72 lg:self-start">
+    <aside className="w-full min-w-0 shrink-0 lg:sticky lg:top-4 lg:self-start">
       <div className="overflow-hidden rounded-xl border border-[#E5E1D8] bg-white shadow-sm">
         <button type="button" onClick={() => setIsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 border-b border-[#E5E1D8] bg-[#1F2022] px-4 py-3 text-left text-white">
           <span className="flex min-w-0 items-center gap-2"><ClipboardList className="h-4 w-4 shrink-0 text-amber-300" /><span className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[0.16em] text-amber-200">Q{quarter}</span><span className="block truncate text-sm font-semibold">{title}</span></span></span>
