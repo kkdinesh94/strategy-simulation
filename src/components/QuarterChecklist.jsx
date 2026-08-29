@@ -106,7 +106,6 @@ export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNa
           <ul className="space-y-1">
             {items.map(([label, tab, source]) => { const done = completed[source]; return <li key={label}><button type="button" onClick={() => onNavigate(tab)} className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left text-xs leading-4 text-[#4A4C50] transition hover:bg-[#F7F5F0] hover:text-[#1F2022]"><span className="mt-0.5 shrink-0">{done ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <Circle className="h-4 w-4 text-[#B8B5AE]" />}</span><span className={done ? "text-[#8A8C8F] line-through" : ""}>{label}</span></button></li>; })}
           </ul>
-          <p className="mt-3 border-t border-[#EEEAE2] pt-3 text-[10px] text-[#96989B]">Completion is read from team records in D1.</p>
         </div>}
       </div>
     </aside>
