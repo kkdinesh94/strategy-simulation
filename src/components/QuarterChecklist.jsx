@@ -48,17 +48,22 @@ export const QUARTER_ITEMS = {
 const RECORD_QUERIES = {
   decisions: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
   strategy: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  hr: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM hr_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
   schedule: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
   fastTests: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM fast_test_results WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
   benchmark: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  facility: (_universeId, teamId) => ["SELECT 1 AS present FROM production_facilities WHERE team_id = ? LIMIT 1", [teamId]],
   sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
   brands: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM brands WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
   ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  financing: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM financing_decisions WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
-  quality: (_universeId, teamId) => ["SELECT 1 AS present FROM quality_components WHERE team_id = ? LIMIT 1", [teamId]],
   scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]]
+};
+
+// These decisions live only on the in-memory team state (team.dec / team.qualityComponents),
+// never in D1, so completion is checked locally instead of against a nonexistent table.
+const LOCAL_CHECKS = {
+  facility: (team) => Boolean(team?.dec?.facilityLocation),
+  financing: (team) => Boolean(team?.dec?.vc?.ask > 0 || team?.dec?.bankLoanDrawn > 0 || team?.dec?.cdInvestment > 0),
+  quality: (team) => Boolean(team?.qualityComponents?.length),
+  hr: (team) => Boolean(team?.hrCompensation?.sales || team?.hrCompensation?.production)
 };
 
 export function quarterItems(quarter) {
@@ -67,7 +72,7 @@ export function quarterItems(quarter) {
   return QUARTER_ITEMS[quarter] || QUARTER_ITEMS[5];
 }
 
-export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNavigate }) {
+export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNavigate, team }) {
   const [isOpen, setIsOpen] = useState(true);
   const [completed, setCompleted] = useState({});
   const [isLoading, setIsLoading] = useState(false);
@@ -78,6 +83,8 @@ export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNa
     setIsLoading(true);
     const keys = [...new Set(items.map((item) => item[2]))];
     const results = await Promise.all(keys.map(async (key) => {
+      const localCheck = LOCAL_CHECKS[key];
+      if (localCheck) return [key, localCheck(team)];
       const query = RECORD_QUERIES[key];
       if (!query) return [key, false];
       const [sql, params] = query(universeId, teamId, quarter);
@@ -88,7 +95,7 @@ export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNa
     setIsLoading(false);
   };
 
-  useEffect(() => { loadCompletion(); }, [universeId, teamId, quarter, items]);
+  useEffect(() => { loadCompletion(); }, [universeId, teamId, quarter, items, team]);
 
   const completeCount = items.filter((item) => completed[item[2]]).length;
   const title = quarter >= 9 ? "Final board report" : quarter >= 6 ? "Continuous improvement" : `Quarter ${quarter} priorities`;

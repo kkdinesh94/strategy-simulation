@@ -67,7 +67,9 @@ function policyImpact(model: any, segment: any, region: string, quarter: number,
     .reduce((impact, event) => impact + Number(event.demand_impact_pct || 0), 0);
 }
 
-export function calculateDemand(state: GameState, universeId: string, policies: PolicyEvent[] = []): DemandResult[] {
+export type ChargingBoost = Record<string, Record<string, number>>;
+
+export function calculateDemand(state: GameState, universeId: string, policies: PolicyEvent[] = [], chargingBoost: ChargingBoost = {}): DemandResult[] {
   const quarter = state.quarter;
   const season = (quarter - 1) % 4 === 1 ? 0.9 : (quarter - 1) % 4 === 2 ? 1.25 : 1;
   const tam = state.cfg.tam0 * Math.pow(1 + state.cfg.growth, quarter - 1) * season;
@@ -87,7 +89,8 @@ export function calculateDemand(state: GameState, universeId: string, policies: 
       const advertisingImpact = Math.max(0, Math.min(1, (team.dec.claims?.length ? 0.8 + 0.8 * claimFit : 0.9) * 0.9 * (1 - Math.exp(-spend / 120))));
       const baseSize = tam * segment.pct / regions(state).length;
       const policyDemandImpactPct = policyImpact(model, segment, region, quarter, policies);
-      const demandUnits = baseSize * brandJudgment / 100 * priceJudgment / 100 * advertisingImpact * salesProductivity * coverage * (1 + policyDemandImpactPct);
+      const chargingDemandImpactPct = (chargingBoost[String(team.i)]?.[region] || 0) / 100;
+      const demandUnits = baseSize * brandJudgment / 100 * priceJudgment / 100 * advertisingImpact * salesProductivity * coverage * (1 + policyDemandImpactPct) * (1 + chargingDemandImpactPct);
       output.push({
         demand_id: `${universeId}:${quarter}:${region}:${team.i}:${model.id}:${segment.id}`,
         universe_id: universeId,
@@ -111,9 +114,9 @@ export function calculateDemand(state: GameState, universeId: string, policies: 
   return output;
 }
 
-export function processQuarterState(state: GameState, universeId = "pending", policies: PolicyEvent[] = [], batteryDecisions: BatteryDecision[] = []): { state: GameState; logs: QuarterLog[]; demand: DemandResult[] } {
+export function processQuarterState(state: GameState, universeId = "pending", policies: PolicyEvent[] = [], batteryDecisions: BatteryDecision[] = [], chargingBoost: ChargingBoost = {}): { state: GameState; logs: QuarterLog[]; demand: DemandResult[] } {
   const quarter = state.quarter;
-  const demand = calculateDemand(state, universeId, policies);
+  const demand = calculateDemand(state, universeId, policies, chargingBoost);
   const logs: QuarterLog[] = [
     { step: "lock", status: "complete", detail: `Locked decisions for Q${quarter}.` },
     { step: "demand", status: "complete", detail: `Computed ${demand.length} regional brand-segment demand rows.` }
@@ -153,7 +156,11 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
     CREATE TABLE IF NOT EXISTS demand_results (demand_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, team_i TEXT NOT NULL, brand_id TEXT NOT NULL, brand_name TEXT NOT NULL, segment_id TEXT NOT NULL, base_segment_size REAL NOT NULL, brand_judgment_score REAL NOT NULL, price_judgment_score REAL NOT NULL, advertising_impact_score REAL NOT NULL, sales_force_productivity REAL NOT NULL, channel_coverage_factor REAL NOT NULL, demand_units REAL NOT NULL, policy_demand_impact_pct REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')));
     CREATE TABLE IF NOT EXISTS fast_test_results (result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, result_type TEXT NOT NULL, subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL, brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL, purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id));
     CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));
-    CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));`);
+    CREATE TABLE IF NOT EXISTS battery_lifecycle_decisions (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, disposition TEXT NOT NULL CHECK (disposition IN ('warranty', 'repurpose', 'recycle')), returned_units REAL NOT NULL DEFAULT 0, warranty_reserve REAL NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, revenue REAL NOT NULL DEFAULT 0, esg_impact REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter));
+    CREATE TABLE IF NOT EXISTS rd_projects (project_id TEXT PRIMARY KEY, name TEXT, description TEXT, component_unlocked TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS rd_license_offers (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, seller_team_id TEXT NOT NULL, buyer_team_id TEXT NOT NULL, project_id TEXT NOT NULL, license_fee REAL NOT NULL CHECK (license_fee >= 1), special_terms TEXT NOT NULL DEFAULT '', offered_quarter INTEGER NOT NULL, execute_quarter INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'offered' CHECK (status IN ('offered', 'accepted', 'rejected', 'executed')), accepted_at TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE TABLE IF NOT EXISTS team_component_access (game_id TEXT NOT NULL, team_id TEXT NOT NULL, component_id TEXT NOT NULL, source_license_id TEXT, unlocked_quarter INTEGER NOT NULL, PRIMARY KEY (game_id, team_id, component_id));
+    CREATE TABLE IF NOT EXISTS charging_network (team_id TEXT NOT NULL, region TEXT NOT NULL, quarter INTEGER NOT NULL, charger_count INTEGER NOT NULL DEFAULT 0, charger_type TEXT NOT NULL CHECK (charger_type IN ('Level 2 AC', 'DC Fast Charge', 'Ultra-rapid 350kW')), installation_cost REAL NOT NULL DEFAULT 0, quarterly_maintenance REAL NOT NULL DEFAULT 0, demand_boost_pct REAL NOT NULL DEFAULT 0, UNIQUE (team_id, region, quarter));`);
   try { await db.exec("ALTER TABLE demand_results ADD COLUMN policy_demand_impact_pct REAL NOT NULL DEFAULT 0"); } catch {}
   const universe: any = await db.prepare("SELECT id, game_state FROM universes WHERE id = ?").bind(universeId).first();
   if (!universe) throw new Error("Simulation universe was not found.");
@@ -163,6 +170,32 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
   const policies = (policiesResponse.results || []) as PolicyEvent[];
   const batteryResponse: any = await db.prepare("SELECT team_i, disposition FROM battery_lifecycle_decisions WHERE universe_id = ? AND quarter = ?").bind(universeId, currentQuarter).all();
   const batteryDecisions = (batteryResponse.results || []).map((row: any) => ({ teamId: String(row.team_i), disposition: row.disposition as BatteryDisposition }));
+  const dueLicenses: any = await db.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'accepted' AND execute_quarter <= ?").bind(universeId, currentQuarter).all();
+  const licenseWrites: any[] = [];
+  for (const offer of (dueLicenses.results || []) as any[]) {
+    const buyer = state.teams.find((candidate: any) => String(candidate.i) === String(offer.buyer_team_id));
+    const seller = state.teams.find((candidate: any) => String(candidate.i) === String(offer.seller_team_id));
+    const fee = Number(offer.license_fee) || 0;
+    if (buyer) buyer.cash -= fee;
+    if (seller) seller.cash += fee;
+    licenseWrites.push(db.prepare("UPDATE rd_license_offers SET status = 'executed' WHERE id = ?").bind(offer.id));
+    licenseWrites.push(db.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").bind(universeId, offer.buyer_team_id, offer.id, currentQuarter, offer.project_id));
+  }
+  if (licenseWrites.length) await db.batch(licenseWrites);
+  const chargingRows: any = state.teams.length
+    ? await db.prepare(`SELECT * FROM charging_network WHERE quarter <= ? AND team_id IN (${state.teams.map(() => "?").join(",")})`).bind(currentQuarter, ...state.teams.map((team: any) => String(team.i))).all()
+    : { results: [] };
+  const chargingBoost: ChargingBoost = {};
+  for (const row of (chargingRows.results || []) as any[]) {
+    const team = state.teams.find((candidate: any) => String(candidate.i) === String(row.team_id));
+    if (!team) continue;
+    // Chargers stay deployed once built: maintenance and the demand boost they earn recur every quarter,
+    // while installation capex is a one-time hit in the quarter it was purchased.
+    team.cash -= Number(row.quarterly_maintenance) || 0;
+    if (Number(row.quarter) === currentQuarter) team.cash -= Number(row.installation_cost) || 0;
+    const teamBoost = chargingBoost[String(team.i)] || (chargingBoost[String(team.i)] = {});
+    teamBoost[row.region] = (teamBoost[row.region] || 0) + (Number(row.demand_boost_pct) || 0);
+  }
   const marker: any = await db.prepare("SELECT decisions_locked, quarter FROM game_state WHERE universe_id = ?").bind(universeId).first();
   if (Number(marker?.decisions_locked) === 1) throw new Error(`Q${currentQuarter} is already being processed or locked.`);
   await db.prepare("INSERT INTO game_state (universe_id, quarter, decisions_locked) VALUES (?, ?, 1) ON CONFLICT(universe_id) DO UPDATE SET quarter = excluded.quarter, decisions_locked = 1, updated_at = datetime('now')").bind(universeId, currentQuarter).run();
@@ -182,7 +215,7 @@ export async function runQuarterWorkflow(db: any, universeId: string) {
     }
   }
   state.teams.forEach((team: any) => { team.dec.locked = true; });
-  const result = processQuarterState(state, universeId, policies, batteryDecisions);
+  const result = processQuarterState(state, universeId, policies, batteryDecisions, chargingBoost);
   const lifecycleRows = result.state.teams.map((team: any) => {
     const quarterResult: any = team.hist.find((row: any) => row.q === currentQuarter);
     return db.prepare("UPDATE battery_lifecycle_decisions SET returned_units = ?, cost = ?, revenue = ?, esg_impact = ?, updated_at = datetime('now') WHERE universe_id = ? AND team_i = ? AND quarter = ?")

@@ -44,6 +44,7 @@ export function RightPanel({ team, gameState, universeId, onNotify, onNavigate, 
           teamId={team.i}
           quarter={gameState.quarter}
           onNavigate={onNavigate}
+          team={team}
         />
       </div>
     </div>

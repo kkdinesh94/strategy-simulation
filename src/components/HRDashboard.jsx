@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BarChart3, Factory, Save, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, Factory, ShieldCheck, Users } from "lucide-react";
 
 const DEFAULTS = {
   sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
@@ -81,7 +81,6 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
   const saved = team?.hrCompensation || {};
   const [sales, setSales] = useState(packageFor(team, "sales"));
   const [production, setProduction] = useState(packageFor(team, "production"));
-  const [saving, setSaving] = useState(false);
   const teams = gameState?.teams || [];
   const salesStats = useMemo(() => scoreFor(sales, teams, "sales"), [sales, teams]);
   const productionStats = useMemo(() => scoreFor(production, teams, "production"), [production, teams]);
@@ -99,22 +98,8 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
     onChange({ ...team, hrCompensation: { ...(team.hrCompensation || {}), [kind]: next } });
   };
 
-  const saveDecision = async () => {
-    setSaving(true);
-    try {
-      const response = await fetch("/api/d1/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        sql: "INSERT INTO hr_decisions (id, universe_id, team_i, quarter, sales_json, production_json) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET sales_json = excluded.sales_json, production_json = excluded.production_json, updated_at = datetime('now')",
-        params: [`${universeId}:${team.i}:${gameState.quarter}`, universeId, team.i, gameState.quarter, JSON.stringify(sales), JSON.stringify(production)]
-      }) });
-      if (!response.ok) throw new Error("D1 rejected the compensation decision");
-      onNotify?.("Compensation decisions saved to D1.");
-    } catch (error) {
-      onNotify?.(error.message || "Compensation decision could not be saved.");
-    } finally { setSaving(false); }
-  };
-
   return <div className="space-y-6">
-    <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Users className="w-6 h-6 text-emerald-700" /><h1 className="text-xl font-bold">Human Resources & Productivity</h1></div><p className="text-xs text-[#77797D] mt-1">Set offers for the teams that create demand and build every unit.</p></div><button type="button" onClick={saveDecision} disabled={saving || isLocked} className="inline-flex items-center gap-2 rounded-lg bg-[#1F2022] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"><Save className="w-4 h-4" />{saving ? "Saving..." : "Save decision"}</button></div>
+    <div className="flex items-start justify-between gap-4"><div><div className="flex items-center gap-2"><Users className="w-6 h-6 text-emerald-700" /><h1 className="text-xl font-bold">Human Resources & Productivity</h1></div><p className="text-xs text-[#77797D] mt-1">Set offers for the teams that create demand and build every unit. Changes save automatically.</p></div></div>
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
       <CompensationSection kind="sales" title="Sales Force Compensation" icon={<Users className="w-5 h-5" />} pkg={sales} benchmark={salesStats.benchmark} benchmarkPackage={salesStats.benchmarkPackage} score={salesStats.score} disabled={isLocked} onChange={(field, value) => update("sales", field, value)} />
       <CompensationSection kind="production" title="Production Worker Compensation" icon={<ShieldCheck className="w-5 h-5" />} pkg={production} benchmark={productionStats.benchmark} benchmarkPackage={productionStats.benchmarkPackage} score={productionStats.score} disabled={isLocked} onChange={(field, value) => update("production", field, value)} />

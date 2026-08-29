@@ -6,6 +6,7 @@ import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "..
 import { runQuarterWorkflow } from "../../src/lib/processQuarter";
 import { SEGMENTS } from "../../src/engine/catalog";
 import { projectBatteryLifecycle, type BatteryDisposition } from "../../src/lib/batteryLifecycle";
+import { reliabilityOf } from "../../src/engine/simulationEngine";
 
 const MARKET_SURVEY_ERROR_MARGIN: Record<string, number> = { low: 0.15, medium: 0.08, high: 0.04 };
 
@@ -341,10 +342,7 @@ export async function computeFastTests(teamId: string | number, quarter: number,
     const maxWeight = Math.max(1, Object.keys(segment).filter((key) => /priority|importance/.test(key)).reduce((sum, key) => sum + Number(segment[key] || 0), 0));
     rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:ad:${campaign.campaign_id}:${segment.segment_id}`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "ad", subject_id: String(campaign.campaign_id), subject_name: fastTestText(campaign, ["campaign_name", "campaign_id"]), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: null, price_judgment: null, ad_judgment: Math.round(Math.max(0, Math.min(100, weights / maxWeight * 100))), reliability_judgment: null });
   }
-  const quality = await optionalRows(db, "SELECT * FROM quality_components WHERE team_id = ?", normalizedTeamId);
-  const warranty = quality.reduce((sum, item) => sum + fastTestNumber(item, ["warranty_cost_per_quarter"]), 0);
-  const improvements = quality.reduce((sum, item) => sum + fastTestNumber(item, ["reliability_improvement"]) * (item.improvement_invested > 0 || item.source_action_study_done || item.variance_study_done ? 1 : 0), 0);
-  const reliability = Math.max(0, Math.min(100, 100 - warranty / 10 + improvements));
+  const reliability = stateTeam ? reliabilityOf(stateTeam) * 100 : 100;
   rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:reliability:company`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "reliability", subject_id: "company", subject_name: "Company reliability", segment_id: "company", segment_name: "Company-wide", brand_judgment: null, price_judgment: null, ad_judgment: null, reliability_judgment: Math.round(reliability) });
   await db.batch(rows.map((row) => db.prepare(`INSERT INTO fast_test_results (result_id, team_id, quarter, region, result_type, subject_id, subject_name, segment_id, segment_name, brand_judgment, price_judgment, ad_judgment, reliability_judgment, purchase_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET brand_judgment=excluded.brand_judgment, price_judgment=excluded.price_judgment, ad_judgment=excluded.ad_judgment, reliability_judgment=excluded.reliability_judgment, purchase_cost=excluded.purchase_cost`).bind(row.result_id, row.team_id, row.quarter, row.region, row.result_type, row.subject_id, row.subject_name, row.segment_id, row.segment_name, row.brand_judgment, row.price_judgment, row.ad_judgment, row.reliability_judgment, purchaseCost)));
   return rows;
@@ -1523,6 +1521,16 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       }
 
       const trimmed = sql.trim().toLowerCase();
+      // This endpoint has no per-caller authentication (gameplay panels like Web Sales Center write
+      // through it directly), so it stays open to arbitrary SELECT/INSERT/UPDATE — but the `users`
+      // table holds plaintext passwords and must never be reachable here, and schema-destructive
+      // statements are blocked outright regardless of caller.
+      if (/\busers\b/.test(trimmed)) {
+        return new Response(JSON.stringify({ error: "Queries against the users table are not permitted through this endpoint." }), { status: 403, headers: corsHeaders });
+      }
+      if (/^(drop|alter|truncate|delete|attach|detach|vacuum|reindex)\b/.test(trimmed)) {
+        return new Response(JSON.stringify({ error: "This statement type is not permitted through this endpoint." }), { status: 403, headers: corsHeaders });
+      }
       if (trimmed.startsWith("select") || trimmed.startsWith("pragma") || trimmed.startsWith("explain")) {
         const { results } = await env.DB.prepare(sql).bind(...params).all();
         return new Response(JSON.stringify({ success: true, results, rows: results?.length || 0 }), {
