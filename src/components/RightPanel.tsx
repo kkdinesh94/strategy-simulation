@@ -32,6 +32,7 @@ export function RightPanel({ team, gameState, universeId, onNotify, onNavigate, 
           onNotify={onNotify}
           compact
           decisionRevision={decisionRevision}
+          onExpand={onNavigate ? () => onNavigate("finance") : undefined}
         />
       </div>
       <div>
