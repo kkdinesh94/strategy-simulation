@@ -7,8 +7,134 @@ import { getD1Database } from "./server/d1Store";
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "./src/lib/competitiveBenchmark";
 import { runQuarterWorkflow } from "./src/lib/processQuarter";
 import { projectBatteryLifecycle } from "./src/lib/batteryLifecycle";
+import { SEGMENTS } from "./src/engine/catalog";
 
 dotenv.config();
+
+function briefingRs(value: unknown): string {
+  return `Rs. ${Number(value || 0).toFixed(1)} L`;
+}
+
+function briefingPct(current: unknown, prior: unknown): number {
+  const cur = Number(current || 0);
+  const pr = Number(prior || 0);
+  if (pr === 0) return cur === 0 ? 0 : 100;
+  return ((cur - pr) / Math.abs(pr)) * 100;
+}
+
+function describeTeamDecision(decision: any, submittedBy: string): string {
+  if (decision?.type === "vehicle_design") {
+    const feeNote = decision.redesignFee ? ` (redesign fee ${briefingRs(decision.redesignFee)})` : "";
+    const components = Array.isArray(decision.componentIds) ? decision.componentIds.join(", ") : "none";
+    return `Vehicle design "${decision.brandName || decision.brandId}" was configured with components [${components}] at a ${decision.multiplier}x price multiplier${feeNote}, submitted by ${submittedBy || "the team"}.`;
+  }
+  const bits: string[] = [];
+  if (decision?.ad !== undefined) bits.push(`advertising spend of ${briefingRs(decision.ad)}`);
+  if (decision?.prod && typeof decision.prod === "object") {
+    let totalProd = 0;
+    for (const value of Object.values(decision.prod)) totalProd += Number(value || 0);
+    if (totalProd) bits.push(`production volume of ${Math.round(totalProd).toLocaleString("en-IN")} units across ${Object.keys(decision.prod).length} model(s)`);
+  }
+  if (decision?.price !== undefined) bits.push(`pricing set to Rs. ${Number(decision.price).toLocaleString("en-IN")}`);
+  if (decision?.hire) bits.push(`${decision.hire > 0 ? "hired" : "cut"} ${Math.abs(decision.hire)} staff`);
+  if (decision?.rndStartCost) bits.push(`started an R&D project (${briefingRs(decision.rndStartCost)})`);
+  if (decision?.newCentres) bits.push(`opened ${decision.newCentres} new sales centre(s)`);
+  if (decision?.quality) bits.push(`invested ${briefingRs(decision.quality)} in quality improvements`);
+  if (decision?.dividendPerShare) bits.push(`declared a dividend of Rs. ${Number(decision.dividendPerShare).toFixed(2)}/share`);
+  if (decision?.shareBuyback) bits.push(`bought back ${briefingRs(decision.shareBuyback)} of shares`);
+  if (decision?.shareIssue) bits.push(`raised ${briefingRs(decision.shareIssue)} via new share issuance`);
+  if (!bits.length) return `A decision record was submitted by ${submittedBy || "the team"} with no recognized action fields.`;
+  const sentence = `${bits.join(", ")} — submitted by ${submittedBy || "the team"}.`;
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+/** Builds the four executive-briefing sections deterministically from the team's persisted records — no external AI calls. */
+function buildExecutiveBriefingSections(sourceData: { quarter: number; scorecards: any[]; strategyPlans: any[]; proForma: any[]; decisions: any[] }) {
+  const { quarter, scorecards, strategyPlans, proForma, decisions } = sourceData;
+  const current = scorecards.find((row) => Number(row.quarter) === quarter);
+  const prior = scorecards.find((row) => Number(row.quarter) === quarter - 1);
+
+  let performance: string;
+  if (!current) {
+    performance = `No settled results are available yet for Q${quarter}. Performance commentary will populate once the quarter has been processed.`;
+  } else {
+    const cur = current.rawMetrics || {};
+    const curScore = Number(current.overall_score || 0);
+    if (!prior) {
+      performance = `Q${quarter} results: revenue of ${briefingRs(cur.revenue)} on ${Math.round(cur.units || 0).toLocaleString("en-IN")} units, ending cash of ${briefingRs(cur.cash)}, and a Balanced Scorecard total of ${curScore.toFixed(1)}. No prior-quarter data exists yet for comparison.`;
+    } else {
+      const pr = prior.rawMetrics || {};
+      const priorScore = Number(prior.overall_score || 0);
+      const revDelta = briefingPct(cur.revenue, pr.revenue);
+      const unitsDelta = briefingPct(cur.units, pr.units);
+      const cashDelta = briefingPct(cur.cash, pr.cash);
+      const scoreDelta = curScore - priorScore;
+      performance = [
+        `Revenue ${revDelta >= 0 ? "rose" : "fell"} ${Math.abs(revDelta).toFixed(1)}% to ${briefingRs(cur.revenue)}, driven by ${Math.abs(unitsDelta).toFixed(1)}% ${unitsDelta >= 0 ? "higher" : "lower"} unit sales (${Math.round(cur.units || 0).toLocaleString("en-IN")} vs ${Math.round(pr.units || 0).toLocaleString("en-IN")} units in Q${quarter - 1}).`,
+        `Cash on hand ${cashDelta >= 0 ? "increased" : "decreased"} ${Math.abs(cashDelta).toFixed(1)}% quarter over quarter to ${briefingRs(cur.cash)}.`,
+        `Balanced Scorecard total ${scoreDelta >= 0 ? "improved" : "declined"} from ${priorScore.toFixed(1)} to ${curScore.toFixed(1)} (${scoreDelta >= 0 ? "+" : ""}${scoreDelta.toFixed(1)}).`
+      ].join(" ");
+    }
+  }
+
+  const thisQuarterDecisions = decisions.filter((row) => Number(row.quarter) === quarter);
+  const decisionsText = thisQuarterDecisions.length
+    ? thisQuarterDecisions.map((row) => describeTeamDecision(row.decision, row.submittedBy)).join(" ")
+    : "No decisions were recorded in team_decisions for this quarter.";
+
+  const nextPlan = strategyPlans.find((row) => Number(row.quarter) === quarter + 1);
+  const nextProForma = proForma.find((row) => Number(row.quarter) === quarter + 1);
+  let nextQuarter: string;
+  if (nextPlan?.plan && Object.keys(nextPlan.plan).length) {
+    const priorities = nextPlan.plan.priorities || {};
+    const priorityText = Object.entries(priorities).filter(([, value]) => Number(value) > 0).map(([key, value]) => `${key} ${value}%`).join(", ");
+    const missionNote = nextPlan.plan.mission ? ` Mission statement on file: "${String(nextPlan.plan.mission).slice(0, 200)}"` : "";
+    nextQuarter = `Strategy priorities locked in for Q${quarter + 1}${priorityText ? `: ${priorityText}` : ""}.${missionNote}`;
+  } else if (nextProForma) {
+    nextQuarter = `A pro forma projection has been prepared for Q${quarter + 1}, but no locked-in strategy plan is on file yet.`;
+  } else {
+    nextQuarter = "Not yet decided.";
+  }
+
+  const flags: string[] = [];
+  const curMetrics = current?.rawMetrics || {};
+  if (curMetrics.cash !== undefined && Number(curMetrics.cash) < 200) {
+    flags.push(`Liquidity risk: cash on hand is ${briefingRs(curMetrics.cash)}, below the Rs. 200 L comfort threshold.`);
+  }
+  if (curMetrics.bankrupt) {
+    flags.push("Insolvency risk: the team's balance sheet is currently flagged bankrupt.");
+  }
+  if (curMetrics.profit !== undefined && Number(curMetrics.profit) < 0) {
+    flags.push(`Profitability risk: the team posted a net loss of ${briefingRs(Math.abs(Number(curMetrics.profit)))} this quarter.`);
+  }
+  if (curMetrics.stockout) {
+    flags.push(`Stockout risk: demand exceeded supply this quarter (${Math.round(Number(curMetrics.lost || 0))} units of lost sales).`);
+  }
+  if (curMetrics.reliab !== undefined && Number(curMetrics.reliab) < 0.5) {
+    flags.push(`Reliability risk: product reliability score is ${(Number(curMetrics.reliab) * 100).toFixed(0)}%, below the 50% threshold.`);
+  }
+  if (curMetrics.util !== undefined && Number(curMetrics.util) > 0.95) {
+    flags.push(`Capacity risk: plant utilization is at ${(Number(curMetrics.util) * 100).toFixed(0)}%, leaving little room for demand upside.`);
+  }
+  if (current && prior && Number(current.overall_score || 0) < Number(prior.overall_score || 0)) {
+    flags.push(`Balanced Scorecard total dropped from ${Number(prior.overall_score).toFixed(1)} to ${Number(current.overall_score).toFixed(1)} quarter over quarter.`);
+  }
+  for (const row of thisQuarterDecisions) {
+    const decision = row.decision || {};
+    const price = decision.price;
+    const segId = decision.segment_id || decision.segmentId;
+    if (price === undefined || !segId) continue;
+    const segment = SEGMENTS.find((candidate) => candidate.id === segId);
+    if (!segment) continue;
+    const [wtpMin, wtpMax] = segment.wtp;
+    if (Number(price) > wtpMax * 1.15 || Number(price) < wtpMin * 0.5) {
+      flags.push(`Pricing risk: ${decision.brandName || decision.brandId || "a model"} is priced at Rs. ${Number(price).toLocaleString("en-IN")}, far from ${segment.name}'s willingness-to-pay range (Rs. ${wtpMin.toLocaleString("en-IN")}–${wtpMax.toLocaleString("en-IN")}).`);
+    }
+  }
+  const uncertainties = flags.length ? flags.join(" ") : "No rule-based risk flags were triggered from this quarter's data.";
+
+  return { performance, decisions: decisionsText, nextQuarter, uncertainties };
+}
 
 async function startServer() {
   const app = express();
@@ -720,14 +846,9 @@ Focus on financial viability, pricing strategy, capacity planning, R&D/licensing
     }
   });
 
-  // AI-generated quarterly instructor briefing from the team's persisted records.
+  // Deterministic quarterly instructor briefing, compiled entirely from the team's own persisted records (no AI/API calls).
   app.post("/api/executive-briefing", async (req, res) => {
     try {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey || apiKey === "YOUR_ANTHROPIC_API_KEY") {
-        return res.status(400).json({ error: "ANTHROPIC_API_KEY is not configured in environment." });
-      }
-
       const universeId = String(req.body?.universeId || "").trim();
       const teamId = Number(req.body?.teamId);
       const quarter = Number(req.body?.quarter);
@@ -761,31 +882,8 @@ Focus on financial viability, pricing strategy, capacity planning, R&D/licensing
       ).map((row: any) => ({ quarter: row.quarter, submittedAt: row.submitted_at, submittedBy: row.submitted_by, decision: readJson(row.decision_json) }));
 
       const sourceData = { universeId, teamId, quarter, role, scorecards, strategyPlans: plans, proForma, decisions };
-      const systemPrompt = `You are a business consultant writing a concise executive summary for an instructor presentation in an EV venture simulation. Write for a business-school audience. Use only the supplied data; never invent metrics or decisions. Explain cause and effect, distinguish actual results from forecasts, and call out missing data as uncertainty. Return valid JSON only with exactly these string fields: performance, decisions, nextQuarter, uncertainties. Each field must contain 1-2 polished paragraphs, with no markdown headings or bullet lists.`;
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1400,
-          system: systemPrompt,
-          messages: [{ role: "user", content: `Prepare the quarterly briefing for the ${role}.\n\nD1 data:\n${JSON.stringify(sourceData, null, 2)}` }]
-        })
-      });
-      if (!response.ok) throw new Error(`Anthropic request failed (${response.status}).`);
-      const payload: any = await response.json();
-      const text = payload?.content?.find((item: any) => item.type === "text")?.text || "{}";
-      const parsed = readJson(text.replace(/^```json\s*|\s*```$/g, ""));
-      return res.json({ sourceData, sections: {
-        performance: String(parsed.performance || "Performance data was retrieved, but no summary was generated."),
-        decisions: String(parsed.decisions || "No decision rationale was available for this quarter."),
-        nextQuarter: String(parsed.nextQuarter || "No next-quarter plan was available."),
-        uncertainties: String(parsed.uncertainties || "No additional uncertainties were identified by the model.")
-      } });
+      const sections = buildExecutiveBriefingSections(sourceData);
+      return res.json({ sourceData, sections });
     } catch (err: any) {
       console.error("Executive briefing API error:", err);
       return res.status(500).json({ error: err.message || "Failed to generate executive briefing." });
