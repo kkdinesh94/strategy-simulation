@@ -128,8 +128,6 @@ export interface TeamDecision {
   shareIssue?: number; // Rs. L of equity raised via issuing new shares
   shareBuyback?: number; // Rs. L of equity used to repurchase shares from market
   dividendPerShare?: number; // Rs. per share dividend declared
-  bankLoanDrawn?: number;
-  bankLoanRepaid?: number;
   cdInvestment?: number;
   interestRate?: number;
   buyIntel: boolean;

@@ -424,6 +424,19 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const avgPrice = t.models.length ? t.models.reduce((x, m) => x + (m.price || 0), 0) / t.models.length : 0;
   const revenue = (estUnitsSold * avgPrice) / 1e5;
 
+  // G&A, warranty and inventory holding are all real charges inside simulateQuarter's
+  // ebitda calc (see the `ga`/`warranty`/`holding` lines there) but were missing here,
+  // which let this pro forma (and the "insufficient funds" auditor gate built on it)
+  // approve plans that simulateQuarter then ran cash-negative. Mirror the same formulas.
+  const ga = 30 + 0.02 * revenue;
+  const reliab = reliabilityOf(t);
+  const warrPerUnit = (2600 - 1800 * reliab) / 1e5;
+  const warranty = estUnitsSold * warrPerUnit;
+  const estEndInv = Math.max(0, availableUnits - estUnitsSold);
+  const holding = estEndInv * HOLD_COST;
+
+  const outWithGaEtc = out + ga + warranty + holding;
+
   return {
     prod,
     materials,
@@ -431,17 +444,17 @@ export function proFormaCalc(st: GameState, t: TeamState) {
     quality,
     growth: dev + rnd + centreOpen + capex,
     people: salesPayroll + plantPayroll,
-    running: netOpex + fixed + research + interest,
+    running: netOpex + fixed + research + interest + ga + warranty + holding,
     shareBuyback,
     dividends: totalDiv,
-    out,
+    out: outWithGaEtc,
     revenue,
     estUnitsSold: Math.round(estUnitsSold),
     cash: t.cash,
     inflow: totalInflow,
     equityInflow,
     ltInflow,
-    close: t.cash + revenue + totalInflow - out,
+    close: t.cash + revenue + totalInflow - outWithGaEtc,
     bankHeadroom: headroom
   };
 }
@@ -1220,6 +1233,7 @@ export function simulateQuarter(st: GameState) {
     t.dec.shareIssue = 0;
     t.dec.shareBuyback = 0;
     t.dec.dividendPerShare = 0;
+    t.dec.cdInvestment = 0;
     t.dec.locked = false;
     t.models.forEach((m) => (m.lastHash = bomHash(m)));
   }
@@ -1416,7 +1430,7 @@ export function botDecide(t: TeamState, st: GameState) {
   t.dec.buyClinic = false;
 
   const stock = t.models.reduce((x, mm) => x + (mm.inv || 0), 0);
-  const target = last ? Math.round(last.units * 1.15) : 1500;
+  const target = last ? Math.round(last.units * 1.15) : 900;
   t.dec.prod = {
     [m.id]: clamp(Math.round((target - stock * 0.8) / 50) * 50, 300, t.capacity)
   };
@@ -1543,7 +1557,7 @@ export function newState(
   const state: GameState = {
     phase: "decisions",
     quarter: 1,
-    cfg: { quarters, tam0, startCash: 2500, growth: 0.05, vcQuarter },
+    cfg: { quarters, tam0, startCash: 2800, growth: 0.05, vcQuarter },
     contracts: [],
     contractSeq: 1,
     teams: teamDefs.map((td, i) => {
@@ -1569,8 +1583,8 @@ export function newState(
         prim: arch.prim,
         sec: arch.sec,
         charterDone: false,
-        cash: 1900,
-        paidIn: 2500,
+        cash: 2200,
+        paidIn: 2800,
         rep: 0.5,
         cumProfit: 0,
         aw,
@@ -1598,7 +1612,11 @@ export function newState(
         dec: {
           ad: 180,
           alloc: { ...arch.alloc },
-          prod: { [m.id]: 1800 },
+          // 900, not a full-capacity run: Quarter 1 sells nothing (tam=0 until Q2),
+          // so every unit produced here is cash tied up in inventory with no revenue
+          // offset. A launch-scale batch, not a max-capacity one, keeps the default
+          // plan solvent across all archetypes (materials cost varies ~2x by archetype).
+          prod: { [m.id]: 900 },
           locked: false,
           claims: [],
           buyIntel: false,
@@ -1614,8 +1632,6 @@ export function newState(
           shareIssue: 0,
           shareBuyback: 0,
           dividendPerShare: 0,
-          bankLoanDrawn: 0,
-          bankLoanRepaid: 0,
           cdInvestment: 0,
           interestRate: 0.03,
           devCost: 0

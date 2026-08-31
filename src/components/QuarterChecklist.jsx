@@ -62,7 +62,7 @@ const RECORD_QUERIES = {
 // never in D1, so completion is checked locally instead of against a nonexistent table.
 const LOCAL_CHECKS = {
   facility: (team) => Boolean(team?.dec?.facilityLocation),
-  financing: (team) => Boolean(team?.dec?.vc?.ask > 0 || team?.dec?.bankLoanDrawn > 0 || team?.dec?.cdInvestment > 0),
+  financing: (team) => Boolean(team?.dec?.vc?.ask > 0 || (team?.dec?.bankTarget || 0) !== (team?.debt?.bank || 0) || team?.dec?.cdInvestment > 0),
   quality: (team) => Boolean(team?.qualityComponents?.length),
   hr: (team) => Boolean(team?.hrCompensation?.sales || team?.hrCompensation?.production)
 };

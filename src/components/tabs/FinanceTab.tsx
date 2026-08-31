@@ -5,8 +5,6 @@ import {
   bankLimit,
   ltLimit,
   valuationOf,
-  proFormaCalc,
-  equityOf,
   sharesOf,
   stockPriceOf,
   marketCapOf,
@@ -23,7 +21,6 @@ import {
   DollarSign,
   Landmark,
   PieChart,
-  AlertTriangle,
   FileText,
   Sparkles,
   ShieldCheck,
@@ -55,12 +52,10 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   >("proforma");
   const isLocked = team.dec.locked;
 
-  const pf = proFormaCalc(gameState, team);
   const maxBank = bankLimit(team);
   const maxLT = ltLimit(team);
   const currentValuation = valuationOf(team);
   const lastHist = team.hist[team.hist.length - 1];
-  const netEquity = equityOf(team);
 
   // Shares and Equity Metrics
   const curShares = sharesOf(team);
@@ -243,133 +238,6 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
 
       {/* SUB-TAB 1: PRO FORMA STATEMENTS */}
       {activeSubTab === "proforma" && <ProFormaPanel team={team} gameState={gameState} universeId={universeId} onNotify={onNotify} />}
-      {false && activeSubTab === "proforma" && (
-        <div className="space-y-6">
-          {/* Executive Financial Ratios Overview Card */}
-          <div className="bg-[#FAF8F5] text-[#1F2022] p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4 font-sans">
-            <div className="flex items-center justify-between border-b border-[#E5E1D8] pb-3">
-              <div className="flex items-center gap-2">
-                <PieChart className="w-5 h-5 text-emerald-700" />
-                <h3 className="text-base font-bold tracking-tight text-[#1F2022]">
-                  Executive Financial Health & Solvency Ratios
-                </h3>
-              </div>
-              <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-mono font-bold uppercase">
-                Audited Financial Statement
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
-              <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
-                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">EBITDA (Operating Earnings)</div>
-                <div className="text-lg font-bold text-emerald-700 mt-1">
-                  Rs. {lastHist ? lastHist.ebitda.toFixed(1) : "0.0"} L
-                </div>
-                <div className="text-[10px] text-[#5A5C60] mt-0.5">Earnings Before Interest & Tax</div>
-              </div>
-
-              <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
-                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Debt-to-Equity Ratio (D/E)</div>
-                <div className="text-lg font-bold text-indigo-700 mt-1">
-                  {netEquity > 0 ? ((team.debt.bank + team.debt.lt + team.debt.shark) / netEquity).toFixed(2) : "0.00"} x
-                </div>
-                <div className="text-[10px] text-[#5A5C60] mt-0.5">Total Debt: {fmtL(team.debt.bank + team.debt.lt + team.debt.shark)} L</div>
-              </div>
-
-              <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
-                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Stock Price / MktCap</div>
-                <div className="text-lg font-bold text-amber-700 mt-1">
-                  Rs. {curStockPrice.toFixed(2)}
-                </div>
-                <div className="text-[10px] text-[#5A5C60] mt-0.5">Cap: Rs. {curMarketCap.toLocaleString("en-IN")} L</div>
-              </div>
-
-              <div className="p-3.5 bg-white rounded-xl border border-[#E0DCD3] shadow-sm">
-                <div className="text-[10px] text-[#5A5C60] font-bold uppercase">Operating Margin (EBITDA %)</div>
-                <div className="text-lg font-bold text-blue-700 mt-1">
-                  {lastHist && lastHist.revenue > 0 ? ((lastHist.ebitda / lastHist.revenue) * 100).toFixed(1) : "0.0"}%
-                </div>
-                <div className="text-[10px] text-[#5A5C60] mt-0.5">EBITDA / Revenue</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
-            <h3 className="text-lg font-bold text-[#1F2022] mb-2">
-              Quarter {gameState.quarter} Pro Forma Cash Budget
-            </h3>
-            <p className="text-xs text-[#5A5C60] mb-4">
-              Projects ending cash based on committed decision expenditures, financing flows, and liquid reserves.
-            </p>
-
-            <div className="space-y-2 font-mono text-xs">
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3]">
-                <span className="text-[#5A5C60]">Starting Liquid Cash:</span>
-                <span className="font-bold text-[#1F2022]">{fmtL(pf.cash)} L</span>
-              </div>
-              {pf.equityInflow > 0 && (
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-amber-700">
-                  <span>+ Equity Capital Raise (Share Offering):</span>
-                  <span>+{fmtL(pf.equityInflow)} L</span>
-                </div>
-              )}
-              {pf.ltInflow > 0 && (
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-emerald-700">
-                  <span>+ Debt Borrowing Inflow (Bond Issue):</span>
-                  <span>+{fmtL(pf.ltInflow)} L</span>
-                </div>
-              )}
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
-                <span>- Scheduled Production Materials:</span>
-                <span>-{fmtL(pf.materials)} L ({pf.prod} units)</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
-                <span>- Advertising Campaign Spend:</span>
-                <span>-{fmtL(pf.ad)} L</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
-                <span>- Expansion & R&D Growth Outlays:</span>
-                <span>-{fmtL(pf.growth)} L</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
-                <span>- Sales & Factory Payroll:</span>
-                <span>-{fmtL(pf.people)} L</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-red-600">
-                <span>- Showroom Opex, Overhead & Debt Interest:</span>
-                <span>-{fmtL(pf.running)} L</span>
-              </div>
-              {pf.shareBuyback > 0 && (
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-purple-700">
-                  <span>- Share Buyback (Treasury Repurchase):</span>
-                  <span>-{fmtL(pf.shareBuyback)} L</span>
-                </div>
-              )}
-              {pf.dividends > 0 && (
-                <div className="flex justify-between py-1 border-b border-[#E0DCD3] text-indigo-700">
-                  <span>- Cash Dividends Declared:</span>
-                  <span>-{fmtL(pf.dividends)} L</span>
-                </div>
-              )}
-              <div className="flex justify-between py-2 border-t-2 border-[#1F2022] text-sm font-bold">
-                <span>Projected Ending Cash:</span>
-                <span className={pf.close < 0 ? "text-red-600" : "text-emerald-700"}>
-                  {fmtL(pf.close)} L
-                </span>
-              </div>
-            </div>
-
-            {pf.close < 0 && (
-              <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>
-                  Warning: Cash closes negative! If locked in short of cash, an emergency loan shark will automatically fund the deficit at penal interest rates (up to 25%/qtr) and take equity dilution.
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* SUB-TAB 2: CAPITAL STRUCTURE & SHARES */}
       {activeSubTab === "equity" && (
