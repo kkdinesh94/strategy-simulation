@@ -173,14 +173,14 @@ export default function PerceptualMap({ gameState, currentTeamIdx, quarter }: Pe
           />
 
           <Tooltip content={<MapTooltip />} cursor={{ strokeDasharray: "3 3" }} />
-          <Legend
-            payload={seriesByTeam.map(({ team }) => ({
+          {React.createElement(Legend as any, {
+            payload: seriesByTeam.map(({ team }) => ({
               value: team.name,
               type: "circle",
               color: TEAM_COLORS[team.i % TEAM_COLORS.length]
-            }))}
-            wrapperStyle={{ fontSize: 11 }}
-          />
+            })),
+            wrapperStyle: { fontSize: 11 }
+          })}
 
           {seriesByTeam.map(({ team, points }) => {
             const isCurrent = team.i === currentTeamIdx;

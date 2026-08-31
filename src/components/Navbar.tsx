@@ -1,7 +1,6 @@
 import React from "react";
 import {
   Compass,
-  Target,
   Bike,
   Cpu,
   Megaphone,
@@ -19,7 +18,6 @@ import {
 } from "lucide-react";
 
 export type TabKey =
-  | "strategy"
   | "charter"
   | "product"
   | "rnd"
@@ -51,7 +49,7 @@ interface NavbarProps {
 }
 
 const NAV_GROUPS: { label: string; tabs: TabKey[]; adminOnly?: boolean }[] = [
-  { label: "Setup", tabs: ["strategy", "charter"] },
+  { label: "Setup", tabs: ["charter"] },
   {
     label: "Decisions",
     tabs: ["product", "rnd", "marketing", "sales", "hr", "operations", "finance", "charging", "battery"]
@@ -86,7 +84,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   quarter
 }) => {
   const tabs: { id: TabKey; label: string; icon: React.ReactNode; show?: boolean }[] = [
-    { id: "strategy", label: "Strategy Wizard", icon: <Target className="w-[15px] h-[15px] text-rose-500" /> },
     { id: "charter", label: "Executive Charter", icon: <Compass className="w-[15px] h-[15px]" /> },
     { id: "product", label: "Product & Specs", icon: <Bike className="w-[15px] h-[15px]" /> },
     { id: "rnd", label: "R&D & Licensing", icon: <Cpu className="w-[15px] h-[15px] text-purple-400" /> },

@@ -306,15 +306,15 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
                     <div className="space-y-1">
                       <div className="flex justify-between py-1.5 text-emerald-800 font-bold border-b border-[#E0DCD3]">
                         <span>Gross Commercial Revenue:</span>
-                        <span>{fmtL(currentHistItem.rev)} L</span>
+                        <span>{fmtL(currentHistItem.revenue)} L</span>
                       </div>
                       <div className="flex justify-between py-1 text-red-600 pl-4 border-b border-[#E0DCD3]">
                         <span>Less: Direct Cost of Goods Sold (BOM Materials & Plant Labor):</span>
-                        <span>-{fmtL(currentHistItem.cogs || currentHistItem.materials || 0)} L</span>
+                        <span>-{fmtL(currentHistItem.cogs || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1.5 font-bold text-[#1F2022] bg-[#FAF8F5] px-2 rounded">
                         <span>GROSS PROFIT (Contribution Margin):</span>
-                        <span className="text-emerald-700">{fmtL(currentHistItem.gp)} L</span>
+                        <span className="text-emerald-700">{fmtL(currentHistItem.grossProfit)} L</span>
                       </div>
 
                       <div className="pt-2 text-[11px] font-bold text-[#5A5C60] uppercase">Operating Expenses (SG&A):</div>
@@ -324,15 +324,15 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
                         <span>Experience Center Showroom Opex & Fixed Rent:</span>
-                        <span>{fmtL(currentHistItem.centres * 12)} L</span>
+                        <span>{fmtL((currentHistItem.netOpex || 0) + (currentHistItem.fixed || 0))} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
                         <span>Sales Force & Corporate Payroll:</span>
-                        <span>{fmtL(currentHistItem.staff * 2.5)} L</span>
+                        <span>{fmtL((currentHistItem.salesPayroll || 0) + (currentHistItem.plantPayroll || 0))} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
                         <span>Quality Management & TQM Programs:</span>
-                        <span>{fmtL(currentHistItem.qualitySpend || 0)} L</span>
+                        <span>{fmtL(currentHistItem.quality || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
                         <span>R&D Tech Engineering Outlays:</span>
@@ -345,12 +345,12 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-[#5A5C60]">
                         <span>Depreciation of PP&E Plant Assets:</span>
-                        <span>-{fmtL(currentHistItem.deprec || 20)} L</span>
+                        <span>-{fmtL(currentHistItem.dep || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1.5 font-bold text-[#1F2022] bg-[#FAF8F5] px-2 rounded">
                         <span>EBIT (Operating Profit):</span>
-                        <span className={currentHistItem.ebitda - (currentHistItem.deprec || 20) >= 0 ? "text-emerald-700" : "text-red-600"}>
-                          {fmtL(currentHistItem.ebitda - (currentHistItem.deprec || 20))} L
+                        <span className={currentHistItem.ebitda - (currentHistItem.dep || 0) >= 0 ? "text-emerald-700" : "text-red-600"}>
+                          {fmtL(currentHistItem.ebitda - (currentHistItem.dep || 0))} L
                         </span>
                       </div>
 
@@ -483,31 +483,31 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3]">
                         <span>Add Back: Non-Cash Depreciation:</span>
-                        <span>+{fmtL(currentHistItem.deprec || 20)} L</span>
+                        <span>+{fmtL(currentHistItem.dep || 0)} L</span>
                       </div>
 
                       <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">2. Cash Flows from Investing Activities:</div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-red-600">
                         <span>Capital Expenditures (Plant & Production Expansion):</span>
-                        <span>-{fmtL(currentHistItem.cashFlow?.capex || (currentHistItem.expBlocks ? currentHistItem.expBlocks * 100 : 0))} L</span>
+                        <span>-{fmtL(currentHistItem.capex || 0)} L</span>
                       </div>
 
                       <div className="text-[11px] font-bold text-[#5A5C60] uppercase pt-2">3. Cash Flows from Financing Activities:</div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-amber-700">
                         <span>Proceeds from Share Issuance:</span>
-                        <span>+{fmtL(currentHistItem.cashFlow?.shareIssuance || 0)} L</span>
+                        <span>+{fmtL(currentHistItem.shareIssueAmt || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-purple-700">
                         <span>Outflow for Share Buybacks:</span>
-                        <span>-{fmtL(currentHistItem.cashFlow?.shareBuyback || 0)} L</span>
+                        <span>-{fmtL(currentHistItem.shareBuybackAmt || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-indigo-700">
                         <span>Cash Dividends Distributed:</span>
-                        <span>-{fmtL(currentHistItem.dividendsPaid || currentHistItem.cashFlow?.dividends || 0)} L</span>
+                        <span>-{fmtL(currentHistItem.dividendsPaid || 0)} L</span>
                       </div>
                       <div className="flex justify-between py-1 pl-4 border-b border-[#E0DCD3] text-emerald-700">
                         <span>Net Debt Financing (Bonds & Bank Credit):</span>
-                        <span>+{fmtL(currentHistItem.cashFlow?.debtIncurred || (currentHistItem.debt.lt > 0 ? currentHistItem.debt.lt : 0))} L</span>
+                        <span>+{fmtL((currentHistItem.ltIssued || 0) - (currentHistItem.ltRepaid || 0))} L</span>
                       </div>
 
                       <div className="flex justify-between py-2 border-t-2 border-[#1F2022] text-sm font-bold bg-slate-100 px-2 rounded mt-3">
@@ -674,7 +674,7 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
                           {t.name} {isSelf && " (Your Firm)"}
                         </td>
                         <td className="text-right py-3 text-emerald-700 font-bold">
-                          {r ? fmtL(r.rev) + " L" : "Rs. 0 L"}
+                          {r ? fmtL(r.revenue) + " L" : "Rs. 0 L"}
                         </td>
                         <td className="text-right py-3 text-[#1F2022]">
                           {r ? r.units.toLocaleString("en-IN") : "0"}

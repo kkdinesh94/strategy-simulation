@@ -630,22 +630,8 @@ export default function App() {
           universeId={universe.id}
           teamId={currentTeam.i}
           quarter={gameState.quarter}
-          onOpen={() => setActiveTab("strategy")}
+          onOpen={() => setActiveTab("charter")}
         />
-
-        {activeTab === "strategy" && (
-          <CompanySetupTab
-            team={currentTeam}
-            gameState={gameState}
-            currentUser={currentUser}
-            allUsers={allUsers}
-            universe={universe}
-            onChange={handleUpdateCurrentTeam}
-            onNotify={showNotification}
-            universeId={universe.id}
-            initialStep={1}
-          />
-        )}
 
         {activeTab === "charter" && (
           <CompanySetupTab
@@ -657,7 +643,7 @@ export default function App() {
             onChange={handleUpdateCurrentTeam}
             onNotify={showNotification}
             universeId={universe.id}
-            initialStep={2}
+            initialStep={1}
           />
         )}
 
@@ -696,8 +682,6 @@ export default function App() {
             team={currentTeam}
             gameState={gameState}
             onChange={handleUpdateCurrentTeam}
-            universeId={universe.id}
-            onNotify={showNotification}
           />
         )}
 

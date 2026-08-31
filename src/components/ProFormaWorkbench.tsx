@@ -49,7 +49,9 @@ export const ProFormaWorkbench: React.FC<ProFormaWorkbenchProps> = ({ team, game
     const estCogs = basePf.out * sc.volumeMultiplier;
     const estGrossProfit = totalEstRevL - estCogs;
     const estNetProfit = estGrossProfit - basePf.running - basePf.people;
-    const estEndingCash = team.cash + totalEstRevL - basePf.out - basePf.growth;
+    // basePf.out already contains growth spend (dev/rnd/centreOpen/capex), so it
+    // must not be subtracted a second time here or cash looks worse than it is.
+    const estEndingCash = team.cash + totalEstRevL - basePf.out;
 
     return {
       sc,

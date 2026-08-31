@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, Play, Save } from "lucide-react";
-import { proFormaCalc, unitCost, centreOpenCost } from "../../engine/simulationEngine";
+import { proFormaCalc, unitCost } from "../../engine/simulationEngine";
 import { CENTRE, CAP_BLOCK, HR } from "../../engine/catalog";
 import { saveProFormaStatement } from "../../lib/cloudflareD1";
 
@@ -19,24 +19,27 @@ export function ProFormaPanel({ team, gameState, universeId, onNotify, compact =
   const calculateStatement = () => {
     const pf = proFormaCalc(gameState, team);
     const forecastedUnits = team.models.reduce((total, model) => total + (Number(team.dec.prod[model.id]) || 0), 0);
-    const revenue = team.models.reduce((total, model) => total + ((Number(team.dec.prod[model.id]) || 0) * Number(model.price || 0)) / 100000, 0);
+    const revenue = pf.revenue;
     const outflows = { materials: pf.materials, advertising: pf.ad, quality: pf.quality, growth: pf.growth, people: pf.people, running: pf.running, shareBuyback: pf.shareBuyback, dividends: pf.dividends };
     const totalOutflows = pf.out;
     const inflows = { revenue, equityIssued: pf.equityInflow, debtDrawn: pf.ltInflow };
     const totalInflows = revenue + pf.inflow;
     const lastActual = [...(team.hist || [])].sort((a, b) => Number(b.q || 0) - Number(a.q || 0))[0];
     const openingCash = Number(lastActual?.cash ?? team.cash ?? 0);
-    const endingCash = pf.cash + totalInflows - pf.out;
+    const endingCash = pf.close;
     const grossMargin = revenue - pf.materials;
     const operatingExpenses = totalOutflows - pf.materials;
     const netIncome = grossMargin - operatingExpenses;
     const inventory = team.models.reduce((total, model) => total + (Number(model.inv) || 0) * unitCost(model) / 100000, 0);
-    const fixedAssets = Number(team.ppe || 0) + (Number(team.dec.expBlocks) || 0) * CAP_BLOCK.cost + centreOpenCost(team.dec.newCentreCities);
+    // Sales centre entry costs are expensed in the P&L (see auditTeam / simulateQuarter),
+    // never capitalized into PPE, so they must not be added here either.
+    const fixedAssets = Number(team.ppe || 0) + (Number(team.dec.expBlocks) || 0) * CAP_BLOCK.cost;
     const loans = (Number(team.debt.bank) || 0) + (Number(team.debt.lt) || 0) + (Number(team.debt.shark) || 0) + inflows.debtDrawn;
     const commonStock = (Number(team.paidIn) || 0) + inflows.equityIssued;
     const retainedEarnings = (Number(team.cumProfit) || 0) + netIncome;
     return { quarter: gameState.quarter, forecastedUnits, inflows, outflows, totalInflows, totalOutflows, endingCash, revenue, cogs: pf.materials, grossMargin, operatingExpenses, netIncome, openingCash, lastActual, assets: { cash: endingCash, inventory, fixedAssets }, liabilities: { loans }, equity: { commonStock, retainedEarnings } };
   };
+
 
   const [statement, setStatement] = useState(() => calculateStatement());
   const [isCalculating, setIsCalculating] = useState(false);

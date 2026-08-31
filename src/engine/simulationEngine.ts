@@ -408,6 +408,22 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const equityInflow = +t.dec.shareIssue || 0;
   const totalInflow = ltInflow + equityInflow;
 
+  // Sales revenue estimate. Quarter 1 has no market demand yet (setup-only
+  // quarter, mirrors simulateQuarter's tam=0 rule), so no revenue is credited.
+  // From Quarter 2 on, anchor the estimate to last quarter's actual sell-through
+  // (or half of what's available if there's no history yet), capped by what can
+  // actually be sold this quarter (units produced plus existing inventory).
+  // This keeps the pro forma / auditor cash projection from ignoring revenue
+  // entirely, which previously made every quarter look insolvent regardless of
+  // decisions.
+  const existingInv = t.models.reduce((x, m) => x + (m.inv || 0), 0);
+  const availableUnits = prod + existingInv;
+  const lastActual = t.hist.length ? t.hist[t.hist.length - 1] : null;
+  const demandRunRate = lastActual ? lastActual.units : availableUnits * 0.5;
+  const estUnitsSold = st.quarter === 1 ? 0 : Math.min(availableUnits, demandRunRate * 1.05);
+  const avgPrice = t.models.length ? t.models.reduce((x, m) => x + (m.price || 0), 0) / t.models.length : 0;
+  const revenue = (estUnitsSold * avgPrice) / 1e5;
+
   return {
     prod,
     materials,
@@ -419,11 +435,13 @@ export function proFormaCalc(st: GameState, t: TeamState) {
     shareBuyback,
     dividends: totalDiv,
     out,
+    revenue,
+    estUnitsSold: Math.round(estUnitsSold),
     cash: t.cash,
     inflow: totalInflow,
     equityInflow,
     ltInflow,
-    close: t.cash + totalInflow - out,
+    close: t.cash + revenue + totalInflow - out,
     bankHeadroom: headroom
   };
 }
@@ -993,8 +1011,13 @@ export function simulateQuarter(st: GameState) {
     const marketCap = Math.round(currentShares * nextStockPrice * 10) / 10;
 
     // 3-Way Financial Statement Breakdown: Cash Flow & Balance Sheet
+    // dev, rndSpend and centreOpen are already expensed inside `profit` (per the
+    // ASCM rule that growth spending hits the current quarter's P&L), so only
+    // capex belongs in the investing bucket. Counting them again here used to
+    // double-subtract those amounts from the reported cash flow, making the
+    // operating+investing+financing total not match the team's actual cash change.
     const operatingCash = profit + dep - deltaInv;
-    const investingCash = -(capex + dev + rndSpend + centreOpen);
+    const investingCash = -capex;
     const financingCash =
       dBank +
       ((t as any)._ltIssued || 0) -

@@ -1,6 +1,7 @@
 import React from "react";
 import { TeamState, GameState } from "../types/simulation";
 import { SEGMENTS, CLAIMS } from "../engine/catalog";
+import { unitCost } from "../engine/simulationEngine";
 import { Megaphone, Sparkles, AlertTriangle, CheckCircle2, Eye, Compass, PieChart } from "lucide-react";
 
 interface MarketingVisualizerProps {
@@ -99,7 +100,7 @@ export const MarketingVisualizer: React.FC<MarketingVisualizerProps> = ({ team, 
             {team.models.map((m) => {
               // Map model price (60k-160k) to X% and specs to Y%
               const normX = Math.min(85, Math.max(15, ((m.price - 60000) / 100000) * 70 + 15));
-              const normY = Math.min(85, Math.max(15, 85 - (m.unitCost / 90000) * 60));
+              const normY = Math.min(85, Math.max(15, 85 - (unitCost(m) / 90000) * 60));
 
               return (
                 <div
