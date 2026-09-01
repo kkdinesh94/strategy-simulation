@@ -269,14 +269,7 @@ export async function computeFastTests(teamId: string | number, quarter: number,
   const normalizedRegion = String(region || "Global").trim() || "Global";
   if (!normalizedTeamId || !Number.isInteger(quarter) || quarter < 1) throw new Error("teamId and a positive integer quarter are required.");
 
-  await db.exec(`CREATE TABLE IF NOT EXISTS fast_test_results (
-    result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL,
-    result_type TEXT NOT NULL CHECK (result_type IN ('brand', 'ad', 'reliability')),
-    subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL,
-    brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL,
-    purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id)
-  );`);
+  await db.exec("CREATE TABLE IF NOT EXISTS fast_test_results (result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, result_type TEXT NOT NULL CHECK (result_type IN ('brand', 'ad', 'reliability')), subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL, brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL, purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id))");
 
   const segments = await optionalRows(db, "SELECT * FROM market_segments ORDER BY segment_id");
   const components = await optionalRows(db, "SELECT * FROM vehicle_components");
