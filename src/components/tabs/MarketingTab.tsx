@@ -24,7 +24,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
 }) => {
   const isLocked = team.dec.locked;
   const isEarlyGame = gameState.quarter <= 3;
-  const [showMarketSurvey, setShowMarketSurvey] = useState(false);
+  const [showMarketSurvey, setShowMarketSurvey] = useState(gameState.quarter === 1);
 
   const handleAdBudgetChange = (val: number) => {
     if (isLocked) return;

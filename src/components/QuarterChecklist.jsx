@@ -5,7 +5,7 @@ import { executeD1Query } from "../lib/cloudflareD1";
 export const QUARTER_ITEMS = {
   1: [
     ["Register team, company name and mission", "charter", "strategy"],
-    ["Purchase market survey", "marketing", "marketSurvey"]
+    ["Purchase Market Opportunity Analysis (top of Marketing tab)", "marketing", "marketSurvey"]
   ],
   2: [
     ["Review MOA", "charter", "decisions"],
@@ -45,17 +45,22 @@ export const QUARTER_ITEMS = {
   final: [["Board report: performance, market position and valuation", "performance", "scorecard"]]
 };
 
+// D1 compares bound parameters by strict storage type — a bound JS number never matches
+// a TEXT column, even though the same value written as a literal in raw SQL would coerce.
+// So every team_id/team_i column declared TEXT below must be bound as a String(...), while
+// columns declared INTEGER (team_decisions.team_i, strategy_plans.team_i, production_schedules.team_i)
+// must stay numeric.
 const RECORD_QUERIES = {
-  decisions: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  strategy: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  schedule: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  fastTests: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM fast_test_results WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
-  benchmark: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [teamId, quarter]],
-  brands: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM brands WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]],
-  marketSurvey: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, teamId, quarter]]
+  decisions: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
+  strategy: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
+  schedule: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
+  fastTests: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM fast_test_results WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
+  benchmark: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
+  sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
+  brands: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM brands WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
+  ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
+  scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
+  marketSurvey: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]]
 };
 
 // These decisions live only on the in-memory team state (team.dec / team.qualityComponents),
