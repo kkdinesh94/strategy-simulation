@@ -342,7 +342,7 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
               )}
               <span className="text-[#C5C2BA]">•</span>
               <span className="text-[#6C6D70] text-xs">
-                TARGET: <strong className="text-[#1F2022] uppercase font-mono">{team.prim} / {team.sec}</strong>
+                TARGET SEGMENTS: <strong className="text-[#1F2022] uppercase font-mono">{team.prim} / {team.sec}</strong>
               </span>
             </div>
           </div>
@@ -388,7 +388,7 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={onOpenAdvisor}
             className="px-3.5 py-2 bg-white hover:bg-[#F3F0EA] text-purple-900 border border-[#E0DCD3] rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"

@@ -4,7 +4,7 @@ import { executeD1Query } from "../lib/cloudflareD1";
 
 export const QUARTER_ITEMS = {
   1: [
-    ["Register team, company name and mission", "charter", "decisions"],
+    ["Register team, company name and mission", "charter", "strategy"],
     ["Purchase market survey", "marketing", "marketSurvey"]
   ],
   2: [
