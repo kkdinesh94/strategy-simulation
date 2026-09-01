@@ -1554,10 +1554,11 @@ export function newState(
   tam0 = 20000,
   vcQuarter = 5
 ): GameState {
+  const startCash = 3200;
   const state: GameState = {
     phase: "decisions",
     quarter: 1,
-    cfg: { quarters, tam0, startCash: 2800, growth: 0.05, vcQuarter },
+    cfg: { quarters, tam0, startCash, growth: 0.05, vcQuarter },
     contracts: [],
     contractSeq: 1,
     teams: teamDefs.map((td, i) => {
@@ -1583,8 +1584,8 @@ export function newState(
         prim: arch.prim,
         sec: arch.sec,
         charterDone: false,
-        cash: 2200,
-        paidIn: 2800,
+        cash: startCash,
+        paidIn: startCash,
         rep: 0.5,
         cumProfit: 0,
         aw,
@@ -1616,7 +1617,7 @@ export function newState(
           // so every unit produced here is cash tied up in inventory with no revenue
           // offset. A launch-scale batch, not a max-capacity one, keeps the default
           // plan solvent across all archetypes (materials cost varies ~2x by archetype).
-          prod: { [m.id]: 900 },
+          prod: { [m.id]: 600 },
           locked: false,
           claims: [],
           buyIntel: false,
