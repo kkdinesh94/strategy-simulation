@@ -92,9 +92,9 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
     });
   };
 
-  const handleFastTestBudgetChange = (value: number) => {
+  const handleBenchmarkWalletChange = (value: number) => {
     if (isLocked) return;
-    onChange({ ...team, dec: { ...team.dec, market_research_budget: Math.max(0, value), buyIntel: value > 0 } });
+    onChange({ ...team, dec: { ...team.dec, market_research_budget: Math.max(0, value) } });
   };
 
   const totalAlloc = SEGMENTS.reduce((x, s) => x + (team.dec.alloc[s.id] || 0), 0);
@@ -175,17 +175,24 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
-        <div className="flex items-center justify-between gap-4 mb-3">
+        <div className="mb-3">
+          <h3 className="text-lg font-bold text-[#1F2022]">Fast Test Report</h3>
+          <p className="text-xs text-[#5A5C60]">Purchase this quarter's brand, price, and advertising judgments — flat fee, same every quarter.</p>
+        </div>
+        <FastTestReport teamId={team.i} quarter={gameState.quarter} region="Global" disabled={isLocked} />
+      </div>
+
+      <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <h3 className="text-lg font-bold text-[#1F2022]">Fast Test Report</h3>
-            <p className="text-xs text-[#5A5C60]">Purchase this quarter's brand, price, and advertising judgments.</p>
+            <h3 className="text-lg font-bold text-[#1F2022]">Competitive Benchmark Research Wallet</h3>
+            <p className="text-xs text-[#5A5C60]">Funds the Competitive Benchmark reports purchasable from the Performance tab (Rs. 15 L/region, Rs. 45 L/global).</p>
           </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-[#5A5C60]">
             Budget (Rs. L)
-            <input type="number" min={0} step={1} value={team.dec.market_research_budget || 0} disabled={isLocked} onChange={(event) => handleFastTestBudgetChange(+event.target.value)} className="w-24 p-2 font-mono border border-[#E0DCD3] rounded-lg" />
+            <input type="number" min={0} step={1} value={team.dec.market_research_budget || 0} disabled={isLocked} onChange={(event) => handleBenchmarkWalletChange(+event.target.value)} className="w-24 p-2 font-mono border border-[#E0DCD3] rounded-lg" />
           </label>
         </div>
-        <FastTestReport teamId={team.i} quarter={gameState.quarter} region="Global" budget={team.dec.market_research_budget || 0} />
       </div>
 
       {/* Campaign Claims (Deceptive Advertising Checks) */}

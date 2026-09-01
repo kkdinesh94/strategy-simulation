@@ -261,6 +261,8 @@ async function optionalRows(db: any, sql: string, ...params: any[]): Promise<any
 }
 
 /** Compute and persist the paid quarterly Fast Test report for one team. */
+export const FAST_TEST_REPORT_COST = 20;
+
 export async function computeFastTests(teamId: string | number, quarter: number, region: string, db?: any): Promise<FastTestResult[]> {
   if (!db) throw new Error("D1 database binding is required to compute fast tests.");
   const normalizedTeamId = String(teamId).trim();
@@ -276,9 +278,6 @@ export async function computeFastTests(teamId: string | number, quarter: number,
     UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id)
   );`);
 
-  const decisionRows = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE team_i = ? AND quarter = ? ORDER BY submitted_at DESC LIMIT 1", normalizedTeamId, quarter);
-  const decision = readJson(decisionRows[0]?.decision_json);
-
   const segments = await optionalRows(db, "SELECT * FROM market_segments ORDER BY segment_id");
   const components = await optionalRows(db, "SELECT * FROM vehicle_components");
   const componentMap = new Map(components.map((component: any) => [String(component.component_id), component]));
@@ -287,10 +286,7 @@ export async function computeFastTests(teamId: string | number, quarter: number,
   const universeRows = await optionalRows(db, "SELECT game_state FROM universes ORDER BY updated_at DESC");
   const state = universeRows.map((row: any) => readJson(row.game_state)).find((candidate: any) => (candidate.teams || []).some((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId));
   const stateTeam = (state?.teams || []).find((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId);
-  const paidDecision = Object.keys(decision).length ? decision : (stateTeam?.dec || {});
-  const researchBudget = fastTestNumber(paidDecision, ["market_research_budget", "marketResearchBudget"]);
-  if (researchBudget <= 0) throw new Error("Purchase the Fast Test report with market_research_budget before computing it.");
-  const purchaseCost = researchBudget;
+  const purchaseCost = FAST_TEST_REPORT_COST;
   const designs = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC", normalizedTeamId, quarter);
   const designRows = designs.map((row: any) => readJson(row.decision_json)).filter((row: any) => row.type === "vehicle_design");
   const subjects = brands.length ? brands : designRows.length ? designRows : (stateTeam?.models || []);
