@@ -116,7 +116,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
           </button>
           {showMarketSurvey && (
             <div className="px-4 pb-4">
-              <MarketSurveyReport universeId={universeId} teamId={team.i} quarter={gameState.quarter} onNotify={onNotify} />
+              <MarketSurveyReport universeId={universeId} teamId={team.i} quarter={gameState.quarter} onNotify={onNotify} onPurchased={() => onChange({ ...team })} />
             </div>
           )}
         </div>

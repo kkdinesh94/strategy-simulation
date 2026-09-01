@@ -17,6 +17,7 @@ interface MarketSurveyReportProps {
   teamId: number | string;
   quarter: number;
   onNotify?: (msg: string) => void;
+  onPurchased?: () => void;
 }
 
 type Precision = "low" | "medium" | "high";
@@ -99,7 +100,7 @@ function BenefitBarChart({ rows, color, errorMargin }: { rows: { name: string; v
   );
 }
 
-export default function MarketSurveyReport({ universeId, teamId, quarter, onNotify }: MarketSurveyReportProps) {
+export default function MarketSurveyReport({ universeId, teamId, quarter, onNotify, onPurchased }: MarketSurveyReportProps) {
   const [results, setResults] = useState<SurveyRow[]>([]);
   const [purchased, setPurchased] = useState(false);
   const [precision, setPrecision] = useState<Precision>("low");
@@ -144,6 +145,7 @@ export default function MarketSurveyReport({ universeId, teamId, quarter, onNoti
       if (!response.ok) throw new Error(payload.error || "Purchase failed.");
       onNotify?.(`Market Opportunity Analysis purchased (${PRECISION_LABELS[precision]}) for Rs. ${payload.cost} L.`);
       await load(precision);
+      onPurchased?.();
     } catch (purchaseError: any) {
       setError(purchaseError.message);
     } finally {
