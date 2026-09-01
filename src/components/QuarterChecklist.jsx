@@ -18,7 +18,7 @@ export const QUARTER_ITEMS = {
   3: [
     ["Set HR compensation", "hr", "hr"],
     ["Hire sales staff", "sales", "sales"],
-    ["Set brand prices", "marketing", "brands"],
+    ["Set brand prices", "marketing", "pricing"],
     ["Place ads", "marketing", "ads"],
     ["Run production simulation", "operations", "schedule"],
     ["Set production schedule", "operations", "schedule"]
@@ -27,7 +27,7 @@ export const QUARTER_ITEMS = {
     ["Evaluate fast test results", "performance", "fastTests"],
     ["Evaluate competitive benchmark", "performance", "benchmark"],
     ["Revise brand designs", "product", "decisions"],
-    ["Revise prices", "marketing", "brands"],
+    ["Revise prices", "marketing", "pricing"],
     ["Revise ad copy", "marketing", "ads"],
     ["Create quality improvement plan", "operations", "quality"]
   ],
@@ -57,7 +57,6 @@ const RECORD_QUERIES = {
   fastTests: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM fast_test_results WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
   benchmark: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
   sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
-  brands: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM brands WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
   ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
   scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
   marketSurvey: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]]
@@ -69,7 +68,11 @@ const LOCAL_CHECKS = {
   facility: (team) => Boolean(team?.dec?.facilityLocation),
   financing: (team) => Boolean(team?.dec?.vc?.ask > 0 || (team?.dec?.bankTarget || 0) !== (team?.debt?.bank || 0) || team?.dec?.cdInvestment > 0),
   quality: (team) => Boolean(team?.qualityComponents?.length),
-  hr: (team) => Boolean(team?.hrCompensation?.sales || team?.hrCompensation?.production)
+  hr: (team) => Boolean(team?.hrCompensation?.sales || team?.hrCompensation?.production),
+  // Brand prices live on team.models[].price and are never written to the (unused) `brands`
+  // D1 table. Locking the quarter is the real signal that current prices passed the
+  // auditor's price-sanity checks (floor/ceiling, minimum margin over unit cost).
+  pricing: (team) => Boolean(team?.dec?.locked)
 };
 
 export function quarterItems(quarter) {

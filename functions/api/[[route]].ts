@@ -1341,6 +1341,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarter) || !body.statement) {
         return new Response(JSON.stringify({ error: "universeId, teamI, quarter, and statement are required." }), { status: 400, headers: corsHeaders });
       }
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS pro_forma_statements (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, statement_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
       const id = `pro-forma:${universeId}:${teamI}:Q${quarter}`;
       await env.DB.prepare(`
         INSERT INTO pro_forma_statements (id, universe_id, team_i, quarter, statement_json, updated_at)
