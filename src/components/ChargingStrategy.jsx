@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { MARKETS, DEFAULT_MARKET_IDS } from "../engine/catalog";
 import { BatteryCharging, Check, Landmark, Save, Shield, TrendingUp } from "lucide-react";
 
-const REGIONS = ["North America", "Europe", "Asia-Pacific", "India"];
+// The four home metro clusters every team sells in (see DEFAULT_MARKET_IDS in the catalog).
+const REGIONS = MARKETS.filter((m) => DEFAULT_MARKET_IDS.includes(m.id)).map((m) => m.city);
 const CHARGER_TYPES = {
   "Level 2 AC": { weight: 0.08, installationCost: 0.12, maintenance: 0.006, description: "Workplaces and destination charging" },
   "DC Fast Charge": { weight: 0.18, installationCost: 0.35, maintenance: 0.014, description: "Corridor and fleet-ready charging" },
@@ -84,7 +86,7 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
 
   return <section className="space-y-6 font-sans">
     <div className="bg-[#202a2e] text-white p-6 rounded-lg flex flex-wrap justify-between gap-5 items-end">
-      <div><div className="text-[#e77d8d] font-mono text-[10px] font-bold tracking-widest flex items-center gap-2"><BatteryCharging size={14} /> REGIONAL INFRASTRUCTURE</div><h1 className="text-3xl font-bold mt-3">Build the network that sells the vehicle.</h1><p className="text-[#c7d0ce] text-sm mt-2 max-w-2xl">Charging access reduces range anxiety for Fleet Manager and Urban Commuter demand, while building a local barrier to entry.</p></div>
+      <div><div className="text-[#e77d8d] font-mono text-[10px] font-bold tracking-widest flex items-center gap-2"><BatteryCharging size={14} /> REGIONAL INFRASTRUCTURE</div><h1 className="text-3xl font-bold mt-3">Build the network that sells the vehicle.</h1><p className="text-[#c7d0ce] text-sm mt-2 max-w-2xl">Chargers ease range anxiety for Commuters and Fleet buyers. Each charger adds a small demand boost every quarter it stays in service (up to +30% in total), while maintenance is charged quarterly and installation once.</p></div>
       <div className="text-xs text-[#d6dfdc]">Quarter {quarter} · {status === "loading" ? "Loading" : "Draft ready"}</div>
     </div>
 
@@ -96,7 +98,7 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
     </div>
 
     <div className="bg-white border border-[#E5E1D8] rounded-lg overflow-hidden">
-      <div className="p-5 border-b border-[#E5E1D8] flex justify-between gap-3 items-center"><div><h2 className="font-bold text-[#1F2022]">Regional deployment plan</h2><p className="text-xs text-[#686b70] mt-1">Costs are shown in L and demand boost is charger count multiplied by charger-type weight.</p></div><span className="text-xs font-mono text-[#686b70]">{investments.length} regions</span></div>
+      <div className="p-5 border-b border-[#E5E1D8] flex justify-between gap-3 items-center"><div><h2 className="font-bold text-[#1F2022]">Regional deployment plan</h2><p className="text-xs text-[#686b70] mt-1">Costs are in Rs. lakh. Demand boost = number of chargers × the charger type's weight.</p></div><span className="text-xs font-mono text-[#686b70]">{investments.length} regions</span></div>
       <div className="divide-y divide-[#E5E1D8]">{investments.map((row) => { const calculated = calculateInvestment(row); return <div key={row.region} className="p-5 grid gap-4 lg:grid-cols-[1fr_1.3fr_1fr_1fr_1fr] items-end">
         <div><div className="font-bold text-sm">{row.region}</div><div className="text-xs text-[#686b70] mt-1">+{calculated.demand_boost_pct.toFixed(2)}% demand</div></div>
         <label className="text-xs font-semibold">Charger type<select value={row.charger_type} onChange={(event) => updateInvestment(row.region, { charger_type: event.target.value })} className="mt-1 w-full border border-[#D8D3C9] rounded-md p-2 text-sm font-normal bg-[#FAF8F5]">{Object.entries(CHARGER_TYPES).map(([type, config]) => <option key={type} value={type}>{type} ({config.weight}% / charger)</option>)}</select></label>

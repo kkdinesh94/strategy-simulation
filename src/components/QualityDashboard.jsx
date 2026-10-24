@@ -51,10 +51,7 @@ export default function QualityDashboard({ team, gameState, onChange, onNotify }
     if (!component) return;
 
     const cost = action === "inspect" ? component.inspectionCost : action === "study" ? STUDY_COST : ACTION_COST;
-    if ((team.cash || 0) < cost) {
-      onNotify?.(`Insufficient cash for this quality action (Rs. ${cost} L required).`);
-      return;
-    }
+
     if (action === "study" && !component.inspectionActive) {
       onNotify?.("Start inspection before studying variance.");
       return;
@@ -81,12 +78,14 @@ export default function QualityDashboard({ team, gameState, onChange, onNotify }
 
     const updatedComponents = [...components];
     updatedComponents[index] = next;
+    // The cost is charged as quality spending when the quarter runs (and checked by the
+    // auditor's cash projection), not deducted from cash in the browser.
     onChange({
       ...team,
-      cash: (team.cash || 0) - cost,
-      qualityCum: (team.qualityCum || 0) + cost,
-      qualityComponents: updatedComponents
+      qualityComponents: updatedComponents,
+      dec: { ...team.dec, qualityActionCost: (team.dec.qualityActionCost || 0) + cost }
     });
+    onNotify?.(`Rs. ${cost} L added to this quarter's quality budget.`);
   };
 
   return (

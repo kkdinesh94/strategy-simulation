@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, ClipboardList, RefreshCw } from "lucide-react";
-import { executeD1Query } from "../lib/cloudflareD1";
+import { teamData } from "../lib/apiClient";
 
 export const QUARTER_ITEMS = {
   1: [
@@ -45,22 +45,8 @@ export const QUARTER_ITEMS = {
   final: [["Board report: performance, market position and valuation", "performance", "scorecard"]]
 };
 
-// D1 compares bound parameters by strict storage type — a bound JS number never matches
-// a TEXT column, even though the same value written as a literal in raw SQL would coerce.
-// So every team_id/team_i column declared TEXT below must be bound as a String(...), while
-// columns declared INTEGER (team_decisions.team_i, strategy_plans.team_i, production_schedules.team_i)
-// must stay numeric.
-const RECORD_QUERIES = {
-  decisions: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
-  strategy: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM strategy_plans WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
-  schedule: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM production_schedules WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, Number(teamId), quarter]],
-  fastTests: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM fast_test_results WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
-  benchmark: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM competitive_benchmark_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
-  sales: (_universeId, teamId, quarter) => ["SELECT 1 AS present FROM sales_force WHERE team_id = ? AND quarter = ? LIMIT 1", [String(teamId), quarter]],
-  ads: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
-  scorecard: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM balanced_scorecard WHERE universe_id = ? AND team_i = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]],
-  marketSurvey: (universeId, teamId, quarter) => ["SELECT 1 AS present FROM market_survey_purchases WHERE universe_id = ? AND team_id = ? AND quarter = ? LIMIT 1", [universeId, String(teamId), quarter]]
-};
+// Completion of these items is recorded server-side; see server/api/teamData.ts for the queries.
+const RECORD_KEYS = new Set(["decisions", "strategy", "schedule", "fastTests", "benchmark", "sales", "ads", "scorecard", "marketSurvey"]);
 
 // These decisions live only on the in-memory team state (team.dec / team.qualityComponents),
 // never in D1, so completion is checked locally instead of against a nonexistent table.
@@ -94,11 +80,9 @@ export default function QuarterChecklist({ universeId, teamId, quarter = 1, onNa
     const results = await Promise.all(keys.map(async (key) => {
       const localCheck = LOCAL_CHECKS[key];
       if (localCheck) return [key, localCheck(team)];
-      const query = RECORD_QUERIES[key];
-      if (!query) return [key, false];
-      const [sql, params] = query(universeId, teamId, quarter);
-      const response = await executeD1Query(sql, params);
-      return [key, Boolean(response.success && (response.results || response.rows || []).length)];
+      if (!RECORD_KEYS.has(key)) return [key, false];
+      const response = await teamData(`checklist:${key}`, { universeId, teamId, quarter });
+      return [key, Boolean(response.success && response.results.length)];
     }));
     setCompleted(Object.fromEntries(results));
     setIsLoading(false);

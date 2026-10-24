@@ -1,3 +1,4 @@
+import { teamData } from "../lib/apiClient";
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, GripVertical, Loader2, Megaphone, Plus, X } from "lucide-react";
 
@@ -72,12 +73,11 @@ export default function AdCopyDesigner({ quarter = 1, initialBenefits = BENEFITS
       return undefined;
     }
     let cancelled = false;
-    fetch("/api/d1/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql: "SELECT * FROM market_segments ORDER BY segment_id" }) })
-      .then((response) => response.json().then((payload) => ({ response, payload })))
-      .then(({ response, payload }) => {
-        if (!response.ok || payload.success === false) throw new Error(payload.error || "Unable to load market segments.");
+    teamData("market-segments", { universeId: "", teamId: 0, quarter: 1 })
+      .then((payload) => {
+        if (!payload.success) throw new Error(payload.error || "Unable to load market segments.");
         if (cancelled) return;
-        const loaded = (payload.results || payload.rows || []).map(normalizeSegment);
+        const loaded = payload.results.map(normalizeSegment);
         if (loaded.length) {
           setSegments(loaded);
           setActiveSegmentId(targetSegmentId || loaded[0].segmentId);

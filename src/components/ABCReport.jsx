@@ -1,55 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
-import { executeD1Query } from "../lib/cloudflareD1";
+import { teamData } from "../lib/apiClient";
 
-const REPORT_SQL = `
-WITH ad_totals AS (
-  SELECT COALESCE(SUM(brand_ad_spend), 0) AS total_brand_ad_spend,
-         COALESCE(MAX(total_ad_budget), 0) AS total_ad_budget
-  FROM advertising_placements
-  WHERE universe_id = ? AND team_id = ? AND quarter = ?
-),
-regional_force AS (
-  SELECT so.region,
-         SUM(COALESCE(sf.total_salespeople, so.sales_force_count, 0) *
-             (COALESCE(sf.salary_base, 0) + COALESCE(sf.health_benefits, 0) + COALESCE(sf.performance_bonus, 0))) AS regional_sales_force_cost,
-         SUM(COALESCE(so.quarterly_lease, 0)) AS office_lease,
-         SUM(COALESCE(sf.total_salespeople, so.sales_force_count, 0) *
-             (COALESCE(sf.salary_base, 0) + COALESCE(sf.health_benefits, 0) + COALESCE(sf.performance_bonus, 0))) AS staff_cost
-  FROM sales_offices so
-  LEFT JOIN sales_force sf ON sf.office_id = so.office_id
-    AND sf.team_id = so.team_id AND sf.quarter = ?
-  WHERE so.team_id = ?
-  GROUP BY so.region
-),
-brand_ad_spend AS (
-  SELECT brand_id, COALESCE(SUM(brand_ad_spend), 0) AS brand_ad_spend
-  FROM advertising_placements
-  WHERE universe_id = ? AND team_id = ? AND quarter = ?
-  GROUP BY brand_id
-),
-brand_sales AS (
-  SELECT b.brand_id, b.name AS brand_name, sr.region,
-         COALESCE(sr.units_sold, 0) AS units_sold,
-         COALESCE(sr.price, b.price, 0) AS price,
-         COALESCE(b.unit_production_cost, 0) AS unit_production_cost,
-         COALESCE(b.brand_priority_weight, 0) AS brand_priority_weight,
-         COALESCE(ba.brand_ad_spend, 0) AS brand_ad_spend,
-         COALESCE(at.total_brand_ad_spend, 0) AS total_brand_ad_spend,
-         COALESCE(at.total_ad_budget, 0) AS total_ad_budget,
-         COALESCE(rf.regional_sales_force_cost, 0) AS regional_sales_force_cost,
-         COALESCE(rf.office_lease, 0) AS office_lease,
-         COALESCE(rf.staff_cost, 0) AS staff_cost
-  FROM brands b
-  JOIN sales_results sr ON sr.brand_id = b.brand_id
-    AND sr.universe_id = ? AND sr.team_id = ? AND sr.quarter = ?
-  LEFT JOIN brand_ad_spend ba ON ba.brand_id = b.brand_id
-  CROSS JOIN ad_totals at
-  LEFT JOIN regional_force rf ON rf.region = sr.region
-  WHERE b.team_id = ?
-)
-SELECT * FROM brand_sales ORDER BY region, brand_name;
-`;
+// The contribution query itself lives on the server (server/api/teamData.ts, key "abc-report").
 
 const money = (value) => `Rs. ${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} L`;
 const percent = (value) => `${(Number(value || 0) * 100).toFixed(1)}%`;
@@ -66,13 +19,7 @@ export default function ABCReport({ universeId, teamId, quarter }) {
 
   const loadReport = async () => {
     setState((current) => ({ ...current, status: "loading", error: "" }));
-    const params = [
-      universeId, teamId, quarter,
-      quarter, teamId,
-      universeId, teamId, quarter,
-      universeId, teamId, quarter, teamId
-    ];
-    const result = await executeD1Query(REPORT_SQL, params);
+    const result = await teamData("abc-report", { universeId, teamId, quarter });
     if (!result.success) {
       setState({ status: "error", rows: [], error: result.error || "Unable to load contribution analysis." });
       return;

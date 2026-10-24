@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { SEGMENTS } from "../engine/catalog";
 import {
   Bar,
   BarChart,
@@ -59,26 +60,31 @@ const SEGMENT_COLORS: Record<string, string> = {
   eco_advocate: "#22C55E"
 };
 
-const SEGMENT_LABELS: Record<string, string> = {
-  urban_commuter: "Urban Commuter",
-  fleet_operator: "Fleet Operator",
-  performance_enthusiast: "Performance Enthusiast",
-  tech_pioneer: "Tech Pioneer",
-  eco_advocate: "Eco Advocate"
+// Survey personas map onto the game's five customer segments; show the game's names so the
+// research reads the same as the Marketing and Product screens.
+const SURVEY_TO_SEGMENT: Record<string, string> = {
+  tech_pioneer: "S1",
+  urban_commuter: "S2",
+  eco_advocate: "S3",
+  performance_enthusiast: "S4",
+  fleet_operator: "S5"
 };
+const SEGMENT_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(SURVEY_TO_SEGMENT).map(([surveyId, segId]) => [surveyId, SEGMENTS.find((s) => s.id === segId)?.name || surveyId])
+);
 
-const SEGMENT_ORDER = ["urban_commuter", "fleet_operator", "performance_enthusiast", "tech_pioneer", "eco_advocate"];
+const SEGMENT_ORDER = ["tech_pioneer", "urban_commuter", "eco_advocate", "performance_enthusiast", "fleet_operator"];
 
 const lakh = (value: number) => (Number(value || 0) / 100000).toFixed(1);
 
 function BenefitBarChart({ rows, color, errorMargin }: { rows: { name: string; value: number }[]; color: string; errorMargin: number }) {
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 8 }}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 22, right: 72, bottom: 8, left: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#E5E1D8" horizontal={false} />
         <XAxis type="number" domain={[0, "dataMax + 20"]} tick={{ fontSize: 11, fill: "#5A5C60" }} />
         <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 12, fill: "#1F2022" }} />
-        <ReferenceLine x={100} stroke="#9CA3AF" strokeDasharray="4 4" label={{ value: "Market Average", position: "top", fontSize: 10, fill: "#7A7C80" }} />
+        <ReferenceLine x={100} stroke="#9CA3AF" strokeDasharray="4 4" label={{ value: "Market average", position: "top", fontSize: 10, fill: "#7A7C80" }} />
         <Tooltip
           formatter={(value: number) => [`${value} ± ${Math.round(errorMargin * 100)}%`, "Importance"]}
           contentStyle={{ fontSize: 12, borderRadius: 8, borderColor: "#E5E1D8" }}

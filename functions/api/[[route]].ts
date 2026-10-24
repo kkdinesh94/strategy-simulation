@@ -7,6 +7,26 @@ import { runQuarterWorkflow } from "../../src/lib/processQuarter";
 import { SEGMENTS } from "../../src/engine/catalog";
 import { projectBatteryLifecycle, type BatteryDisposition } from "../../src/lib/batteryLifecycle";
 import { reliabilityOf } from "../../src/engine/simulationEngine";
+import {
+  type Session,
+  KNOWN_DEFAULT_PASSWORDS,
+  canManageUniverse,
+  createSession,
+  deleteSession,
+  deleteSessionsForUser,
+  bearerToken,
+  ensureAuthTables,
+  getSession,
+  hashPassword,
+  isHashed,
+  isStaff,
+  publicUser,
+  staffUniverseIds,
+  validateNewPassword,
+  verifyPassword
+} from "../../server/api/auth";
+import { applyUniversePatch, PatchError, redactUniverseForTeam, type UniversePatch } from "../../src/lib/universePatch";
+import { runTeamDataQuery } from "../../server/api/teamData";
 
 const MARKET_SURVEY_ERROR_MARGIN: Record<string, number> = { low: 0.15, medium: 0.08, high: 0.04 };
 
@@ -547,25 +567,329 @@ export function buildExecutiveBriefingSections(sourceData: { quarter: number; sc
   return { performance, decisions: decisionsText, nextQuarter, uncertainties };
 }
 
+let universeColumnsReady = false;
+
+/** Adds columns introduced after the first deployment. Safe to call repeatedly. */
+async function ensureUniverseColumns(db: any) {
+  if (universeColumnsReady) return;
+  for (const sql of ["ALTER TABLE universes ADD COLUMN deadline_iso TEXT"]) {
+    try { await db.exec(sql); } catch { /* column already exists */ }
+  }
+  universeColumnsReady = true;
+}
+
+function universeFromRow(row: any) {
+  return {
+    id: row.id,
+    name: row.name,
+    code: row.code,
+    instructorEmail: row.instructor_email,
+    maxTeams: row.max_teams,
+    maxMembersPerTeam: row.max_members_per_team,
+    gameState: typeof row.game_state === "string" ? JSON.parse(row.game_state) : row.game_state,
+    createdAt: row.created_at,
+    deadlineISO: row.deadline_iso || null
+  };
+}
+
+async function writeUniverse(db: any, universe: any) {
+  await ensureUniverseColumns(db);
+  await db.prepare(`
+    INSERT INTO universes (id, name, code, instructor_email, max_teams, max_members_per_team, game_state, deadline_iso, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      code = excluded.code,
+      instructor_email = excluded.instructor_email,
+      max_teams = excluded.max_teams,
+      max_members_per_team = excluded.max_members_per_team,
+      game_state = excluded.game_state,
+      deadline_iso = excluded.deadline_iso,
+      updated_at = datetime('now')
+  `).bind(
+    universe.id,
+    universe.name,
+    universe.code || "COHORT",
+    universe.instructorEmail || "",
+    universe.maxTeams || 10,
+    universe.maxMembersPerTeam || 8,
+    JSON.stringify(universe.gameState),
+    universe.deadlineISO || null
+  ).run();
+}
+
+type JsonFn = (data: unknown, status?: number) => Response;
+
+/** Login, registration and password management. Returns null when the route is not an auth route. */
+async function handleAuthRoutes(env: Env, request: Request, url: URL, routeKey: string, body: any, session: Session | null, json: JsonFn): Promise<Response | null> {
+  const db = env.DB;
+
+  if (routeKey === "POST /api/auth/login") {
+    const email = String(body?.email || "").trim().toLowerCase();
+    const password = String(body?.password || "");
+    const row: any = email ? await db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").bind(email).first() : null;
+    const check = await verifyPassword(password, row?.password);
+    if (!row || !check.ok) return json({ error: "Email or password is incorrect." }, 401);
+    if (check.needsRehash) await db.prepare("UPDATE users SET password = ? WHERE id = ?").bind(await hashPassword(password), row.id).run();
+    await db.prepare("UPDATE users SET is_online = 1, last_active_at = ? WHERE id = ?").bind(new Date().toISOString(), row.id).run();
+    const token = await createSession(db, row.id);
+    return json({ token, user: publicUser({ ...row, is_online: 1 }), mustChangePassword: KNOWN_DEFAULT_PASSWORDS.includes(password) });
+  }
+
+  if (routeKey === "GET /api/auth/cohort") {
+    const code = String(url.searchParams.get("code") || "").trim().toUpperCase();
+    if (!code) return json({ error: "Enter your cohort code." }, 400);
+    const row: any = await db.prepare("SELECT * FROM universes WHERE UPPER(code) = ?").bind(code).first();
+    if (!row) return json({ error: "No cohort uses that code. Check it with your instructor." }, 404);
+    const universe = universeFromRow(row);
+    const counts: any = await db.prepare("SELECT team_i, COUNT(*) AS n FROM users WHERE universe_id = ? AND role = 'player' GROUP BY team_i").bind(universe.id).all();
+    const byTeam = new Map(((counts.results || []) as any[]).map((r) => [Number(r.team_i), Number(r.n)]));
+    return json({
+      universeId: universe.id,
+      name: universe.name,
+      maxMembersPerTeam: universe.maxMembersPerTeam || 8,
+      teams: (universe.gameState?.teams || []).filter((t: any) => !t.isBot).map((t: any) => ({ i: t.i, name: t.name, members: byTeam.get(t.i) || 0 }))
+    });
+  }
+
+  if (routeKey === "POST /api/auth/register") {
+    const name = String(body?.name || "").trim();
+    const email = String(body?.email || "").trim().toLowerCase();
+    const code = String(body?.code || "").trim().toUpperCase();
+    const teamI = Number(body?.teamI);
+    if (!name || name.length > 80) return json({ error: "Enter your full name." }, 400);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: "Enter a valid email address." }, 400);
+    const pwError = validateNewPassword(body?.password);
+    if (pwError) return json({ error: pwError }, 400);
+    const row: any = await db.prepare("SELECT * FROM universes WHERE UPPER(code) = ?").bind(code).first();
+    if (!row) return json({ error: "No cohort uses that code. Check it with your instructor." }, 404);
+    const universe = universeFromRow(row);
+    const team = (universe.gameState?.teams || []).find((t: any) => t.i === teamI);
+    if (!team || team.isBot) return json({ error: "Choose one of the listed teams." }, 400);
+    const existing = await db.prepare("SELECT id FROM users WHERE LOWER(email) = ?").bind(email).first();
+    if (existing) return json({ error: "An account with this email already exists. Sign in instead." }, 409);
+    const members: any = await db.prepare("SELECT COUNT(*) AS n FROM users WHERE universe_id = ? AND team_i = ? AND role = 'player'").bind(universe.id, teamI).first();
+    if (Number(members?.n || 0) >= (universe.maxMembersPerTeam || 8)) return json({ error: `${team.name} is full. Choose another team.` }, 409);
+    const id = `usr_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+    await db.prepare("INSERT INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online) VALUES (?, ?, ?, 'player', ?, ?, ?, ?, ?, 0, 1)")
+      .bind(id, email, name, String(body?.institution || "").trim().slice(0, 120), universe.id, teamI, await hashPassword(String(body.password)), now).run();
+    const created = await db.prepare("SELECT * FROM users WHERE id = ?").bind(id).first();
+    return json({ token: await createSession(db, id), user: publicUser(created) }, 201);
+  }
+
+  if (!session) return null;
+
+  if (routeKey === "GET /api/auth/me") {
+    const row = await db.prepare("SELECT * FROM users WHERE id = ?").bind(session.userId).first();
+    return row ? json({ user: publicUser(row) }) : json({ error: "Please sign in again.", code: "unauthenticated" }, 401);
+  }
+
+  if (routeKey === "POST /api/auth/logout") {
+    const token = bearerToken(request);
+    if (token) await deleteSession(db, token);
+    await db.prepare("UPDATE users SET is_online = 0, last_active_at = ? WHERE id = ?").bind(new Date().toISOString(), session.userId).run();
+    return json({ success: true });
+  }
+
+  if (routeKey === "POST /api/auth/change-password") {
+    const row: any = await db.prepare("SELECT password FROM users WHERE id = ?").bind(session.userId).first();
+    const check = await verifyPassword(String(body?.currentPassword || ""), row?.password);
+    if (!check.ok) return json({ error: "Your current password is incorrect." }, 400);
+    const pwError = validateNewPassword(body?.newPassword);
+    if (pwError) return json({ error: pwError }, 400);
+    await db.prepare("UPDATE users SET password = ? WHERE id = ?").bind(await hashPassword(String(body.newPassword)), session.userId).run();
+    await deleteSessionsForUser(db, session.userId, bearerToken(request) || undefined);
+    return json({ success: true });
+  }
+
+  if (routeKey === "POST /api/auth/reset-password") {
+    const target: any = await db.prepare("SELECT * FROM users WHERE id = ?").bind(String(body?.userId || "")).first();
+    if (!target) return json({ error: "User not found." }, 404);
+    if (session.role !== "admin" && (target.role !== "player" || !(await canManageUniverse(db, session, target.universe_id)))) {
+      return json({ error: "You can only reset passwords for students in your cohorts." }, 403);
+    }
+    const pwError = validateNewPassword(body?.newPassword);
+    if (pwError) return json({ error: pwError }, 400);
+    await db.prepare("UPDATE users SET password = ? WHERE id = ?").bind(await hashPassword(String(body.newPassword)), target.id).run();
+    await deleteSessionsForUser(db, target.id);
+    return json({ success: true });
+  }
+
+  return null;
+}
+
+/**
+ * Validates a user record written by a client. Players may only update their own presence;
+ * instructors manage students in their cohorts; only admins create staff accounts.
+ * Returns the row to write, or an error message.
+ */
+async function prepareUserWrite(db: any, session: Session, user: any): Promise<{ row?: any; error?: string; status?: number }> {
+  if (!user || typeof user !== "object" || !user.id) return { error: "A user id is required.", status: 400 };
+  const existing: any = await db.prepare("SELECT * FROM users WHERE id = ?").bind(String(user.id)).first();
+
+  if (session.role === "player") {
+    if (!existing || existing.id !== session.userId) return { error: "You can only update your own account.", status: 403 };
+    return { row: { ...existing, last_active_at: user.lastActiveAt || new Date().toISOString(), active_minutes: Math.max(Number(existing.active_minutes || 0), Number(user.activeMinutes || 0)), is_online: user.isOnline ? 1 : 0 } };
+  }
+
+  const role = ["player", "instructor", "admin"].includes(user.role) ? user.role : "player";
+  if (session.role !== "admin") {
+    if (role !== "player" && user.id !== session.userId) return { error: "Only administrators can create or edit staff accounts.", status: 403 };
+    if (existing && existing.role !== "player" && existing.id !== session.userId) return { error: "Only administrators can edit staff accounts.", status: 403 };
+    if (existing && existing.id === session.userId && role !== existing.role) return { error: "You cannot change your own role.", status: 403 };
+    const ids = await staffUniverseIds(db, session);
+    const targetUniverse = String(user.universeId || "");
+    if (ids !== "all" && targetUniverse && !ids.has(targetUniverse)) return { error: "That cohort is not assigned to you.", status: 403 };
+  }
+
+  let password = existing?.password || "";
+  if (typeof user.password === "string" && user.password.length > 0) {
+    password = isHashed(user.password) ? user.password : await hashPassword(user.password);
+  } else if (!existing) {
+    return { error: "A starting password is required for new accounts.", status: 400 };
+  }
+
+  return {
+    row: {
+      id: String(user.id),
+      email: String(user.email || existing?.email || "").trim().toLowerCase(),
+      name: String(user.name || existing?.name || "").trim(),
+      role,
+      institution: user.institution ?? existing?.institution ?? "",
+      universe_id: user.universeId ?? existing?.universe_id ?? "",
+      team_i: role === "player" ? Number(user.teamI ?? existing?.team_i ?? -1) : -1,
+      password,
+      last_active_at: user.lastActiveAt || existing?.last_active_at || new Date().toISOString(),
+      active_minutes: Number(user.activeMinutes ?? existing?.active_minutes ?? 0),
+      is_online: user.isOnline ? 1 : 0
+    }
+  };
+}
+
+function userUpsert(db: any, row: any) {
+  return db.prepare(`
+    INSERT INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      email = excluded.email, name = excluded.name, role = excluded.role, institution = excluded.institution,
+      universe_id = excluded.universe_id, team_i = excluded.team_i, password = excluded.password,
+      last_active_at = excluded.last_active_at, active_minutes = excluded.active_minutes, is_online = excluded.is_online
+  `).bind(row.id, row.email, row.name, row.role, row.institution, row.universe_id, row.team_i, row.password, row.last_active_at, row.active_minutes, row.is_online);
+}
+
+const UNIVERSE_PARAM_KEYS = ["universeId", "universe_id", "game_id"];
+const TEAM_PARAM_KEYS = ["teamId", "team_id", "teamI"];
+// Routes with their own authorization rules (or no team/universe parameters to scope).
+const SELF_SCOPED_PREFIXES = ["/api/auth/", "/api/d1/", "/api/universes", "/api/rd/license", "/api/team-data"];
+const PUBLIC_ROUTES = new Set(["GET /api/health", "POST /api/auth/login", "POST /api/auth/register", "GET /api/auth/cohort"]);
+const STAFF_ONLY_ROUTES = new Set([
+  "POST /api/process-quarter",
+  "POST /api/visibility-settings",
+  "POST /api/balanced-scorecard",
+  "GET /api/balanced-scorecard/export",
+  "POST /api/auth/reset-password",
+  "POST /api/d1/users/batch",
+  "GET /api/d1/status",
+  "GET /api/d1/health"
+]);
+const ADMIN_ONLY_ROUTES = new Set(["POST /api/d1/query", "POST /api/d1/init-schema"]);
+
+let authTablesReady = false;
+
+/** Collects universe/team identifiers from query string and JSON body so one guard can scope every gameplay route. */
+function requestScope(url: URL, body: any): { universes: string[]; teams: string[] } {
+  const universes: string[] = [];
+  const teams: string[] = [];
+  const pick = (source: (k: string) => unknown) => {
+    for (const k of UNIVERSE_PARAM_KEYS) { const v = source(k); if (v !== undefined && v !== null && v !== "") universes.push(String(v)); }
+    for (const k of TEAM_PARAM_KEYS) { const v = source(k); if (v !== undefined && v !== null && v !== "") teams.push(String(v)); }
+  };
+  pick((k) => url.searchParams.get(k));
+  if (body && typeof body === "object" && !Array.isArray(body)) pick((k) => body[k]);
+  return { universes, teams };
+}
+
 export async function onRequest(context: { request: Request; env: Env; params: { route?: string[] } }) {
   const { request, env } = context;
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
 
-  // CORS headers
+  // Same-origin API: no wildcard CORS. Auth travels as a bearer token, never a cookie.
   const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "Cache-Control": "no-store"
   };
+  const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: corsHeaders });
 
   if (method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
+    if (!env.DB) return json({ error: "D1 database binding 'DB' is not configured." }, 500);
+    if (!authTablesReady) { await ensureAuthTables(env.DB); authTablesReady = true; }
+
+    const routeKey = `${method} ${path}`;
+    let parsedBody: any = undefined;
+    if (method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE") {
+      try { parsedBody = JSON.parse(await request.clone().text() || "null"); } catch { parsedBody = undefined; }
+    }
+
+    let session: Session | null = null;
+    if (!PUBLIC_ROUTES.has(routeKey)) {
+      session = await getSession(env.DB, request);
+      if (!session) return json({ error: "Please sign in again.", code: "unauthenticated" }, 401);
+      if (ADMIN_ONLY_ROUTES.has(routeKey) && session.role !== "admin") return json({ error: "Administrator access required." }, 403);
+      if (STAFF_ONLY_ROUTES.has(routeKey) && !isStaff(session)) return json({ error: "Instructor access required." }, 403);
+
+      if (!SELF_SCOPED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+        const scope = requestScope(url, parsedBody);
+        if (session.role === "player") {
+          if (scope.universes.some((u) => u !== session!.universeId)) return json({ error: "That cohort is not yours." }, 403);
+          if (scope.teams.some((t) => Number(t) !== session!.teamI)) return json({ error: "You can only access your own team's data." }, 403);
+        } else if (session.role === "instructor") {
+          for (const u of new Set(scope.universes)) {
+            if (!(await canManageUniverse(env.DB, session, u))) return json({ error: "That cohort is not assigned to you." }, 403);
+          }
+        }
+      }
+    }
+
+    const authResponse = await handleAuthRoutes(env, request, url, routeKey, parsedBody, session, json);
+    if (authResponse) return authResponse;
+
+    if (path === "/api/team-data" && method === "POST") {
+      const body = parsedBody || {};
+      const universeId = session!.role === "player" ? session!.universeId : String(body.universeId || session!.universeId);
+      const teamId = session!.role === "player" ? session!.teamI : Number(body.teamId);
+      if (session!.role === "instructor" && !(await canManageUniverse(env.DB, session!, universeId))) return json({ error: "That cohort is not assigned to you." }, 403);
+      if (session!.role === "player" && (String(body.universeId || universeId) !== universeId || Number(body.teamId ?? teamId) !== teamId)) {
+        return json({ error: "You can only access your own team's data." }, 403);
+      }
+      const result = await runTeamDataQuery(env.DB, String(body.key || ""), { universeId, teamId, quarter: Number(body.quarter) || 1, payload: body.payload });
+      return json(result, result.status || 200);
+    }
+
+    if (path.startsWith("/api/universes/") && method === "PATCH") {
+      const universeId = decodeURIComponent(path.split("/").filter(Boolean).pop() || "");
+      const patch = (parsedBody || {}) as UniversePatch;
+      if (session!.role === "player" && universeId !== session!.universeId) return json({ error: "That cohort is not yours." }, 403);
+      if (session!.role === "instructor" && !(await canManageUniverse(env.DB, session!, universeId))) return json({ error: "That cohort is not assigned to you." }, 403);
+      const row: any = await env.DB.prepare("SELECT * FROM universes WHERE id = ?").bind(universeId).first();
+      if (!row) return json({ error: "Simulation universe was not found." }, 404);
+      const universe = universeFromRow(row);
+      try {
+        applyUniversePatch(universe, { ...patch, universeId }, { role: session!.role, teamI: session!.teamI, name: session!.name });
+      } catch (err: any) {
+        if (err instanceof PatchError) return json({ error: err.message, details: err.details || [] }, err.status);
+        throw err;
+      }
+      await writeUniverse(env.DB, universe);
+      const out = session!.role === "player" ? redactUniverseForTeam(universe, session!.teamI) : universe;
+      return json({ success: true, universe: out });
+    }
     if (path === "/api/policy-events" && method === "GET") {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const quarter = Number(url.searchParams.get("quarter"));
@@ -583,6 +907,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         const teamId = url.searchParams.get("team_id") || "";
         const quarter = Math.max(1, Number(url.searchParams.get("quarter") || 1));
         if (!gameId || !teamId) return new Response(JSON.stringify({ error: "game_id and team_id are required." }), { status: 400, headers: corsHeaders });
+        if (session!.role === "player" && (gameId !== session!.universeId || Number(teamId) !== session!.teamI)) return json({ error: "You can only access your own team's data." }, 403);
         await env.DB.prepare("UPDATE rd_license_offers SET status = 'executed' WHERE game_id = ? AND status = 'accepted' AND execute_quarter <= ?").bind(gameId, quarter).run();
         const due = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'executed' AND execute_quarter <= ?").bind(gameId, quarter).all();
         for (const offer of (due.results || []) as any[]) await env.DB.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").bind(gameId, offer.buyer_team_id, offer.id, offer.execute_quarter, offer.project_id).run();
@@ -598,6 +923,12 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const due = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE game_id = ? AND status = 'executed' AND execute_quarter <= ?").bind(gameId, quarter).all();
       for (const offer of (due.results || []) as any[]) {
         await env.DB.prepare("INSERT OR IGNORE INTO team_component_access (game_id, team_id, component_id, source_license_id, unlocked_quarter) SELECT ?, ?, component_unlocked, ?, ? FROM rd_projects WHERE project_id = ?").bind(gameId, offer.buyer_team_id, offer.id, offer.execute_quarter, offer.project_id).run();
+      }
+      if (session!.role === "player") {
+        const actingTeam = body.action === "accept" ? body.buyer_team_id : body.seller_team_id;
+        if (gameId !== session!.universeId || Number(actingTeam) !== session!.teamI) return json({ error: "You can only act for your own team." }, 403);
+      } else if (!(await canManageUniverse(env.DB, session!, gameId))) {
+        return json({ error: "That cohort is not assigned to you." }, 403);
       }
       if (body.action === "accept") {
         const offer = await env.DB.prepare("SELECT * FROM rd_license_offers WHERE id = ? AND game_id = ? AND buyer_team_id = ?").bind(String(body.license_id || ""), gameId, String(body.buyer_team_id)).first();
@@ -619,7 +950,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     // 1. Health check
     if (path === "/api/health") {
       return new Response(
-        JSON.stringify({ status: "ok", provider: "Cloudflare Workers / D1", app: "EV Venture League Simulation" }),
+        JSON.stringify({ status: "ok", app: "EV Venture League", features: { advisor: Boolean(env.GEMINI_API_KEY) } }),
         { status: 200, headers: corsHeaders }
       );
     }
@@ -676,11 +1007,13 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const body = await request.json() as { universeId?: string };
       const universeId = String(body.universeId || "").trim();
       if (!universeId) return new Response(JSON.stringify({ error: "universeId is required." }), { status: 400, headers: corsHeaders });
+      if (!(await canManageUniverse(env.DB, session!, universeId))) return json({ error: "That cohort is not assigned to you." }, 403);
       try {
-        const result = await runQuarterWorkflow(env.DB, universeId);
+        const expected = (parsedBody || {}).quarter;
+        const result = await runQuarterWorkflow(env.DB, universeId, expected === undefined ? undefined : Number(expected));
         return new Response(JSON.stringify({ success: true, quarter: result.state.quarter, logs: result.logs, demandRows: result.demand.length, scorecards: result.scorecards }), { status: 200, headers: corsHeaders });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message || "Quarter processing failed." }), { status: err.message?.includes("already") ? 409 : 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ error: err.message || "Quarter processing failed." }), { status: /already|has moved|finished/.test(err.message || "") ? 409 : 500, headers: corsHeaders });
       }
     }
 
@@ -772,7 +1105,8 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const scope = String(body.scope || url.searchParams.get("scope") || (region.toLowerCase() === "global" ? "global" : "region"));
       if (!teamId || !Number.isInteger(quarter) || quarter < 1 || !["region", "global"].includes(scope)) return new Response(JSON.stringify({ error: "teamId, a positive integer quarter, and a valid scope are required." }), { status: 400, headers: corsHeaders });
       await env.DB.exec("CREATE TABLE IF NOT EXISTS competitive_benchmark_purchases (purchase_id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, scope TEXT NOT NULL, cost REAL NOT NULL, report_json TEXT NOT NULL, purchased_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_id, quarter, region, scope))");
-      const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes ORDER BY updated_at DESC LIMIT 1").first();
+      const benchmarkUniverseId = String(url.searchParams.get("universe_id") || url.searchParams.get("universeId") || body.universeId || body.universe_id || session!.universeId);
+      const universe: any = await env.DB.prepare("SELECT id, game_state FROM universes WHERE id = ?").bind(benchmarkUniverseId).first();
       if (!universe) return new Response(JSON.stringify({ error: "No simulation universe is available." }), { status: 404, headers: corsHeaders });
 
       const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id") || body.game_id || body.universe_id || universe.id;
@@ -804,8 +1138,8 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         const results = await computeFastTests(teamId, quarter, region, env.DB);
         return new Response(JSON.stringify({ success: true, purchased: true, results }), { status: 200, headers: corsHeaders });
       }
-      const resultRows = await env.DB.prepare("SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id").bind(teamId, quarter, region).all();
-      let resultsList = (resultRows.results || []) as any[];
+      // The table is created on first purchase or quarter run; before that there are simply no results.
+      let resultsList = await optionalRows(env.DB, "SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id", teamId, quarter, region);
 
       const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id");
       let gameIdToUse = resolvedGameId;
@@ -1024,9 +1358,11 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     if (path === "/api/charging-network" && (method === "GET" || method === "POST")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = method === "POST" ? await request.json() as any : {};
-      const teamId = String(body.teamId ?? url.searchParams.get("teamId") ?? "").trim();
+      const rawTeamId = String(body.teamId ?? url.searchParams.get("teamId") ?? "").trim();
       const quarter = Number(body.quarter ?? url.searchParams.get("quarter"));
-      if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      if (!rawTeamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      const chargingUniverse = String(body.universeId ?? url.searchParams.get("universeId") ?? session!.universeId);
+      const teamId = `${chargingUniverse}:${rawTeamId}`;
       await env.DB.exec("CREATE TABLE IF NOT EXISTS charging_network (team_id TEXT NOT NULL, region TEXT NOT NULL, quarter INTEGER NOT NULL, charger_count INTEGER NOT NULL DEFAULT 0, charger_type TEXT NOT NULL CHECK (charger_type IN ('Level 2 AC', 'DC Fast Charge', 'Ultra-rapid 350kW')), installation_cost REAL NOT NULL DEFAULT 0, quarterly_maintenance REAL NOT NULL DEFAULT 0, demand_boost_pct REAL NOT NULL DEFAULT 0, UNIQUE (team_id, region, quarter))");
       if (method === "GET") {
         const rows = await env.DB.prepare("SELECT * FROM charging_network WHERE team_id = ? AND quarter <= ? ORDER BY quarter, region").bind(teamId, quarter).all();
@@ -1125,7 +1461,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const teamResult = latest(currentTeam);
       const teamLabel = (team: any) => String(team.name || `Team ${Number(team.i) + 1}`);
       const segments = Array.isArray(state.segments) ? state.segments : [];
-      const segmentName = (id: string) => segments.find((segment: any) => String(segment.id || segment.segment_id) === id)?.name || id;
+      const segmentName = (id: string) => SEGMENTS.find((segment) => segment.id === id)?.name || segments.find((segment: any) => String(segment.id || segment.segment_id) === id)?.name || id;
       const judgmentEntries = Object.entries(teamResult.judg || {}).map(([id, value]: [string, any]) => ({ id, score: number(value?.p) })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score);
       const scores = teams.map((team: any) => number(latest(team).brandJ)).filter((score) => score > 0);
       const adScores = teams.map((team: any) => number(latest(team).campJ)).filter((score) => score > 0);
@@ -1137,7 +1473,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const negativeMarginBrands = (teamResult.modelRows || []).filter((model: any) => number(model.price) < number(model.cost)).map((model: any) => `${model.name || "Unnamed brand"} has an estimated negative unit margin`);
       const cityNetwork = ["Delhi / NCR", "Bengaluru / Chennai", "Mumbai / Pune", "Hyderabad", "Kolkata", "Ahmedabad"];
       const uncoveredCities = cityNetwork.slice(Math.max(0, Math.min(cityNetwork.length, number(currentTeam.centres)))).slice(0, 3);
-      const uncontestedSegments = ["urban_commuter", "fleet_operator", "performance_enthusiast", "tech_pioneer", "eco_advocate"].filter((segmentId) => !teams.some((team: any) => number(latest(team).judg?.[segmentId]?.p) > 80)).map(segmentName);
+      const uncontestedSegments = SEGMENTS.filter((segment) => !teams.some((team: any) => number(latest(team).judg?.[segment.id]?.p) > 80)).map((segment) => segment.name);
       const actionSummary = (team: any) => {
         const result = latest(team);
         const decision = team.dec || {};
@@ -1290,45 +1626,28 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // 4. Universes API (D1)
     if (path === "/api/d1/universes") {
+      await ensureUniverseColumns(env.DB);
+      const s = session!;
       if (method === "GET") {
+        if (s.role === "player") {
+          const row: any = await env.DB.prepare("SELECT * FROM universes WHERE id = ?").bind(s.universeId).first();
+          return json(row ? [redactUniverseForTeam(universeFromRow(row), s.teamI)] : []);
+        }
         const { results } = await env.DB.prepare("SELECT * FROM universes ORDER BY created_at DESC").all();
-        const universes = (results || []).map((row: any) => ({
-          id: row.id,
-          name: row.name,
-          code: row.code,
-          instructorEmail: row.instructor_email,
-          maxTeams: row.max_teams,
-          maxMembersPerTeam: row.max_members_per_team,
-          gameState: typeof row.game_state === "string" ? JSON.parse(row.game_state) : row.game_state,
-          createdAt: row.created_at
-        }));
-        return new Response(JSON.stringify(universes), { status: 200, headers: corsHeaders });
+        const ids = await staffUniverseIds(env.DB, s);
+        return json(((results || []) as any[]).filter((row) => ids === "all" || ids.has(row.id)).map(universeFromRow));
       }
 
       if (method === "POST") {
-        const universe = await request.json();
-        await env.DB.prepare(`
-          INSERT INTO universes (id, name, code, instructor_email, max_teams, max_members_per_team, game_state, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-          ON CONFLICT(id) DO UPDATE SET
-            name = excluded.name,
-            code = excluded.code,
-            instructor_email = excluded.instructor_email,
-            max_teams = excluded.max_teams,
-            max_members_per_team = excluded.max_members_per_team,
-            game_state = excluded.game_state,
-            updated_at = datetime('now')
-        `).bind(
-          universe.id,
-          universe.name,
-          universe.code || "NITW2026",
-          universe.instructorEmail || "instructor@nitw.ac.in",
-          universe.maxTeams || 10,
-          universe.maxMembersPerTeam || 8,
-          JSON.stringify(universe.gameState)
-        ).run();
-
-        return new Response(JSON.stringify({ success: true, universeId: universe.id }), { status: 200, headers: corsHeaders });
+        // Full replace: used to create a cohort, reset it, import a saved state or change its team roster.
+        if (!isStaff(s)) return json({ error: "Instructor access required." }, 403);
+        const universe = parsedBody || {};
+        if (!universe.id || !universe.gameState?.teams) return json({ error: "A universe id and game state are required." }, 400);
+        const existing: any = await env.DB.prepare("SELECT id FROM universes WHERE id = ?").bind(String(universe.id)).first();
+        if (existing && !(await canManageUniverse(env.DB, s, universe.id))) return json({ error: "That cohort is not assigned to you." }, 403);
+        if (!existing && s.role === "instructor") universe.instructorEmail = s.email;
+        await writeUniverse(env.DB, universe);
+        return json({ success: true, universeId: universe.id });
       }
     }
 
@@ -1340,6 +1659,9 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       const quarter = Number(body.quarter);
       if (!universeId || !Number.isInteger(teamI) || !Number.isInteger(quarter) || !body.statement) {
         return new Response(JSON.stringify({ error: "universeId, teamI, quarter, and statement are required." }), { status: 400, headers: corsHeaders });
+      }
+      if (session!.role === "player" ? universeId !== session!.universeId || teamI !== session!.teamI : !(await canManageUniverse(env.DB, session!, universeId))) {
+        return json({ error: "You can only save your own team's forecast." }, 403);
       }
       await env.DB.exec("CREATE TABLE IF NOT EXISTS pro_forma_statements (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, statement_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
       const id = `pro-forma:${universeId}:${teamI}:Q${quarter}`;
@@ -1353,172 +1675,100 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     // 5. Users API (D1)
     if (path === "/api/d1/users") {
+      const s = session!;
       if (method === "GET") {
         const { results } = await env.DB.prepare("SELECT * FROM users ORDER BY name ASC").all();
-        const users = (results || []).map((row: any) => ({
-          id: row.id,
-          email: row.email,
-          name: row.name,
-          role: row.role,
-          institution: row.institution,
-          universeId: row.universe_id,
-          teamI: row.team_i,
-          password: row.password,
-          lastActiveAt: row.last_active_at,
-          activeMinutes: row.active_minutes,
-          isOnline: Boolean(row.is_online)
-        }));
-        return new Response(JSON.stringify(users), { status: 200, headers: corsHeaders });
+        const rows = (results || []) as any[];
+        if (s.role === "player") {
+          return json(rows.filter((row) => row.universe_id === s.universeId).map((row) => publicUser(row)));
+        }
+        const ids = await staffUniverseIds(env.DB, s);
+        // Instructors also see unassigned students so they can place them on teams.
+        return json(rows.filter((row) => ids === "all" || ids.has(row.universe_id) || (!row.universe_id && row.role === "player") || row.id === s.userId).map((row) => publicUser(row)));
       }
 
       if (method === "POST") {
-        const user = await request.json();
-        await env.DB.prepare(`
-          INSERT INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            email = excluded.email,
-            name = excluded.name,
-            role = excluded.role,
-            institution = excluded.institution,
-            universe_id = excluded.universe_id,
-            team_i = excluded.team_i,
-            password = excluded.password,
-            last_active_at = excluded.last_active_at,
-            active_minutes = excluded.active_minutes,
-            is_online = excluded.is_online
-        `).bind(
-          user.id,
-          user.email,
-          user.name,
-          user.role,
-          user.institution || "",
-          user.universeId,
-          user.teamI ?? -1,
-          user.password || "student123",
-          user.lastActiveAt || new Date().toISOString(),
-          user.activeMinutes || 0,
-          user.isOnline ? 1 : 0
-        ).run();
-
-        return new Response(JSON.stringify({ success: true, userId: user.id }), { status: 200, headers: corsHeaders });
+        const prepared = await prepareUserWrite(env.DB, s, parsedBody);
+        if (prepared.error) return json({ error: prepared.error }, prepared.status || 400);
+        await userUpsert(env.DB, prepared.row).run();
+        return json({ success: true, userId: prepared.row.id });
       }
     }
 
-    // DELETE /api/d1/users/:id — permanently remove user from D1
+    // DELETE /api/d1/users/:id — permanently remove a user
     if (
       path.startsWith("/api/d1/users/") &&
       !path.endsWith("/batch") &&
       !path.endsWith("/remove-from-universe") &&
       method === "DELETE"
     ) {
+      const s = session!;
+      if (!isStaff(s)) return json({ error: "Instructor access required." }, 403);
       const segments = path.split("/").filter(Boolean);
-      const userId = decodeURIComponent(segments[segments.length - 1]);
-      const email = url.searchParams.get("email") || "";
-
-      let deletedCount = 0;
-      const result = await env.DB.prepare(
-        `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
-      ).bind(userId, userId, userId, userId).run();
-      deletedCount += Number(result?.meta?.changes || 0);
-
-      if (email) {
-        const emailResult = await env.DB.prepare(
-          `DELETE FROM users WHERE id = ? OR email = ? OR LOWER(id) = LOWER(?) OR LOWER(email) = LOWER(?)`
-        ).bind(email, email, email, email).run();
-        deletedCount += Number(emailResult?.meta?.changes || 0);
+      const key = decodeURIComponent(segments[segments.length - 1]);
+      const email = url.searchParams.get("email") || key;
+      const target: any = await env.DB.prepare("SELECT * FROM users WHERE id = ? OR LOWER(email) = LOWER(?)").bind(key, email).first();
+      if (!target) return json({ success: false, deletedCount: 0, error: "User not found." }, 404);
+      if (target.id === s.userId) return json({ error: "You cannot delete your own account." }, 403);
+      if (s.role !== "admin" && (target.role !== "player" || (target.universe_id && !(await canManageUniverse(env.DB, s, target.universe_id))))) {
+        return json({ error: "You can only remove students in your cohorts." }, 403);
       }
-
-      return new Response(JSON.stringify({ success: deletedCount > 0, deletedId: userId, email, deletedCount }), {
-        status: deletedCount > 0 ? 200 : 404,
-        headers: corsHeaders
-      });
+      await deleteSessionsForUser(env.DB, target.id);
+      const result = await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(target.id).run();
+      return json({ success: true, deletedId: target.id, email: target.email, deletedCount: Number(result?.meta?.changes || 1) });
     }
 
-    // DELETE /api/d1/universes/:id — permanently remove universe from D1
+    // DELETE /api/d1/universes/:id — permanently remove a cohort
     if (path.startsWith("/api/d1/universes/") && method === "DELETE") {
       const segments = path.split("/").filter(Boolean);
       const universeId = decodeURIComponent(segments[segments.length - 1]);
-
-      await env.DB.prepare("DELETE FROM universes WHERE id = ?").bind(universeId).run();
-
-      return new Response(JSON.stringify({ success: true, deletedId: universeId }), {
-        status: 200,
-        headers: corsHeaders
-      });
+      if (!(await canManageUniverse(env.DB, session!, universeId))) return json({ error: "That cohort is not assigned to you." }, 403);
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM universes WHERE id = ?").bind(universeId),
+        env.DB.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE universe_id = ? AND role = 'player'").bind(universeId)
+      ]);
+      return json({ success: true, deletedId: universeId });
     }
 
-    // POST /api/d1/users/:id/remove-from-universe — detach user from universe
+    // POST /api/d1/users/:id/remove-from-universe — detach a student from their cohort
     if (path.endsWith("/remove-from-universe") && method === "POST") {
       const segments = path.split("/").filter(Boolean);
       const userId = decodeURIComponent(segments[segments.length - 2]);
-
-      await env.DB.prepare(
-        `UPDATE users SET universe_id = '', team_i = -1 WHERE id = ?`
-      ).bind(userId).run();
-
-      return new Response(JSON.stringify({ success: true, userId }), {
-        status: 200,
-        headers: corsHeaders
-      });
-    }
-
-    // Batch Users
-    if (path === "/api/d1/users/batch" && method === "POST") {
-      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      const { users } = await request.json();
-      if (Array.isArray(users)) {
-        const statements = users.map((u: any) =>
-          env.DB.prepare(`
-            INSERT INTO users (id, email, name, role, institution, universe_id, team_i, password, last_active_at, active_minutes, is_online)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              email = excluded.email,
-              name = excluded.name,
-              role = excluded.role,
-              institution = excluded.institution,
-              universe_id = excluded.universe_id,
-              team_i = excluded.team_i,
-              password = excluded.password,
-              last_active_at = excluded.last_active_at,
-              active_minutes = excluded.active_minutes,
-              is_online = excluded.is_online
-          `).bind(
-            u.id,
-            u.email,
-            u.name,
-            u.role,
-            u.institution || "",
-            u.universeId,
-            u.teamI ?? -1,
-            u.password || "student123",
-            u.lastActiveAt || new Date().toISOString(),
-            u.activeMinutes || 0,
-            u.isOnline ? 1 : 0
-          )
-        );
-        await env.DB.batch(statements);
+      const target: any = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first();
+      if (!target) return json({ error: "User not found." }, 404);
+      if (!isStaff(session) || (session!.role !== "admin" && !(await canManageUniverse(env.DB, session!, target.universe_id)))) {
+        return json({ error: "You can only manage students in your cohorts." }, 403);
       }
-      return new Response(JSON.stringify({ success: true, count: users?.length || 0 }), { status: 200, headers: corsHeaders });
+      await env.DB.prepare("UPDATE users SET universe_id = '', team_i = -1 WHERE id = ?").bind(userId).run();
+      return json({ success: true, userId });
     }
 
-    // 6. SQL Query Execution Console (Admin)
+    // Batch Users (instructor imports)
+    if (path === "/api/d1/users/batch" && method === "POST") {
+      const users = Array.isArray(parsedBody?.users) ? parsedBody.users.slice(0, 500) : [];
+      const rows: any[] = [];
+      for (const u of users) {
+        const prepared = await prepareUserWrite(env.DB, session!, u);
+        if (prepared.error) return json({ error: `${u?.email || u?.id || "A user"}: ${prepared.error}` }, prepared.status || 400);
+        rows.push(prepared.row);
+      }
+      if (rows.length) await env.DB.batch(rows.map((row) => userUpsert(env.DB, row)));
+      return json({ success: true, count: rows.length });
+    }
+
+    // 6. SQL Query Execution Console (administrators only — gated above)
     if (path === "/api/d1/query" && method === "POST") {
-      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      const { sql, params = [] } = await request.json();
+      const { sql, params = [] } = parsedBody || {};
       if (!sql || typeof sql !== "string") {
         return new Response(JSON.stringify({ error: "No SQL provided" }), { status: 400, headers: corsHeaders });
       }
 
       const trimmed = sql.trim().toLowerCase();
-      // This endpoint has no per-caller authentication (gameplay panels like Web Sales Center write
-      // through it directly), so it stays open to arbitrary SELECT/INSERT/UPDATE — but the `users`
-      // table holds plaintext passwords and must never be reachable here, and schema-destructive
-      // statements are blocked outright regardless of caller.
-      if (/\busers\b/.test(trimmed)) {
-        return new Response(JSON.stringify({ error: "Queries against the users table are not permitted through this endpoint." }), { status: 403, headers: corsHeaders });
+      // Even for administrators, password hashes and session tokens stay out of reach of the console.
+      if (/\b(users|sessions)\b/.test(trimmed) && /\bpassword\b|\btoken_hash\b|\bselect\s+\*|\bsessions\b/.test(trimmed)) {
+        return new Response(JSON.stringify({ error: "Password and session columns are not readable from the console. Use the user manager instead." }), { status: 403, headers: corsHeaders });
       }
-      if (/^(drop|alter|truncate|delete|attach|detach|vacuum|reindex)\b/.test(trimmed)) {
+      if (/^(drop|alter|truncate|attach|detach|vacuum|reindex)\b/.test(trimmed)) {
         return new Response(JSON.stringify({ error: "This statement type is not permitted through this endpoint." }), { status: 403, headers: corsHeaders });
       }
       if (trimmed.startsWith("select") || trimmed.startsWith("pragma") || trimmed.startsWith("explain")) {
@@ -1609,6 +1859,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         return new Response(JSON.stringify({ complaints, quarter }), { status: 200, headers: corsHeaders });
       }
       if (method !== "POST") return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
+      if (!isStaff(session)) return json({ error: "Only the instructor can rule on tribunal complaints." }, 403);
       const body = await request.json() as { universe_id?: string; violation_id?: string; ruling?: string };
       const ruling = String(body.ruling || "").toLowerCase();
       const bodyUniverseId = String(body.universe_id || universeId).trim();
@@ -1632,7 +1883,9 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         ...(ruling === "guilty" ? [env.DB.prepare("INSERT INTO ad_claim_bans (ban_id, violation_id, universe_id, team_id, claim, offense_number, ban_start_quarter, ban_until_quarter, fine_pct, fine_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(`ban:${violation.violation_id}`, violation.violation_id, bodyUniverseId, violation.team_id, violation.claim, offenseNumber, violation.quarter, banUntil, finePct, fineAmount)] : [])
       ]);
       if (ruling === "guilty" && team && fineAmount > 0) {
-        team.cash = Math.max(0, Number(team.cash || 0) - fineAmount);
+        // A fine is an expense: it reduces retained earnings as well as cash, so the books stay balanced.
+        team.cash = Number(team.cash || 0) - fineAmount;
+        team.cumProfit = Number(team.cumProfit || 0) - fineAmount;
         await env.DB.prepare("UPDATE universes SET game_state = ?, updated_at = datetime('now') WHERE id = ?").bind(JSON.stringify(state), bodyUniverseId).run();
       }
       return new Response(JSON.stringify({ success: true, ruling, offenseNumber, finePct, fineAmount, banUntil, document }), { status: 200, headers: corsHeaders });
@@ -1640,7 +1893,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
 
     if (path === "/api/ad-violations" && method === "GET") {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      const universeId = url.searchParams.get("universe_id");
+      const universeId = session!.role === "admin" ? url.searchParams.get("universe_id") : (url.searchParams.get("universe_id") || session!.universeId);
       const query = universeId
         ? "SELECT * FROM ad_violations WHERE universe_id = ? ORDER BY created_at DESC"
         : "SELECT * FROM ad_violations ORDER BY created_at DESC";

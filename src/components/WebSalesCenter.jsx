@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle, CircleAlert, Globe, Users } from "lucide-react";
-import { executeD1Query } from "../lib/cloudflareD1";
+import { teamData } from "../lib/apiClient";
 
 const DEFAULT_CONFIG = {
   monthlyCosts: {
@@ -78,17 +78,10 @@ export default function WebSalesCenter({ team, gameState, onNotify = undefined }
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [settings, row] = await Promise.all([
-        executeD1Query("SELECT value FROM app_settings WHERE key = ?", ["web_sales_center_config"]),
-        executeD1Query(
-          "SELECT is_active, online_configurator, order_tracking, secure_checkout, toll_free_support, staff_count, monthly_cost FROM web_sales_center WHERE team_id = ? AND quarter = ? LIMIT 1",
-          [teamId, quarter]
-        )
-      ]);
+      const response = await teamData("web-sales:get", { universeId: "", teamId, quarter });
       if (cancelled) return;
-      const settingValue = settings.results?.[0]?.value;
+      const { config: settingValue, decision: saved } = response.results?.[0] || {};
       setConfig(mergeConfig(settingValue));
-      const saved = row.results?.[0];
       if (saved) {
         setDecision({
           is_active: Number(saved.is_active) || 0,
@@ -138,12 +131,7 @@ export default function WebSalesCenter({ team, gameState, onNotify = undefined }
       ? Number(config.monthlyCosts.base) + nextFeatureCost + next.staff_count * Number(config.monthlyCosts.perStaff)
       : 0;
     setDecision(next);
-    const result = await executeD1Query(
-      `INSERT INTO web_sales_center (wsc_id, team_id, quarter, is_active, online_configurator, order_tracking, secure_checkout, toll_free_support, staff_count, monthly_cost)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(wsc_id) DO UPDATE SET is_active = excluded.is_active, online_configurator = excluded.online_configurator, order_tracking = excluded.order_tracking, secure_checkout = excluded.secure_checkout, toll_free_support = excluded.toll_free_support, staff_count = excluded.staff_count, monthly_cost = excluded.monthly_cost`,
-      [`${teamId}-${quarter}`, teamId, quarter, next.is_active, next.online_configurator, next.order_tracking, next.secure_checkout, next.toll_free_support, next.staff_count, next.monthly_cost]
-    );
+    const result = await teamData("web-sales:save", { universeId: "", teamId, quarter, payload: next });
     if (!result.success) onNotify?.("Web sales center could not be saved to D1.");
   };
 

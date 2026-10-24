@@ -113,6 +113,8 @@ export interface LicenceContract {
 }
 
 export interface TeamDecision {
+  /** Quality-programme actions bought this quarter, Rs. L (charged as quality spend). */
+  qualityActionCost?: number;
   ad: number; // Rs. L
   claims: string[];
   alloc: Record<string, number>; // segment -> % (sums to 100)

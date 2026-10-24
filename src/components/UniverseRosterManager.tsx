@@ -461,7 +461,7 @@ export const UniverseRosterManager: React.FC<UniverseRosterManagerProps> = ({
 
     const archDef = ARCHETYPES[newTeamArch] || ARCHETYPES["commuter"];
     const m = mkModel(archDef.name, archDef.cfg, archDef.add, archDef.price);
-    m.launchedQ = 1;
+    m.launchedQ = 0;
     const aw: Record<string, number> = {};
     const base: Record<string, number> = {};
     SEGMENTS.forEach((s) => {

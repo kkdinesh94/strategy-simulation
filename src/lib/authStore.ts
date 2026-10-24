@@ -1,11 +1,8 @@
 import { User, Universe, UserRole } from "../types/auth";
 import { GameState } from "../types/simulation";
 import { newState } from "../engine/simulationEngine";
-import {
-  saveUniverseUnified,
-  saveUserUnified,
-  saveUsersBatchUnified
-} from "./dbProvider";
+import { BALANCE } from "../engine/catalog";
+import { queueUniverseSync } from "./dbProvider";
 
 const USERS_STORAGE_KEY = "ev_venture_league_users_v2";
 const UNIVERSES_STORAGE_KEY = "ev_venture_league_universes_v2";
@@ -29,7 +26,7 @@ export function createInitialUniverse(id = "univ_nitw_2026", name = "EV League -
   const initialGameState: GameState = newState(
     DEFAULT_10_TEAMS,
     12,
-    25000,
+    BALANCE.tam0,
     5
   );
 
@@ -45,61 +42,6 @@ export function createInitialUniverse(id = "univ_nitw_2026", name = "EV League -
   };
 }
 
-export function getInitialUsers(universeId: string): User[] {
-  return [
-    {
-      id: "usr_admin",
-      email: "admin@evleague.edu",
-      name: "Dr. System Administrator",
-      role: "admin",
-      institution: "NIT Warangal",
-      universeId,
-      teamI: -1,
-      password: "admin123"
-    },
-    {
-      id: "usr_prof",
-      email: "instructor@nitw.ac.in",
-      name: "Dr. Kamala Kannan Dinesh",
-      role: "instructor",
-      institution: "Department of Management Studies, NITW",
-      universeId,
-      teamI: -1,
-      password: "prof123"
-    },
-    {
-      id: "usr_std1",
-      email: "student1@nitw.ac.in",
-      name: "Rahul Sharma (Team Lead)",
-      role: "player",
-      institution: "NIT Warangal MBA '26",
-      universeId,
-      teamI: 0,
-      password: "student123"
-    },
-    {
-      id: "usr_std2",
-      email: "student2@nitw.ac.in",
-      name: "Priya Patel",
-      role: "player",
-      institution: "NIT Warangal MBA '26",
-      universeId,
-      teamI: 1,
-      password: "student123"
-    },
-    {
-      id: "usr_std3",
-      email: "student3@nitw.ac.in",
-      name: "Ananya Roy",
-      role: "player",
-      institution: "NIT Warangal MBA '26",
-      universeId,
-      teamI: 2,
-      password: "student123"
-    }
-  ];
-}
-
 export function loadUsers(): User[] {
   try {
     const data = localStorage.getItem(USERS_STORAGE_KEY);
@@ -107,7 +49,7 @@ export function loadUsers(): User[] {
       const parsed: User[] = JSON.parse(data);
       return parsed.map((u) => {
         if (u.role === "admin" || u.role === "instructor") {
-          return { ...u, teamI: -1 };
+          return { ...u, teamI: -1, password: undefined };
         }
         return u;
       });
@@ -115,10 +57,7 @@ export function loadUsers(): User[] {
   } catch (e) {
     console.error("Failed to load users from localStorage", e);
   }
-  const defaultUniv = loadActiveUniverse();
-  const init = getInitialUsers(defaultUniv.id);
-  saveUsers(init);
-  return init;
+  return [];
 }
 
 export function saveUsersLocal(users: User[]) {
@@ -173,6 +112,7 @@ export function loadActiveUniverse(): Universe {
 export function saveActiveUniverse(universe: Universe) {
   const universes = loadUniverses();
   const idx = universes.findIndex((u) => u.id === universe.id);
+  const previous = idx >= 0 ? universes[idx] : undefined;
   if (idx >= 0) {
     universes[idx] = universe;
   } else {
@@ -180,7 +120,7 @@ export function saveActiveUniverse(universe: Universe) {
   }
   saveUniverses(universes);
   localStorage.setItem(ACTIVE_UNIVERSE_ID_KEY, universe.id);
-  saveUniverseUnified(universe);
+  queueUniverseSync(previous, universe);
 }
 
 export function loadCurrentUser(): User | null {

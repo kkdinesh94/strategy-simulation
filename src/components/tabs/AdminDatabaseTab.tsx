@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { authApi } from "../../lib/apiClient";
 import { User, Universe, UserRole } from "../../types/auth";
 import { GameState, TeamState } from "../../types/simulation";
 import { newState, mkModel, botDecide } from "../../engine/simulationEngine";
-import { ARCHETYPES, TEAM_COLORS, SEGMENTS, DEFAULT_MARKET_IDS } from "../../engine/catalog";
+import { ARCHETYPES, TEAM_COLORS, SEGMENTS, DEFAULT_MARKET_IDS, BALANCE } from "../../engine/catalog";
 import {
   saveUsers,
   saveUniverses,
@@ -126,7 +127,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
     setProcessingQuarter(true);
     setQuarterLogs([]);
     try {
-      const response = await fetch("/api/process-quarter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ universeId: targetUniv.id }) });
+      const response = await fetch("/api/process-quarter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ universeId: targetUniv.id, quarter: targetUniv.gameState.quarter }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Quarter processing failed.");
       setQuarterLogs(payload.logs || []);
@@ -148,7 +149,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const [univInstructorEmail, setUnivInstructorEmail] = useState<string>("instructor@nitw.ac.in");
   const [univMaxTeams, setUnivMaxTeams] = useState<number>(10);
   const [univMaxMembers, setUnivMaxMembers] = useState<number>(8);
-  const [univInitialMarket, setUnivInitialMarket] = useState<number>(25000);
+  const [univInitialMarket, setUnivInitialMarket] = useState<number>(BALANCE.tam0);
   const [univVcOpeningQ, setUnivVcOpeningQ] = useState<number>(5);
 
   // User Manager State
@@ -217,25 +218,14 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordResetUser || !newPasswordInput.trim()) return;
-
-    const updatedUser: User = {
-      ...passwordResetUser,
-      password: newPasswordInput.trim()
-    };
-
-    const updatedUsers = allUsers.map((u) => (u.id === updatedUser.id ? updatedUser : u));
-    saveUsers(updatedUsers);
-    onUsersUpdate?.(updatedUsers);
-    const targetName = updatedUser.name;
-    setPasswordResetUser(null);
-    setNewPasswordInput("");
-    onNotify(`Password for '${targetName}' updated successfully in Cloudflare D1 & database!`);
-
+    const targetName = passwordResetUser.name;
     try {
-      await saveUserUnified(updatedUser);
-      onRefreshAll();
+      await authApi.resetPassword(passwordResetUser.id, newPasswordInput.trim());
+      setPasswordResetUser(null);
+      setNewPasswordInput("");
+      onNotify(`Password for '${targetName}' was reset. Share it with them privately; they should change it after signing in.`);
     } catch (err: any) {
-      alert("Error updating password: " + err.message);
+      onNotify(`Could not reset the password: ${err.message}`);
     }
   };
 
@@ -401,7 +391,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
   ): TeamState => {
     const archDef = ARCHETYPES[archKey] || ARCHETYPES["commuter"];
     const m = mkModel(archDef.name, archDef.cfg, archDef.add, archDef.price);
-    m.launchedQ = 1;
+    m.launchedQ = 0;
     const aw: Record<string, number> = {};
     const base: Record<string, number> = {};
     SEGMENTS.forEach((s) => {
@@ -1686,7 +1676,7 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                             <button
                               onClick={() => {
                                 setPasswordResetUser(u);
-                                setNewPasswordInput(u.password || "student123");
+                                setNewPasswordInput("");
                               }}
                               className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-sans font-medium flex items-center gap-1 transition"
                               title="Reset or change password for this account"
@@ -2283,12 +2273,12 @@ export const AdminDatabaseTab: React.FC<AdminDatabaseTabProps> = ({
                     autoFocus
                     value={newPasswordInput}
                     onChange={(e) => setNewPasswordInput(e.target.value)}
-                    placeholder="Enter new password (e.g. secret123)"
+                    placeholder="At least 8 characters"
                     className="w-full px-3 py-2.5 bg-white border border-[#E0DCD3] rounded-lg text-xs font-mono text-[#1F2022] focus:outline-none focus:border-amber-600"
                   />
                 </div>
                 <p className="text-[11px] text-[#7A7C80] mt-1.5">
-                  The new password will be immediately committed to Cloudflare D1 & database.
+                  The account's other sessions are signed out when the password changes.
                 </p>
               </div>
 

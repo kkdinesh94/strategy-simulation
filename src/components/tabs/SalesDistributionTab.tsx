@@ -1,4 +1,5 @@
 import React from "react";
+import { FEATURES } from "../../lib/features";
 import { TeamState, GameState } from "../../types/simulation";
 import { CENTRE, HR, MARKETS, fmtRs } from "../../engine/catalog";
 import { reachOf, hrMults, centreOpenCost, marketBonusOf } from "../../engine/simulationEngine";
@@ -130,7 +131,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
       {/* Store & Outlet Visualizer */}
       <StoreVisualizer team={team} gameState={gameState} />
 
-      <WebSalesCenter team={team} gameState={gameState} />
+      {FEATURES.webSalesCenter && <WebSalesCenter team={team} gameState={gameState} />}
 
       <TerritoryMap team={team} gameState={gameState} />
 

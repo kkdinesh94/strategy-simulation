@@ -187,8 +187,31 @@ export const SEG_NEEDS: Record<string, { who: string; needs: string[]; deal: str
   }
 };
 
-export const BASE_PLATFORM = 14000;
-export const ASSEMBLY = 4000;
+/**
+ * Economy tuning knobs, in one place so the game can be rebalanced without touching the
+ * engine. Tests in tests/ play full games against these values and assert the economy
+ * stays winnable (see tests/economy.test.ts).
+ */
+export const BALANCE = {
+  /** Per-unit platform (frame, harness, controller) and assembly cost, Rs. */
+  basePlatform: 8000,
+  assembly: 4000,
+  /** Opening quarterly market size (units, all segments); grows each quarter by cfg.growth. */
+  tam0: 45000,
+  /** Utility of "buy nothing / buy a petrol scooter". Higher = more of the market stays unsold. */
+  outsideUtility: 0.22,
+  /** Plant fixed overhead per quarter: base + per unit of capacity (Rs. L). */
+  fixedBase: 50,
+  fixedPerCapacity: 0.02,
+  /** G&A per quarter: base + share of revenue (Rs. L). */
+  gaBase: 30,
+  gaRevenueShare: 0.02,
+  /** Development charge per new model launched (Rs. L). */
+  modelLaunchCost: 50,
+  /** Demand boost cap from charging infrastructure (fraction). */
+  maxChargingBoost: 0.3
+};
+
 export const HR = { salesCost: 3.5, plantRate: 0.012, min: 80, max: 130 };
 export const CENTRE = { open: 40, opex: 8 };
 
@@ -231,7 +254,7 @@ export const TEAM_COLORS = [
 export const ARCHETYPES: Record<string, any> = {
   premium: {
     name: "Aurora X",
-    price: 152000,
+    price: 162000,
     alloc: { S1: 55, S2: 5, S3: 30, S4: 5, S5: 5 },
     cfg: { powertrain: "PT1", modes: "RM4", battery: "BC1", tech: "CT4", build: "BD1", wheels: "ALLOY", brakes: "BR1", seat: "WIDE", susp: "SUS1" },
     add: ["tpms", "theft", "hillhold"],
@@ -260,8 +283,10 @@ export const ARCHETYPES: Record<string, any> = {
     name: "HaulEV F1",
     price: 98000,
     alloc: { S1: 0, S2: 15, S3: 25, S4: 5, S5: 55 },
-    cfg: { powertrain: "PT3", modes: "RM2", battery: "BC4", tech: "CT4", build: "BD1", wheels: "SPOKE", brakes: "BR2", seat: "STD", susp: "SUS2" },
-    add: ["removable", "theft", "extwarranty"],
+    // Fleet buyers are TCO-driven: durable LFP pack, swappable battery and a long warranty, with a
+    // practical (not premium) dashboard and body so the price fits the fleet budget.
+    cfg: { powertrain: "PT3", modes: "RM2", battery: "BC4", tech: "CT2", build: "BD2", wheels: "SPOKE", brakes: "BR2", seat: "STD", susp: "SUS2" },
+    add: ["removable", "extwarranty"],
     prim: "S5",
     sec: "S3"
   }

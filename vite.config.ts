@@ -11,6 +11,22 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Heavy third-party libraries in their own long-cached chunks.
+          manualChunks(id: string) {
+            if (!id.includes("node_modules")) return undefined;
+            const pkg = id.replace(/\\/g, "/").split("/node_modules/").pop()!.split("/")[0];
+            if (["react", "react-dom", "scheduler"].includes(pkg)) return "react";
+            if (pkg === "xlsx") return "spreadsheet";
+            if (["react-simple-maps", "d3-geo", "topojson-client", "world-atlas"].includes(pkg)) return "maps";
+            if (pkg === "recharts" || pkg.startsWith("d3-") || ["victory-vendor", "es-toolkit", "decimal.js-light", "@reduxjs", "redux", "reselect", "immer"].includes(pkg)) return "charts";
+            return undefined;
+          }
+        }
+      }
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

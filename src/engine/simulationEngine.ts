@@ -13,8 +13,6 @@ import {
   TECHS,
   SEGMENTS,
   CLAIMS,
-  BASE_PLATFORM,
-  ASSEMBLY,
   HR,
   CENTRE,
   CAP_BLOCK,
@@ -24,8 +22,62 @@ import {
   ARCHETYPES,
   MARKETS,
   DEFAULT_MARKET_IDS,
+  BALANCE,
   techById
 } from "./catalog";
+import { bscRawMetrics, bscRelativeScores, bscWeightedTotal } from "../lib/scorecard";
+import { projectBatteryLifecycle, type BatteryDisposition } from "../lib/batteryLifecycle";
+
+/**
+ * Effects from systems that live outside the core engine (policy events, charging
+ * infrastructure, inter-team licences, battery end-of-life choices). The server's quarter
+ * workflow gathers them from the database and passes them in, so they change real sales
+ * and flow through each team's P&L instead of adjusting cash on the side.
+ */
+export interface QuarterEffects {
+  /** Multiplier on how strongly a model pulls customers in a segment (1 = no effect). */
+  demandMult?: (team: TeamState, model: ScooterModel, segmentId: string) => number;
+  /** Extra operating cost per team this quarter, Rs. L (e.g. charger maintenance). */
+  extraOpex?: Record<number, number>;
+  /** Extra capital spending per team this quarter, Rs. L (e.g. charger installation). */
+  extraCapex?: Record<number, number>;
+  /** Licence fees settled outside the in-game contract list, Rs. L. */
+  licence?: Record<number, { paid: number; recd: number }>;
+  /** End-of-first-life battery choice per team (defaults to warranty replacement). */
+  battery?: Record<number, BatteryDisposition>;
+}
+
+/** Initial plant & equipment every team starts with; funded by founders' paid-in capital. */
+export const INITIAL_PPE = 600;
+
+/** R&D projects queued this quarter, with their cost; the engine never trusts a client-sent total. */
+export function rndStartsOf(t: TeamState): { id: string; mode: "fast" | "std"; cost: number }[] {
+  const starts: any[] = Array.isArray((t.dec as any).rndStarts) ? (t.dec as any).rndStarts : [];
+  const seen = new Set<string>();
+  const out: { id: string; mode: "fast" | "std"; cost: number }[] = [];
+  for (const s of starts) {
+    const tc = techById(String(s?.id));
+    if (!tc || seen.has(tc.id) || t.techs.includes(tc.id) || t.rnd.some((p) => p.id === tc.id)) continue;
+    if (t.rnd.length + out.length >= 2) break;
+    seen.add(tc.id);
+    const mode = s.mode === "fast" ? "fast" : "std";
+    out.push({ id: tc.id, mode, cost: mode === "fast" ? tc.fast : tc.std });
+  }
+  return out;
+}
+
+/** Models going on sale this quarter carry a one-off development charge. */
+export function modelsLaunchingOf(t: TeamState, q: number): ScooterModel[] {
+  return t.models.filter((m) => m.launchedQ === q || m.launchedQ === null || m.launchedQ === undefined);
+}
+
+export function fixedCostOf(capacity: number): number {
+  return BALANCE.fixedBase + BALANCE.fixedPerCapacity * capacity;
+}
+
+export function gaCostOf(revenue: number): number {
+  return BALANCE.gaBase + BALANCE.gaRevenueShare * revenue;
+}
 
 export function marketById(id: string) {
   return MARKETS.find((m) => m.id === id);
@@ -158,7 +210,7 @@ export function priceFit(p: number, seg: SegmentDef): number {
 }
 
 export function unitCost(m: ScooterModel): number {
-  let c = BASE_PLATFORM;
+  let c = BALANCE.basePlatform;
   for (const cat of Object.keys(CATALOG)) {
     const opt = CATALOG[cat].opts.find((o) => o.id === (m.cfg as any)[cat]);
     if (opt) c += opt.cost;
@@ -166,7 +218,7 @@ export function unitCost(m: ScooterModel): number {
   for (const a of ADDONS) {
     if (m.add[a.id]) c += a.cost;
   }
-  return c + ASSEMBLY;
+  return c + BALANCE.assembly;
 }
 
 export function bomHash(m: ScooterModel): string {
@@ -307,7 +359,7 @@ export function valuationOf(t: TeamState): number {
   if (L === 0) return 800;
   const annRev = t.hist.slice(-L).reduce((x, r) => x + r.revenue, 0) * (4 / L);
   const bscAvg = cumBSC(t);
-  return Math.max(800, Math.round(1.2 * annRev * (0.7 + 0.6 * t.rep) * (1 + 0.15 * Math.min(2, bscAvg))));
+  return Math.max(800, Math.round(1.2 * annRev * (0.7 + 0.6 * t.rep) * (1 + (0.3 * Math.min(100, bscAvg)) / 100)));
 }
 
 export function computeBSC(t: TeamState, r: QuarterResult, _st: GameState) {
@@ -366,9 +418,9 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   }, 0);
 
   const ad = +t.dec.ad || 0;
-  const quality = +t.dec.quality || 0;
-  const dev = +t.dec.devCost || 0;
-  const rnd = +t.dec.rndStartCost || 0;
+  const quality = (+t.dec.quality || 0) + (+(t.dec as any).qualityActionCost || 0);
+  const dev = BALANCE.modelLaunchCost * modelsLaunchingOf(t, st.quarter).length;
+  const rnd = rndStartsOf(t).reduce((sum, p) => sum + p.cost, 0);
   const research = (t.dec.buyIntel ? 15 : 0) + (t.dec.buyClinic ? 10 : 0);
   const centreOpen = centreOpenCost(t.dec.newCentreCities);
   const capex = (+t.dec.expBlocks || 0) * CAP_BLOCK.cost;
@@ -378,7 +430,7 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const salesPayroll = newStaff * HR.salesCost * (t.hr.sales / 100);
   const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
   const netOpex = newCentres * CENTRE.opex;
-  const fixed = 50 + 0.02 * t.capacity;
+  const fixed = fixedCostOf(t.capacity);
   const interest = t.debt.bank * 0.04 + t.debt.lt * 0.045 + t.debt.shark * 0.15;
 
   // Capital structure / financing flows
@@ -428,7 +480,7 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   // ebitda calc (see the `ga`/`warranty`/`holding` lines there) but were missing here,
   // which let this pro forma (and the "insufficient funds" auditor gate built on it)
   // approve plans that simulateQuarter then ran cash-negative. Mirror the same formulas.
-  const ga = 30 + 0.02 * revenue;
+  const ga = gaCostOf(revenue);
   const reliab = reliabilityOf(t);
   const warrPerUnit = (2600 - 1800 * reliab) / 1e5;
   const warranty = estUnitsSold * warrPerUnit;
@@ -550,7 +602,7 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
   }
   if (q >= 4) {
     const bigSpend =
-      (t.dec.rndStartCost || 0) +
+      rndStartsOf(t).reduce((sum, p) => sum + p.cost, 0) +
       (t.dec.expBlocks || 0) * CAP_BLOCK.cost +
       centreOpenCost(t.dec.newCentreCities);
     if (bigSpend > 0.9 * Math.max(0, equityOf(t))) {
@@ -662,8 +714,10 @@ export function seasonOf(q: number) {
     : { f: 1, label: "Regular quarter" };
 }
 
-export function simulateQuarter(st: GameState) {
+export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
   const q = st.quarter;
+  // Bots set their decisions when the quarter runs, reacting to last quarter's results.
+  for (const t of st.teams) if (t.isBot && q > 1 && !t.bankrupt) botDecide(t, st);
   const season = seasonOf(q);
   // Quarter 1 is a setup-only quarter: teams fix production capacity, staffing
   // and store cities, and those costs/opex still settle normally, but no
@@ -688,12 +742,16 @@ export function simulateQuarter(st: GameState) {
     const done = t.rnd.filter((p) => p.qDone <= q);
     for (const p of done) if (!t.techs.includes(p.id)) t.techs.push(p.id);
     t.rnd = t.rnd.filter((p) => p.qDone > q);
+    // Start this quarter's queued projects (crash = ready next quarter, standard = in two).
+    const starts = rndStartsOf(t);
+    for (const p of starts) t.rnd.push({ id: p.id, mode: p.mode, qStart: q, qDone: q + (p.mode === "fast" ? 1 : 2), cost: p.cost } as any);
+    (t as any)._rndSpend = starts.reduce((sum, p) => sum + p.cost, 0);
   }
 
   const LAMBDA = 2.5,
     ALPHA = 1.3,
     RHO = 0.5,
-    OUTSIDE_U = 0.22,
+    OUTSIDE_U = BALANCE.outsideUtility,
     AW_DECAY = 0.1,
     AD_K = 120;
 
@@ -760,7 +818,8 @@ export function simulateQuarter(st: GameState) {
         Math.pow(qualityFit(o.scores, s), ALPHA) *
         priceFit(o.m.price, s) *
         Math.pow(o.t.rep, RHO);
-      const w = o.t.aw[s.id] * Math.pow(o.t._reach, 0.8) * Math.pow(U, LAMBDA);
+      const mult = effects.demandMult ? Math.max(0, effects.demandMult(o.t, o.m, s.id)) : 1;
+      const w = o.t.aw[s.id] * Math.pow(o.t._reach, 0.8) * Math.pow(U, LAMBDA) * mult;
       ws.push(w);
       den += w;
     }
@@ -831,22 +890,26 @@ export function simulateQuarter(st: GameState) {
     const endInv = t.models.reduce((x, m) => x + (m.inv || 0), 0);
     const invValue = t.models.reduce((x, m) => x + (m.inv || 0) * unitCost(m), 0) / 1e5;
 
-    const dev = t.dec.devCost || 0;
+    const dev = BALANCE.modelLaunchCost * modelsLaunchingOf(t, q).length;
     const research = (t.dec.buyIntel ? 15 : 0) + (t.dec.buyClinic ? 10 : 0);
     const ad = t.dec.ad;
     const salesPayroll = t.staff * HR.salesCost * (t.hr.sales / 100);
     const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
     const netOpex = t.centres * CENTRE.opex;
     const centreOpen = centreOpenCost(t.dec.newCentreCities);
-    const fixed = 50 + 0.02 * t.capacity;
-    const ga = 30 + 0.02 * revenue;
+    const fixed = fixedCostOf(t.capacity);
+    const ga = gaCostOf(revenue);
     const reliab = reliabilityOf(t);
     const warrPerUnit = (2600 - 1800 * reliab) / 1e5;
     const warranty = units * warrPerUnit;
-    const quality = t.dec.quality || 0;
-    const rndSpend = t.dec.rndStartCost || 0;
-    const licPaid = licPaidBy[t.i] || 0,
-      licRecd = licRecdBy[t.i] || 0;
+    const quality = (t.dec.quality || 0) + ((t.dec as any).qualityActionCost || 0);
+    const rndSpend = (t as any)._rndSpend || 0;
+    const licPaid = (licPaidBy[t.i] || 0) + (effects.licence?.[t.i]?.paid || 0),
+      licRecd = (licRecdBy[t.i] || 0) + (effects.licence?.[t.i]?.recd || 0);
+    const infraOpex = effects.extraOpex?.[t.i] || 0;
+    const battery = projectBatteryLifecycle(t.hist, q);
+    const batteryChoice: BatteryDisposition = effects.battery?.[t.i] || "warranty";
+    const batteryOpt = battery.options[batteryChoice] || battery.options.warranty;
     const holding = endInv * HOLD_COST;
     const dep = DEP_RATE * t.ppe;
 
@@ -877,7 +940,10 @@ export function simulateQuarter(st: GameState) {
       rndSpend -
       licPaid +
       licRecd -
-      holding;
+      holding -
+      infraOpex +
+      batteryOpt.revenue -
+      batteryOpt.cost;
     const profit = ebitda - interest - dep - centreOpen;
     const deltaInv = invValue - invStart;
     t.cash += profit + dep - deltaInv;
@@ -903,8 +969,9 @@ export function simulateQuarter(st: GameState) {
     t.cash += dBank;
 
     const cdInvestment = Math.min(Math.max(0, t.dec.cdInvestment || 0), Math.max(0, t.cash));
+    let cdInterest = 0;
     if (cdInvestment > 0) {
-      const cdInterest = cdInvestment * 0.02;
+      cdInterest = cdInvestment * 0.02;
       t.cash += cdInterest;
       t.cumProfit += cdInterest;
     }
@@ -918,20 +985,21 @@ export function simulateQuarter(st: GameState) {
       }
     }
 
+    let sharkRepaid = 0;
     if (t.debt.shark > 0 && t.cash > 0) {
-      const pay = Math.min(t.cash, t.debt.shark);
-      t.debt.shark -= pay;
-      t.cash -= pay;
+      sharkRepaid = Math.min(t.cash, t.debt.shark);
+      t.debt.shark -= sharkRepaid;
+      t.cash -= sharkRepaid;
     }
 
     const blocks = t.dec.expBlocks || 0;
-    let capex = 0;
+    let capex = effects.extraCapex?.[t.i] || 0;
     if (blocks > 0) {
-      capex = blocks * CAP_BLOCK.cost;
-      t.cash -= capex;
-      t.ppe += capex;
+      capex += blocks * CAP_BLOCK.cost;
       (t as any)._capAdd = blocks * CAP_BLOCK.units;
     }
+    t.cash -= capex;
+    t.ppe += capex;
 
     let vcDeal = null;
     if (q >= st.cfg.vcQuarter && t.dec.vc && t.dec.vc.ask > 0) {
@@ -1029,7 +1097,7 @@ export function simulateQuarter(st: GameState) {
     // capex belongs in the investing bucket. Counting them again here used to
     // double-subtract those amounts from the reported cash flow, making the
     // operating+investing+financing total not match the team's actual cash change.
-    const operatingCash = profit + dep - deltaInv;
+    const operatingCash = profit + dep - deltaInv + cdInterest;
     const investingCash = -capex;
     const financingCash =
       dBank +
@@ -1038,7 +1106,9 @@ export function simulateQuarter(st: GameState) {
       shareIssueAmt -
       shareBuybackAmt -
       dividendsPaid +
-      (vcDeal ? vcDeal.funded : 0);
+      (vcDeal ? vcDeal.funded : 0) -
+      sharkRepaid +
+      sharkNew;
 
     const cashFlow = {
       operating: Math.round(operatingCash * 10) / 10,
@@ -1207,11 +1277,12 @@ export function simulateQuarter(st: GameState) {
       balanceSheet,
       bsc: { parts: {}, total: 0 }
     };
-    res.bsc = computeBSC(t, res, st);
-    if (sharkNew > 0) {
-      res.bsc.parts.emergencyLoan = -Math.min(0.25, sharkNew / Math.max(1, t.paidIn));
-      res.bsc.total = Math.max(0, res.bsc.total + res.bsc.parts.emergencyLoan);
-    }
+    (res as any).infraOpex = infraOpex;
+    (res as any).batteryReturns = battery.returnedUnits;
+    (res as any).batteryDisposition = batteryChoice;
+    (res as any).batteryLifecycleCost = batteryOpt.cost;
+    (res as any).batteryLifecycleRevenue = batteryOpt.revenue;
+    res.sustainabilityScore = battery.returnedUnits > 0 ? batteryOpt.esgImpact : 0;
     t.hist.push(res);
 
     if ((t as any)._capAdd) {
@@ -1225,6 +1296,11 @@ export function simulateQuarter(st: GameState) {
     (t as any)._dividendsPaid = 0;
     t.dec.devCost = 0;
     t.dec.rndStartCost = 0;
+    (t.dec as any).rndStarts = [];
+    (t.dec as any).qualityActionCost = 0;
+    t.models.forEach((m) => {
+      if (m.launchedQ === null || m.launchedQ === undefined) m.launchedQ = q;
+    });
     t.dec.newCentres = 0;
     t.dec.newCentreCities = [];
     t.dec.hire = 0;
@@ -1236,6 +1312,21 @@ export function simulateQuarter(st: GameState) {
     t.dec.cdInvestment = 0;
     t.dec.locked = false;
     t.models.forEach((m) => (m.lastHash = bomHash(m)));
+  }
+
+  // Balanced Scorecard: every team is scored relative to the field this quarter.
+  const raws: Record<string, any> = {};
+  for (const t of st.teams) {
+    raws[String(t.i)] = bscRawMetrics(t, t.hist[t.hist.length - 1], t.hist[t.hist.length - 2] || null);
+  }
+  const relative = bscRelativeScores(raws);
+  for (const t of st.teams) {
+    const r = t.hist[t.hist.length - 1];
+    const parts: Record<string, number> = { ...relative[String(t.i)] };
+    // Emergency (loan-shark) borrowing costs up to 15 scorecard points.
+    const penalty = r.sharkNew > 0 ? Math.min(15, (r.sharkNew / Math.max(1, t.paidIn)) * 100) : 0;
+    if (penalty) parts.emergencyLoanPenalty = -penalty;
+    r.bsc = { parts, total: Math.max(0, bscWeightedTotal(relative[String(t.i)]) - penalty) };
   }
 
   for (const c of st.contracts) if (c.status === "offered") c.status = "expired";
@@ -1398,6 +1489,12 @@ export function simulateQuarter(st: GameState) {
   st.phase = st.quarter > st.cfg.quarters ? "gameover" : "results";
 }
 
+/** A bot buys a licence when it lacks the technology, the fee is at most half the standard R&D cost, and it can afford it. */
+export function botDecideLicence(t: TeamState, c: { techId: string; fee: number }): boolean {
+  const tc = techById(c.techId);
+  return Boolean(tc && !t.techs.includes(c.techId) && c.fee <= tc.std * 0.5 && t.cash > c.fee + 200);
+}
+
 export function botDecide(t: TeamState, st: GameState) {
   const m = t.models[0];
   const last = t.hist[t.hist.length - 1];
@@ -1413,8 +1510,9 @@ export function botDecide(t: TeamState, st: GameState) {
   const BOT_CLAIMS: Record<string, string[]> = {
     premium: ["tech", "perf"],
     commuter: ["range", "comfort"],
-    budget: ["perf", "build"],
-    fleeteco: ["econ", "charge"]
+    // Only claims the archetype's own spec can back up, so bots pass the same auditor as players.
+    budget: ["econ", "comfort"],
+    fleeteco: ["econ", "safety"]
   };
   const BOT_TECH: Record<string, string> = {
     premium: "T1",
@@ -1451,6 +1549,7 @@ export function botDecide(t: TeamState, st: GameState) {
   }
 
   t.dec.rndStartCost = 0;
+  (t.dec as any).rndStarts = [];
   const wantTech = BOT_TECH[t.arch || "commuter"];
   if (
     st.quarter > st.cfg.vcQuarter &&
@@ -1461,18 +1560,13 @@ export function botDecide(t: TeamState, st: GameState) {
   ) {
     const tc = techById(wantTech);
     if (tc) {
-      t.rnd.push({ id: wantTech, mode: "std", qStart: st.quarter, qDone: st.quarter + 2, cost: tc.std });
+      (t.dec as any).rndStarts = [{ id: wantTech, mode: "std" }];
       t.dec.rndStartCost = tc.std;
     }
   }
 
   for (const c of st.contracts) {
-    if (c.status === "offered" && c.buyerI === t.i) {
-      const tc = techById(c.techId);
-      if (tc && !t.techs.includes(c.techId) && c.fee <= tc.std * 0.5 && t.cash > c.fee + 200)
-        c.status = "accepted";
-      else c.status = "rejected";
-    }
+    if (c.status === "offered" && c.buyerI === t.i) c.status = botDecideLicence(t, c) ? "accepted" : "rejected";
   }
 
   t.dec.bankTarget = t.debt.bank;
@@ -1551,7 +1645,7 @@ export function leaderboardOf(st: GameState) {
 export function newState(
   teamDefs: { name: string; arch: string; isBot: boolean }[],
   quarters = 12,
-  tam0 = 20000,
+  tam0 = BALANCE.tam0,
   vcQuarter = 5
 ): GameState {
   const startCash = 3200;
@@ -1565,7 +1659,7 @@ export function newState(
       const archKey = ARCHETYPES[td.arch] ? td.arch : "commuter";
       const arch = ARCHETYPES[archKey];
       const m = mkModel(arch.name, arch.cfg, arch.add, arch.price);
-      m.launchedQ = 1;
+      m.launchedQ = 0; // starter model: on sale from day one, no launch charge
       const aw: Record<string, number> = {};
       const base: Record<string, number> = {};
       SEGMENTS.forEach((s) => {
@@ -1585,14 +1679,15 @@ export function newState(
         sec: arch.sec,
         charterDone: false,
         cash: startCash,
-        paidIn: startCash,
+        // Founders' capital covers both the opening cash and the starting plant (PPE).
+        paidIn: startCash + INITIAL_PPE,
         rep: 0.5,
         cumProfit: 0,
         aw,
         base,
         models: [m],
         capacity: 2500,
-        ppe: 600,
+        ppe: INITIAL_PPE,
         hr: { sales: 100, plant: 100 },
         centres: DEFAULT_MARKET_IDS.length,
         storeCities: [...DEFAULT_MARKET_IDS],

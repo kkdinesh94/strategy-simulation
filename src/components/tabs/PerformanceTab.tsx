@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { NewsText } from "../NewsText";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
 import { ExecutiveDebrief } from "../ExecutiveDebrief";
@@ -877,7 +878,6 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
         <BalancedScorecard
           team={team}
           gameState={gameState}
-          universeId={universeId}
           quarter={selectedQuarter}
         />
       )}
@@ -934,11 +934,9 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
           <div className="space-y-2">
             {lastReport.news.map((n, idx) => (
-              <div
-                key={idx}
-                dangerouslySetInnerHTML={{ __html: n }}
-                className="p-3 bg-[#FAF8F5] rounded-xl text-xs border border-[#E5E1D8] text-[#1F2022]"
-              />
+              <div key={idx} className="p-3 bg-[#FAF8F5] rounded-xl text-xs border border-[#E5E1D8] text-[#1F2022]">
+                <NewsText text={n} />
+              </div>
             ))}
           </div>
         </div>

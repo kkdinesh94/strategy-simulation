@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useReducer } from "react";
+import React, { useState, useEffect, useReducer, lazy, Suspense } from "react";
 import { GameState, TeamState, LicenceContract } from "./types/simulation";
 import { User, Universe } from "./types/auth";
 import {
@@ -18,37 +18,42 @@ import {
   saveUserUnified,
   getActiveDatabaseProvider
 } from "./lib/dbProvider";
-import { newState, auditTeam, simulateQuarter } from "./engine/simulationEngine";
-import { DEFAULT_MARKET_IDS } from "./engine/catalog";
+import { newState, auditTeam, botDecideLicence } from "./engine/simulationEngine";
+import { authApi, getSessionToken, type SaveErrorDetail } from "./lib/apiClient";
+import { DEFAULT_MARKET_IDS, BALANCE } from "./engine/catalog";
 import { LoginPage } from "./components/LoginPage";
 import { ExecutiveHeader } from "./components/ExecutiveHeader";
-import { Navbar, TabKey } from "./components/Navbar";
-import { UniverseRosterManager } from "./components/UniverseRosterManager";
-import CompanySetupTab from "./components/tabs/CompanySetupTab";
-import { ProductDesignTab } from "./components/tabs/ProductDesignTab";
-import { RnDTab } from "./components/tabs/RnDTab";
-import { MarketingTab } from "./components/tabs/MarketingTab";
-import { SalesDistributionTab } from "./components/tabs/SalesDistributionTab";
-import HRDashboard from "./components/HRDashboard";
-import { OperationsTab } from "./components/tabs/OperationsTab";
-import { FinanceTab } from "./components/tabs/FinanceTab";
-import { PerformanceTab } from "./components/tabs/PerformanceTab";
-import { InstructorConsoleTab } from "./components/tabs/InstructorConsoleTab";
-import { AdminDatabaseTab } from "./components/tabs/AdminDatabaseTab";
-import { HelpManualTab } from "./components/tabs/HelpManualTab";
-import { AIConsultantModal } from "./components/AIConsultantModal";
+import { Navbar, SubTabs, TabKey, TAB_LABELS, areaOf, visibleAreas } from "./components/Navbar";
+import { HomeDashboard } from "./components/HomeDashboard";
 import { PreSubmissionSummaryModal } from "./components/PreSubmissionSummaryModal";
 import { ChangePasswordModal } from "./components/ChangePasswordModal";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { hasCompletedOnboarding, markOnboardingComplete } from "./lib/onboarding";
 import { StrategySummary } from "./components/StrategyWizard";
-import { CheckCircle, AlertTriangle } from "lucide-react";
-import PolicyEvents from "./components/PolicyEvents";
-import ChargingStrategy from "./components/ChargingStrategy";
-import BatteryLifecycle from "./components/BatteryLifecycle";
+import { CheckCircle, AlertTriangle, X } from "lucide-react";
 import RightPanel from "./components/RightPanel";
 import { QuarterAdvancedBanner } from "./components/QuarterAdvancedBanner";
 import { useQuarterPoller } from "./hooks/useQuarterPoller";
+import { FEATURES } from "./lib/features";
+
+// Each area's screens load on first visit, keeping the initial download small.
+const UniverseRosterManager = lazy(() => import("./components/UniverseRosterManager").then((m) => ({ default: m.UniverseRosterManager })));
+const ProductDesignTab = lazy(() => import("./components/tabs/ProductDesignTab").then((m) => ({ default: m.ProductDesignTab })));
+const RnDTab = lazy(() => import("./components/tabs/RnDTab").then((m) => ({ default: m.RnDTab })));
+const MarketingTab = lazy(() => import("./components/tabs/MarketingTab").then((m) => ({ default: m.MarketingTab })));
+const SalesDistributionTab = lazy(() => import("./components/tabs/SalesDistributionTab").then((m) => ({ default: m.SalesDistributionTab })));
+const OperationsTab = lazy(() => import("./components/tabs/OperationsTab").then((m) => ({ default: m.OperationsTab })));
+const FinanceTab = lazy(() => import("./components/tabs/FinanceTab").then((m) => ({ default: m.FinanceTab })));
+const PerformanceTab = lazy(() => import("./components/tabs/PerformanceTab").then((m) => ({ default: m.PerformanceTab })));
+const InstructorConsoleTab = lazy(() => import("./components/tabs/InstructorConsoleTab").then((m) => ({ default: m.InstructorConsoleTab })));
+const AdminDatabaseTab = lazy(() => import("./components/tabs/AdminDatabaseTab").then((m) => ({ default: m.AdminDatabaseTab })));
+const HelpManualTab = lazy(() => import("./components/tabs/HelpManualTab").then((m) => ({ default: m.HelpManualTab })));
+const AIConsultantModal = lazy(() => import("./components/AIConsultantModal").then((m) => ({ default: m.AIConsultantModal })));
+const CompanySetupTab = lazy(() => import("./components/tabs/CompanySetupTab"));
+const HRDashboard = lazy(() => import("./components/HRDashboard"));
+const PolicyEvents = lazy(() => import("./components/PolicyEvents"));
+const ChargingStrategy = lazy(() => import("./components/ChargingStrategy"));
+const BatteryLifecycle = lazy(() => import("./components/BatteryLifecycle"));
 
 type DecisionDashboardState = {
   revision: number;
@@ -93,11 +98,18 @@ export default function App() {
       ? observingTeamIdx
       : activeTeamIdx;
 
-  const [activeTab, setActiveTab] = useState<TabKey>("charter");
-  const [isInstructorMode, setIsInstructorMode] = useState<boolean>(false);
+  const isStaffUser = currentUser?.role === "instructor" || currentUser?.role === "admin";
+  const [activeTab, setActiveTabRaw] = useState<TabKey>(() => (loadCurrentUser()?.role === "player" ? "home" : "instructor"));
+  // Checklist items and older links may name areas that are not tabs; fall back sensibly.
+  const setActiveTab = (tab: string) => setActiveTabRaw((tab in TAB_LABELS ? tab : tab === "strategy" ? "charter" : "home") as TabKey);
+  const [navOpen, setNavOpen] = useState<boolean>(false);
+  const [forecastOpen, setForecastOpen] = useState<boolean>(false);
+  const [advisorAvailable, setAdvisorAvailable] = useState<boolean>(false);
+  const [notificationTone, setNotificationTone] = useState<"info" | "error">("info");
   const [isAdvisorOpen, setIsAdvisorOpen] = useState<boolean>(false);
   const [showPreSubmissionModal, setShowPreSubmissionModal] = useState<boolean>(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState<boolean>(false);
+  const [passwordChangeRequired, setPasswordChangeRequired] = useState<boolean>(false);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
   const [notification, setNotification] = useState<string | null>(null);
   const [auditErrors, setAuditErrors] = useState<string[]>([]);
@@ -108,7 +120,7 @@ export default function App() {
   const policyAlertQuarter = React.useRef<number | null>(null);
 
   useEffect(() => {
-    if (!universe?.id || policyAlertQuarter.current === gameState.quarter) return;
+    if (!currentUser || !universe?.id || policyAlertQuarter.current === gameState.quarter) return;
     fetch(`/api/policy-events?quarter=${encodeURIComponent(gameState.quarter)}`)
       .then((response) => response.ok ? response.json() : null)
       .then((payload) => {
@@ -117,7 +129,7 @@ export default function App() {
         policyAlertQuarter.current = gameState.quarter;
       })
       .catch(() => { policyAlertQuarter.current = gameState.quarter; });
-  }, [universe?.id, gameState.quarter]);
+  }, [currentUser?.id, universe?.id, gameState.quarter]);
 
   // Active user telemetry heartbeat & presence tracking
   useEffect(() => {
@@ -231,9 +243,48 @@ export default function App() {
     }
   };
 
-  // Initial cloud fetch on mount
+  // Validate the stored session, then load this account's data from the server.
   useEffect(() => {
-    refreshAllData();
+    if (!currentUser) return;
+    if (!getSessionToken()) {
+      saveCurrentUser(null);
+      setCurrentUser(null);
+      return;
+    }
+    authApi
+      .me()
+      .then(({ user }) => {
+        saveCurrentUser(user);
+        setCurrentUser((prev) => (prev ? { ...prev, ...user } : user));
+        refreshAllData();
+      })
+      .catch(() => {
+        /* a 401 is handled by the ev:unauthorized listener; network errors keep the cached view */
+      });
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    const onUnauthorized = () => {
+      saveCurrentUser(null);
+      setCurrentUser(null);
+    };
+    const onSaveError = (event: Event) => {
+      const { status, message, details } = (event as CustomEvent<SaveErrorDetail>).detail;
+      if (status === 422) {
+        setAuditErrors(details.length ? details : [message]);
+        showNotification("The auditor blocked this lock-in. Fix the items listed and try again.");
+      } else {
+        showNotification(message);
+      }
+      // The server copy is authoritative: reload it so the screen matches what was saved.
+      refreshAllData();
+    };
+    window.addEventListener("ev:unauthorized", onUnauthorized);
+    window.addEventListener("ev:save-error", onSaveError);
+    return () => {
+      window.removeEventListener("ev:unauthorized", onUnauthorized);
+      window.removeEventListener("ev:save-error", onSaveError);
+    };
   }, []);
 
   // Update GameState when Universe changes
@@ -312,12 +363,20 @@ export default function App() {
     hist: []
   };
 
-  const showNotification = (msg: string) => {
+  const notificationTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotification = (msg: string, tone: "info" | "error" = /could not|failed|blocked|refused|cannot|can only|not allowed|error/i.test(msg) ? "error" : "info") => {
     setNotification(msg);
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
+    setNotificationTone(tone);
+    if (notificationTimer.current) clearTimeout(notificationTimer.current);
+    notificationTimer.current = setTimeout(() => setNotification(null), tone === "error" ? 7000 : 4000);
   };
+
+  useEffect(() => {
+    fetch("/api/health")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((h) => setAdvisorAvailable(Boolean(h?.features?.advisor)))
+      .catch(() => setAdvisorAvailable(false));
+  }, []);
 
   const handleSelectUniverse = (selectedUniv: Universe) => {
     setUniverse(selectedUniv);
@@ -333,36 +392,36 @@ export default function App() {
     showNotification(`Switched active universe cohort to '${selectedUniv.name}' (${selectedUniv.code})`);
   };
 
-  const handleLoginSuccess = (user: User) => {
-    setCurrentUser(user);
+  const handleLoginSuccess = async (user: User, opts?: { mustChangePassword?: boolean }) => {
     if (user.role === "player") {
       setActiveTeamIdx(user.teamI);
-      setIsInstructorMode(false);
+      setActiveTab("home");
     } else {
-      setIsInstructorMode(true);
+      setObservingTeamIdx(null);
+      setActiveTab("instructor");
     }
+    setPasswordChangeRequired(Boolean(opts?.mustChangePassword));
+    setIsChangePasswordOpen(Boolean(opts?.mustChangePassword));
 
-    const accessible = getAccessibleUniverses(user, allUniverses.length > 0 ? allUniverses : [universe]);
-    let targetUniv = accessible.find((u) => u.id === user.universeId);
-    if (!targetUniv) {
-      targetUniv = accessible[0] || loadActiveUniverse();
-    }
+    const [remoteUniverses, remoteUsers] = await Promise.all([fetchUniversesUnified(), fetchUsersUnified()]);
+    setAllUniverses(remoteUniverses);
+    setAllUsers(remoteUsers);
+    const accessible = getAccessibleUniverses(user, remoteUniverses);
+    const targetUniv = accessible.find((u) => u.id === user.universeId) || accessible[0] || loadActiveUniverse();
 
+    saveUniverses(remoteUniverses);
+    try { localStorage.setItem("ev_venture_league_active_univ_id_v2", targetUniv.id); } catch {}
     setUniverse(targetUniv);
     setGameState(targetUniv.gameState);
     dispatchDecisionDashboard({ type: "RESET" });
-    saveActiveUniverse(targetUniv);
+    setCurrentUser(user);
   };
 
   const handleLogout = () => {
-    if (currentUser) {
-      const offlineUser: User = {
-        ...currentUser,
-        isOnline: false,
-        lastActiveAt: new Date().toISOString()
-      };
-      saveUserUnified(offlineUser).catch(() => {});
-    }
+    authApi.logout().catch(() => {});
+    // Shared lab computers: do not leave the cohort's data cached for the next person.
+    saveUsers([]);
+    saveUniverses([]);
     saveCurrentUser(null);
     setCurrentUser(null);
   };
@@ -463,7 +522,7 @@ export default function App() {
     };
 
     if (buyer.isBot) {
-      if (fee <= 120 && buyer.cash > fee + 200) {
+      if (botDecideLicence(buyer, newContract)) {
         newContract.status = "accepted";
         showNotification(`${buyer.name} accepted your licence offer of Rs. ${fee} L! Contract executed.`);
       } else {
@@ -501,16 +560,16 @@ export default function App() {
 
   const handleResetGame = () => {
     if (observingTeamIdx !== null) return;
-    if (confirm("Reset simulation to Quarter 1 initial state for this universe?")) {
+    if (confirm(`Restart "${universe.name}" from Quarter 1? Every team's results so far will be erased. This cannot be undone.`)) {
       const resetState = newState(
         gameState.teams.map((t) => ({ name: t.name, arch: t.arch, isBot: t.isBot })),
         12,
-        25000,
+        BALANCE.tam0,
         5
       );
       handleUpdateGameState(resetState);
       setActiveTeamIdx(currentUser?.role === "player" ? currentUser.teamI : 0);
-      setActiveTab("charter");
+      setActiveTab("home");
       setAuditErrors([]);
       showNotification("Simulation reset to Quarter 1.");
     }
@@ -532,36 +591,46 @@ export default function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
+  const hasTeam = !isStaffUser || observingTeamIdx !== null;
+  const readOnly = isStaffUser;
+  // Staff who stop observing a team are moved off team-only pages.
+  const areaVisible = visibleAreas({ isStaff: isStaffUser, isAdmin: currentUser.role === "admin", hasTeam }).some((a) => a.id === areaOf(activeTab).id);
+  const currentTab: TabKey = areaVisible ? activeTab : isStaffUser ? "instructor" : "home";
+  const showForecast = hasTeam && !["instructor", "roster", "admin_db", "help"].includes(currentTab);
+
   return (
     <div className="h-screen bg-[#FAF8F5] text-[#1F2022] flex flex-col font-sans">
-      {/* Executive Header Ticker */}
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:m-2 focus:px-3 focus:py-2 focus:bg-white focus:rounded-lg focus:shadow">
+        Skip to content
+      </a>
       <ExecutiveHeader
         team={currentTeam}
         gameState={gameState}
         currentUser={currentUser}
         universe={universe}
         allUniverses={allUniverses}
-        activeTeamIdx={activeTeamIdx}
-        onSelectTeam={setActiveTeamIdx}
+        observedTeamIdx={isStaffUser ? observingTeamIdx : currentUser.teamI}
+        onObserveTeam={(idx) => {
+          setObservingTeamIdx(idx);
+          if (idx !== null && ["instructor", "roster", "admin_db"].includes(activeTab)) setActiveTab("home");
+        }}
         onSelectUniverse={handleSelectUniverse}
         onLockToggle={handleLockToggle}
-        onOpenAdvisor={() => setIsAdvisorOpen(true)}
+        onOpenAdvisor={FEATURES.aiAdvisor && advisorAvailable ? () => setIsAdvisorOpen(true) : undefined}
         onLogout={handleLogout}
-        onOpenRoster={() => setActiveTab("roster")}
         onUpdateDeadline={handleUpdateDeadline}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
+        onToggleNav={() => setNavOpen(true)}
+        onToggleForecast={() => setForecastOpen((open) => !open)}
       />
 
-      {observingTeamIdx !== null && (currentUser.role === "instructor" || currentUser.role === "admin") && (
-        <div className="px-4 py-2 bg-amber-100 border-b border-amber-300 text-amber-900 text-xs font-bold flex items-center justify-between gap-3">
+      {observingTeamIdx !== null && isStaffUser && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-3">
           <span>
-            Observation mode — viewing {currentTeam.name} (read-only)
+            Viewing <strong>{currentTeam.name}</strong> as an observer. Changes are disabled.
           </span>
-          <button
-            onClick={() => setObservingTeamIdx(null)}
-            className="px-3 py-1 bg-amber-900 hover:bg-amber-950 text-white text-xs font-bold rounded-lg transition"
-          >
-            Exit observation
+          <button onClick={() => setObservingTeamIdx(null)} className="px-3 py-1 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 text-xs font-semibold rounded-lg transition">
+            Stop observing
           </button>
         </div>
       )}
@@ -577,63 +646,62 @@ export default function App() {
         />
       )}
 
-      {/* Sidebar + Main Content Row */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Vertical Sidebar Navigation */}
+      <div className="flex flex-1 min-h-0">
         <Navbar
-          activeTab={activeTab}
+          activeTab={currentTab}
           onTabChange={setActiveTab}
-          onResetGame={handleResetGame}
-          isInstructorMode={isInstructorMode}
-          onToggleInstructorMode={() => {
-            setIsInstructorMode(!isInstructorMode);
-            if (!isInstructorMode) setActiveTab("instructor");
-          }}
-          canManageRoster={currentUser.role === "instructor" || currentUser.role === "admin"}
+          isStaff={isStaffUser}
           isAdmin={currentUser.role === "admin"}
+          hasTeam={hasTeam}
           teamName={currentTeam.name}
-          teamIndex={activeTeamIdx}
+          teamColor={currentTeam.color || "#1F2022"}
           quarter={gameState.quarter}
+          totalQuarters={gameState.cfg.quarters}
+          open={navOpen}
+          onClose={() => setNavOpen(false)}
         />
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-hidden">
-        <div style={{ display: "flex", flex: 1, gap: 0, overflow: "hidden", height: "100%" }}>
-          <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
-        {/* Toast Notification */}
-        {notification && (
-          <div className="p-3 bg-[#1F2022] text-white rounded-xl shadow-lg border border-slate-700 flex items-center justify-between text-xs font-semibold animate-fade-in">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-emerald-400" />
-              <span>{notification}</span>
-            </div>
-          </div>
-        )}
+        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto">
+          <div className="px-4 sm:px-6 py-5 space-y-5 max-w-[1400px]">
+            {auditErrors.length > 0 && (
+              <div role="alert" className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-semibold text-sm text-red-900 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-600" />
+                    The auditor needs these fixed before you can submit
+                  </div>
+                  <button onClick={() => setAuditErrors([])} className="p-1 rounded text-red-700 hover:bg-red-100" aria-label="Dismiss">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <ul className="mt-2 list-disc pl-5 text-sm text-red-800 space-y-1">
+                  {auditErrors.map((err, i) => (
+                    <li key={i}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-        {/* Auditor Validation Errors Box */}
-        {auditErrors.length > 0 && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2">
-            <div className="font-bold text-sm text-red-800 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-              Auditor Decision Check Failed:
-            </div>
-            <ul className="list-disc list-inside text-xs text-red-700 space-y-1">
-              {auditErrors.map((err, i) => (
-                <li key={i}>{err}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+            <SubTabs activeTab={currentTab} onTabChange={setActiveTab} />
 
-        {/* Tab Switcher Body */}
-        <StrategySummary
-          universeId={universe.id}
-          teamId={currentTeam.i}
-          quarter={gameState.quarter}
-          onOpen={() => setActiveTab("charter")}
-        />
+            <Suspense fallback={<div role="status" className="py-16 text-center text-sm text-[#6C6D70]">Loading…</div>}>
 
-        {activeTab === "charter" && (
+            {currentTab === "home" && (
+              <HomeDashboard
+                team={currentTeam}
+                gameState={gameState}
+                universe={universe}
+                readOnly={readOnly}
+                onNavigate={setActiveTab}
+                onLockToggle={handleLockToggle}
+              />
+            )}
+
+            {currentTab === "charter" && (
+              <StrategySummary universeId={universe.id} teamId={currentTeam.i} quarter={gameState.quarter} onOpen={() => setActiveTab("charter")} />
+            )}
+
+        {currentTab === "charter" && (
           <CompanySetupTab
             team={currentTeam}
             gameState={gameState}
@@ -647,7 +715,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "product" && (
+        {currentTab === "product" && (
           <ProductDesignTab
             team={currentTeam}
             onChange={handleUpdateCurrentTeam}
@@ -655,7 +723,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "rnd" && (
+        {currentTab === "rnd" && (
           <RnDTab
             team={currentTeam}
             gameState={gameState}
@@ -667,7 +735,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "marketing" && (
+        {currentTab === "marketing" && (
           <MarketingTab
             team={currentTeam}
             gameState={gameState}
@@ -677,7 +745,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "sales" && (
+        {currentTab === "sales" && (
           <SalesDistributionTab
             team={currentTeam}
             gameState={gameState}
@@ -685,7 +753,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "hr" && (
+        {currentTab === "hr" && (
           <HRDashboard
             team={currentTeam}
             gameState={gameState}
@@ -695,7 +763,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "operations" && (
+        {currentTab === "operations" && (
           <OperationsTab
             team={currentTeam}
             gameState={gameState}
@@ -703,7 +771,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === "finance" && (
+        {currentTab === "finance" && (
           <FinanceTab
             team={currentTeam}
             gameState={gameState}
@@ -713,23 +781,23 @@ export default function App() {
           />
         )}
 
-        {activeTab === "charging" && (
+        {currentTab === "charging" && (
           <ChargingStrategy teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
-        {activeTab === "battery" && (
+        {currentTab === "battery" && (
           <BatteryLifecycle universeId={universe.id} teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
-        {activeTab === "performance" && (
+        {currentTab === "performance" && (
           <PerformanceTab team={currentTeam} gameState={gameState} universeId={universe.id} onNotify={showNotification} functionalRole={Object.entries(currentTeam.roles || {}).find(([, memberName]) => memberName === currentUser?.name)?.[0] || "President"} />
         )}
 
-        {activeTab === "policy" && (
+        {currentTab === "policy" && (
           <PolicyEvents universeId={universe.id} quarter={gameState.quarter} onNotify={showNotification} />
         )}
 
-        {activeTab === "roster" && (
+        {currentTab === "roster" && (
           <UniverseRosterManager
             universe={universe}
             currentUser={currentUser}
@@ -747,8 +815,9 @@ export default function App() {
           />
         )}
 
-        {activeTab === "instructor" && (
+        {currentTab === "instructor" && (
           <InstructorConsoleTab
+            onResetGame={handleResetGame}
             gameState={gameState}
             universe={universe}
             currentUser={currentUser}
@@ -763,12 +832,12 @@ export default function App() {
             onNotify={showNotification}
             onObserveTeam={(idx) => {
               setObservingTeamIdx(idx);
-              setActiveTab("charter");
+              setActiveTab("home");
             }}
           />
         )}
 
-        {activeTab === "admin_db" && currentUser.role === "admin" && (
+        {currentTab === "admin_db" && currentUser.role === "admin" && (
           <AdminDatabaseTab
             currentUser={currentUser}
             activeUniverse={universe}
@@ -788,21 +857,67 @@ export default function App() {
           />
         )}
 
-        {activeTab === "help" && <HelpManualTab />}
+        {currentTab === "help" && <HelpManualTab />}
+            </Suspense>
           </div>
+        </main>
 
-          {/* Right — persistent panel */}
-          <RightPanel
-            team={currentTeam}
-            gameState={gameState}
-            universeId={universe.id}
-            onNotify={showNotification}
-            onNavigate={setActiveTab}
-            decisionRevision={decisionDashboard.revision}
-          />
-        </div>
-      </main>
+        {showForecast && (
+          <>
+            <div className="hidden xl:block">
+              <RightPanel
+                showChecklist={currentTab !== "home"}
+                team={currentTeam}
+                gameState={gameState}
+                universeId={universe.id}
+                onNotify={showNotification}
+                onNavigate={setActiveTab}
+                decisionRevision={decisionDashboard.revision}
+              />
+            </div>
+            {forecastOpen && (
+              <div className="xl:hidden fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Cash forecast and checklist">
+                <div className="absolute inset-0 bg-black/40" onClick={() => setForecastOpen(false)} />
+                <div className="absolute inset-y-0 right-0 w-[300px] max-w-[90vw] bg-[#FAF8F5] shadow-xl flex flex-col">
+                  <div className="h-12 px-4 flex items-center justify-between border-b border-[#E5E1D8] bg-white">
+                    <span className="text-sm font-semibold">Cash forecast</span>
+                    <button onClick={() => setForecastOpen(false)} className="p-1.5 rounded-lg hover:bg-[#F3F0EA]" aria-label="Close">
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <RightPanel
+                    fill
+                    team={currentTeam}
+                    gameState={gameState}
+                    universeId={universe.id}
+                    onNotify={showNotification}
+                    onNavigate={(tab) => {
+                      setActiveTab(tab);
+                      setForecastOpen(false);
+                    }}
+                    decisionRevision={decisionDashboard.revision}
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {notification && (
+        <div
+          role={notificationTone === "error" ? "alert" : "status"}
+          className={`fixed z-50 bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:max-w-md px-4 py-3 rounded-xl shadow-lg border text-sm flex items-start gap-2.5 ${
+            notificationTone === "error" ? "bg-red-50 border-red-200 text-red-900" : "bg-[#1F2022] border-[#1F2022] text-white"
+          }`}
+        >
+          {notificationTone === "error" ? <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-600" /> : <CheckCircle className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" />}
+          <span className="flex-1">{notification}</span>
+          <button onClick={() => setNotification(null)} className="opacity-70 hover:opacity-100" aria-label="Dismiss">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Pre-Submission Decision Summary Sheet Modal */}
       <PreSubmissionSummaryModal
@@ -814,23 +929,21 @@ export default function App() {
       />
 
       {/* AI Board Advisor Modal */}
-      <AIConsultantModal
+      {isAdvisorOpen && <Suspense fallback={null}><AIConsultantModal
         isOpen={isAdvisorOpen}
         onClose={() => setIsAdvisorOpen(false)}
         team={currentTeam}
         gameState={gameState}
-      />
+      /></Suspense>}
 
       {/* Change Password Modal */}
       {currentUser && (
         <ChangePasswordModal
           isOpen={isChangePasswordOpen}
+          required={passwordChangeRequired}
           currentUser={currentUser}
           onClose={() => setIsChangePasswordOpen(false)}
-          onSuccess={(updated) => {
-            setCurrentUser(updated);
-            setAllUsers(loadUsers());
-          }}
+          onSuccess={() => setPasswordChangeRequired(false)}
           onNotify={showNotification}
         />
       )}
@@ -838,7 +951,7 @@ export default function App() {
       {/* First-time Player Onboarding Modal */}
       {currentUser && currentUser.role === "player" && (
         <OnboardingModal
-          isOpen={showOnboarding}
+          isOpen={showOnboarding && !isChangePasswordOpen}
           user={currentUser}
           team={currentTeam}
           gameState={gameState}
@@ -849,10 +962,6 @@ export default function App() {
         />
       )}
 
-      {/* Footer */}
-      <footer className="bg-[#F3F0EA] border-t border-[#E5E1D8] text-[#7A7C80] text-xs py-4 px-6 text-center font-mono">
-        Strategic Executive Business Simulation Package • NIT Warangal
-      </footer>
     </div>
   );
 }

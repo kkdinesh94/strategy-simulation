@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { FEATURES } from "../../lib/features";
 import { TeamState, GameState } from "../../types/simulation";
 import { fmtL, fmtRs } from "../../engine/catalog";
 import {
@@ -196,16 +197,18 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
           <ShieldCheck className="w-3.5 h-3.5" /> Decision Auditor Checklist
         </button>
 
-        <button
-          onClick={() => setActiveSubTab("abc")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "abc"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
-          }`}
-        >
-          <PieChart className="w-3.5 h-3.5" /> Activity Based Costing (ABC)
-        </button>
+        {FEATURES.abcReport && (
+          <button
+            onClick={() => setActiveSubTab("abc")}
+            className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
+              activeSubTab === "abc"
+                ? "bg-[#1F2022] text-white shadow-sm"
+                : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
+            }`}
+          >
+            <PieChart className="w-3.5 h-3.5" /> Activity Based Costing (ABC)
+          </button>
+        )}
 
         <button
           onClick={() => setActiveSubTab("debt")}
@@ -548,7 +551,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
       )}
 
       {/* SUB-TAB 2: ACTIVITY BASED COSTING (ABC) */}
-      {activeSubTab === "abc" && (
+      {activeSubTab === "abc" && FEATURES.abcReport && (
         <ABCReport universeId={universeId} teamId={String(team.i)} quarter={gameState.quarter} />
       )}
 

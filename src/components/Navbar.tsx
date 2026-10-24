@@ -1,23 +1,20 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
+  LayoutDashboard,
   Compass,
   Bike,
-  Cpu,
   Megaphone,
-  Store,
   Factory,
-  DollarSign,
-  BatteryCharging,
+  Wallet,
   BarChart3,
-  Landmark,
   BookOpen,
-  UserCheck,
-  Users,
-  RotateCcw,
-  Database
+  GraduationCap,
+  Database,
+  X
 } from "lucide-react";
 
 export type TabKey =
+  | "home"
   | "charter"
   | "product"
   | "rnd"
@@ -35,162 +32,177 @@ export type TabKey =
   | "admin_db"
   | "help";
 
+export interface Area {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tabs: TabKey[];
+  audience?: "staff" | "admin";
+}
+
+/** Areas in the sidebar; areas with several tabs show them as sub-tabs above the content. */
+export const AREAS: Area[] = [
+  { id: "teach", label: "Instructor", icon: GraduationCap, tabs: ["instructor", "roster"], audience: "staff" },
+  { id: "admin", label: "Administration", icon: Database, tabs: ["admin_db"], audience: "admin" },
+  { id: "home", label: "Home", icon: LayoutDashboard, tabs: ["home"] },
+  { id: "strategy", label: "Strategy", icon: Compass, tabs: ["charter"] },
+  { id: "product", label: "Product", icon: Bike, tabs: ["product", "rnd"] },
+  { id: "market", label: "Market & Sales", icon: Megaphone, tabs: ["marketing", "sales", "charging"] },
+  { id: "operations", label: "Operations", icon: Factory, tabs: ["operations", "hr", "battery"] },
+  { id: "finance", label: "Finance", icon: Wallet, tabs: ["finance"] },
+  { id: "results", label: "Results", icon: BarChart3, tabs: ["performance", "policy"] },
+  { id: "help", label: "Help", icon: BookOpen, tabs: ["help"] }
+];
+
+export const TAB_LABELS: Record<TabKey, string> = {
+  home: "Home",
+  charter: "Company charter",
+  product: "Product design",
+  rnd: "R&D and licensing",
+  marketing: "Marketing",
+  sales: "Sales and stores",
+  charging: "Charging network",
+  operations: "Production and quality",
+  hr: "People",
+  battery: "Battery lifecycle",
+  finance: "Finance",
+  performance: "Scorecard and reports",
+  policy: "Policy events",
+  instructor: "Console",
+  roster: "Teams and students",
+  admin_db: "Database",
+  help: "Help"
+};
+
+export function areaOf(tab: TabKey): Area {
+  return AREAS.find((a) => a.tabs.includes(tab)) || AREAS[2];
+}
+
+export function visibleAreas(opts: { isStaff: boolean; isAdmin: boolean; hasTeam: boolean }): Area[] {
+  return AREAS.filter((a) => {
+    if (a.audience === "admin") return opts.isAdmin;
+    if (a.audience === "staff") return opts.isStaff;
+    if (a.id === "help") return true;
+    return opts.hasTeam;
+  });
+}
+
 interface NavbarProps {
   activeTab: TabKey;
   onTabChange: (tab: TabKey) => void;
-  onResetGame: () => void;
-  isInstructorMode: boolean;
-  onToggleInstructorMode: () => void;
-  canManageRoster?: boolean;
-  isAdmin?: boolean;
+  isStaff: boolean;
+  isAdmin: boolean;
+  /** False for staff who are not observing a team: team areas are hidden. */
+  hasTeam: boolean;
   teamName: string;
-  teamIndex: number;
+  teamColor: string;
   quarter: number;
+  totalQuarters: number;
+  /** Mobile drawer state; the sidebar is always visible from the lg breakpoint up. */
+  open: boolean;
+  onClose: () => void;
 }
 
-const NAV_GROUPS: { label: string; tabs: TabKey[]; adminOnly?: boolean }[] = [
-  { label: "Setup", tabs: ["charter"] },
-  {
-    label: "Decisions",
-    tabs: ["product", "rnd", "marketing", "sales", "hr", "operations", "finance", "charging", "battery"]
-  },
-  { label: "Analytics", tabs: ["performance", "policy", "help"] },
-  { label: "Instructor", tabs: ["instructor", "roster", "admin_db"], adminOnly: true }
-];
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange, isStaff, isAdmin, hasTeam, teamName, teamColor, quarter, totalQuarters, open, onClose }) => {
+  const current = areaOf(activeTab);
+  const areas = visibleAreas({ isStaff, isAdmin, hasTeam });
 
-const TEAM_COLORS = [
-  "#22C55E",
-  "#3B82F6",
-  "#F59E0B",
-  "#EF4444",
-  "#8B5CF6",
-  "#EC4899",
-  "#14B8A6",
-  "#F97316",
-  "#06B6D4",
-  "#84CC16"
-];
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
 
-export const Navbar: React.FC<NavbarProps> = ({
-  activeTab,
-  onTabChange,
-  onResetGame,
-  isInstructorMode,
-  onToggleInstructorMode,
-  canManageRoster = true,
-  isAdmin = false,
-  teamName,
-  teamIndex,
-  quarter
-}) => {
-  const tabs: { id: TabKey; label: string; icon: React.ReactNode; show?: boolean }[] = [
-    { id: "charter", label: "Executive Charter", icon: <Compass className="w-[15px] h-[15px]" /> },
-    { id: "product", label: "Product & Specs", icon: <Bike className="w-[15px] h-[15px]" /> },
-    { id: "rnd", label: "R&D & Licensing", icon: <Cpu className="w-[15px] h-[15px] text-purple-400" /> },
-    { id: "marketing", label: "Marketing & Claims", icon: <Megaphone className="w-[15px] h-[15px]" /> },
-    { id: "sales", label: "Sales & Outlets", icon: <Store className="w-[15px] h-[15px]" /> },
-    { id: "hr", label: "HR & Productivity", icon: <Users className="w-[15px] h-[15px]" /> },
-    { id: "operations", label: "Operations & Quality", icon: <Factory className="w-[15px] h-[15px]" /> },
-    { id: "finance", label: "Finance & Pro Forma", icon: <DollarSign className="w-[15px] h-[15px] text-emerald-400" /> },
-    { id: "charging", label: "Charging Network", icon: <BatteryCharging className="w-[15px] h-[15px] text-rose-500" /> },
-    { id: "battery", label: "Battery Lifecycle", icon: <BatteryCharging className="w-[15px] h-[15px] text-emerald-600" /> },
-    { id: "performance", label: "Scorecard & Reports", icon: <BarChart3 className="w-[15px] h-[15px] text-amber-400" /> },
-    { id: "policy", label: "Policy Events", icon: <Landmark className="w-[15px] h-[15px] text-amber-600" /> },
-    { id: "roster", label: "Universe Roster (10 Teams)", icon: <Users className="w-[15px] h-[15px] text-blue-400" />, show: canManageRoster },
-    { id: "instructor", label: "Instructor Console", icon: <UserCheck className="w-[15px] h-[15px] text-purple-400" />, show: canManageRoster },
-    { id: "admin_db", label: "Admin DB & Console", icon: <Database className="w-[15px] h-[15px] text-emerald-500" />, show: isAdmin },
-    { id: "help", label: "Executive Help Manual", icon: <BookOpen className="w-[15px] h-[15px]" /> }
-  ];
-
-  const tabById = (id: TabKey) => tabs.find((t) => t.id === id);
-  const teamColor = TEAM_COLORS[teamIndex % TEAM_COLORS.length];
-
-  return (
-    <nav
-      className="flex flex-col bg-white overflow-y-auto"
-      style={{
-        width: 200,
-        flexShrink: 0,
-        borderRight: "0.5px solid #E5E1D8",
-        height: "100%"
-      }}
-    >
-      {/* Team Identity Block */}
-      <div className="px-3 py-4 border-b border-[#E5E1D8] flex items-center gap-2">
-        <div
-          className="shrink-0"
-          style={{ width: 28, height: 28, borderRadius: 6, background: teamColor }}
-        />
-        <div className="min-w-0">
-          <div className="truncate text-[12px] font-medium text-[#1F2022]">{teamName}</div>
-          <div className="text-[10px] text-[#8A8C90] truncate">
-            Team {teamIndex + 1} · Q{quarter} Planning
-          </div>
+  const nav = (
+    <nav aria-label="Main" className="flex flex-col h-full bg-white">
+      <div className="lg:hidden h-14 px-4 flex items-center justify-between border-b border-[#E5E1D8]">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-sm bg-[#C83E2B] text-white flex items-center justify-center font-serif font-bold text-[11px] tracking-widest">EV</div>
+          <span className="text-sm font-semibold">EV Venture League</span>
         </div>
+        <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#F3F0EA]" aria-label="Close navigation">
+          <X className="w-5 h-5" />
+        </button>
       </div>
 
-      {/* Grouped Navigation */}
-      {NAV_GROUPS.map((group) => {
-        if (group.adminOnly && !(isAdmin || canManageRoster)) return null;
-
-        const groupTabs = group.tabs
-          .map(tabById)
-          .filter((t): t is { id: TabKey; label: string; icon: React.ReactNode; show?: boolean } =>
-            Boolean(t) && t!.show !== false
-          );
-        if (groupTabs.length === 0) return null;
-
-        return (
-          <div key={group.label}>
-            <div className="text-[10px] uppercase font-mono text-[#8A8C90] px-3 pt-4 pb-1 tracking-wider">
-              {group.label}
-            </div>
-            {groupTabs.map((t) => {
-              const isActive = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => onTabChange(t.id)}
-                  title={t.label}
-                  className={`w-[calc(100%-1rem)] mx-2 min-h-[36px] px-2 rounded-lg flex items-center gap-2 text-left text-[12px] transition-colors ${
-                    isActive
-                      ? "bg-[#F0F0EE] text-[#1F2022] font-medium"
-                      : "text-[#5A5C60] hover:bg-[#F5F4F2] hover:text-[#1F2022]"
-                  }`}
-                >
-                  <span className="shrink-0 flex items-center">{t.icon}</span>
-                  <span className="truncate">{t.label}</span>
-                </button>
-              );
-            })}
+      {hasTeam && (
+        <div className="lg:hidden px-4 py-4 border-b border-[#EEEAE2] flex items-center gap-2.5">
+          <div className="w-2 h-8 rounded-full shrink-0" style={{ background: teamColor }} aria-hidden="true" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold text-[#1F2022]">{teamName}</div>
+            <div className="text-xs text-[#6C6D70]">Quarter {Math.min(quarter, totalQuarters)} of {totalQuarters}</div>
           </div>
-        );
-      })}
-
-      {/* Bottom Controls */}
-      {canManageRoster && (
-        <div className="mt-auto px-2 py-3 border-t border-[#E5E1D8] flex items-center gap-1.5">
-          <button
-            onClick={onToggleInstructorMode}
-            className={`flex-1 px-2 py-1.5 rounded-lg text-[11px] font-mono font-semibold transition ${
-              isInstructorMode
-                ? "bg-purple-100 text-purple-900 border border-purple-300"
-                : "bg-white text-[#5A5C60] border border-[#E0DCD3] hover:bg-[#F3F0EA]"
-            }`}
-          >
-            {isInstructorMode ? "Instructor" : "Student"}
-          </button>
-
-          <button
-            onClick={onResetGame}
-            title="Reset simulation scenario"
-            aria-label="Reset simulation scenario"
-            className="p-1.5 shrink-0 text-[#5A5C60] hover:text-[#1F2022] bg-white hover:bg-[#F3F0EA] border border-[#E0DCD3] rounded-lg transition"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
         </div>
       )}
+
+      <ul className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+        {areas.map((area) => {
+          const Icon = area.icon;
+          const active = current.id === area.id;
+          return (
+            <li key={area.id}>
+              <button
+                onClick={() => {
+                  onTabChange(area.tabs[0]);
+                  onClose();
+                }}
+                aria-current={active ? "page" : undefined}
+                className={`w-full min-h-[40px] px-3 rounded-lg flex items-center gap-3 text-left text-sm transition-colors ${
+                  active ? "bg-[#F1EEE7] text-[#1F2022] font-semibold" : "text-[#4A4C50] hover:bg-[#F7F5F0] hover:text-[#1F2022]"
+                }`}
+              >
+                <Icon className={`w-[18px] h-[18px] shrink-0 ${active ? "text-[#C83E2B]" : "text-[#8A8C90]"}`} />
+                <span className="truncate">{area.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="px-4 py-3 border-t border-[#EEEAE2] text-[11px] text-[#8A8C90] leading-relaxed">
+        Department of Management Studies
+        <br />
+        NIT Warangal
+      </div>
     </nav>
   );
+
+  return (
+    <>
+      <aside className="hidden lg:block w-[216px] shrink-0 border-r border-[#E5E1D8]">{nav}</aside>
+      {open && (
+        <div className="lg:hidden fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Navigation">
+          <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+          <aside className="absolute inset-y-0 left-0 w-[280px] max-w-[85vw] shadow-xl">{nav}</aside>
+        </div>
+      )}
+    </>
+  );
 };
+
+/** Sub-tabs for the current area, shown above the page content. */
+export function SubTabs({ activeTab, onTabChange }: { activeTab: TabKey; onTabChange: (tab: TabKey) => void }) {
+  const area = areaOf(activeTab);
+  if (area.tabs.length < 2) return null;
+  return (
+    <div role="tablist" aria-label={area.label} className="flex gap-1 overflow-x-auto border-b border-[#E5E1D8] -mx-4 px-4 sm:mx-0 sm:px-0">
+      {area.tabs.map((tab) => {
+        const active = tab === activeTab;
+        return (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={active}
+            onClick={() => onTabChange(tab)}
+            className={`shrink-0 px-3 py-2.5 text-sm border-b-2 -mb-px transition-colors ${
+              active ? "border-[#C83E2B] text-[#1F2022] font-semibold" : "border-transparent text-[#5A5C60] hover:text-[#1F2022]"
+            }`}
+          >
+            {TAB_LABELS[tab]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

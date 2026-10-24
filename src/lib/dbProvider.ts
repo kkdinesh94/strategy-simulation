@@ -10,7 +10,9 @@ import {
   deleteUniverseFromD1,
   checkD1Status
 } from "./cloudflareD1";
-import { getInitialUsers, createInitialUniverse, saveUsers, saveUniverses } from "./authStore";
+import { createInitialUniverse, saveUsers, saveUniverses } from "./authStore";
+import { buildUniversePatch, isEmptyPatch } from "./universePatch";
+import { emitSaveError } from "./apiClient";
 
 export type DatabaseProviderType = "cloudflare_d1";
 
@@ -148,25 +150,56 @@ export async function fetchUniversesUnified(): Promise<Universe[]> {
     console.warn("D1 universes fetch error:", e);
   }
 
+  // Server unreachable or nothing visible to this account: fall back to the cached copy.
+  // Never push cached data back up — the server is the source of truth.
   try {
     const local = localStorage.getItem("ev_venture_league_universes_v2");
     if (local) {
       const parsed: Universe[] = JSON.parse(local);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        for (const u of parsed) {
-          await saveUniverseToD1(u);
-        }
-        return parsed;
-      }
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     }
   } catch (e) {}
+  return [createInitialUniverse()];
+}
 
-  const defaultInit = [createInitialUniverse()];
-  for (const u of defaultInit) {
-    await saveUniverseToD1(u);
+type PendingSync = { base: Universe | undefined; latest: Universe; timer?: ReturnType<typeof setTimeout> };
+const pendingSyncs = new Map<string, PendingSync>();
+let syncChain: Promise<void> = Promise.resolve();
+
+async function sendUniverse(base: Universe | undefined, next: Universe): Promise<void> {
+  const patch = base ? buildUniversePatch(base, next) : null;
+  if (patch && isEmptyPatch(patch)) return;
+  const response = patch
+    ? await fetch(`/api/universes/${encodeURIComponent(next.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+      })
+    : await fetch("/api/d1/universes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next)
+      });
+  if (!response.ok && response.status !== 401) {
+    let body: any = {};
+    try { body = await response.json(); } catch {}
+    emitSaveError({ status: response.status, message: body.error || "Your change could not be saved.", details: body.details || [] });
   }
-  saveUniverses(defaultInit);
-  return defaultInit;
+}
+
+/**
+ * Sends a game-state change to the server as a field-level patch against the copy this
+ * browser last had. Rapid edits are coalesced and sent strictly in order.
+ */
+export function queueUniverseSync(base: Universe | undefined, next: Universe, delayMs = 350) {
+  const existing = pendingSyncs.get(next.id);
+  const entry: PendingSync = existing ? { ...existing, latest: next } : { base, latest: next };
+  if (existing?.timer) clearTimeout(existing.timer);
+  entry.timer = setTimeout(() => {
+    pendingSyncs.delete(next.id);
+    syncChain = syncChain.then(() => sendUniverse(entry.base, entry.latest)).catch((e) => console.warn("Universe sync failed:", e));
+  }, delayMs);
+  pendingSyncs.set(next.id, entry);
 }
 
 export async function saveUniverseUnified(universe: Universe): Promise<void> {

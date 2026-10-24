@@ -1,30 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { TeamState, GameState } from "../types/simulation";
 import { User, Universe } from "../types/auth";
 import { fmtL } from "../engine/catalog";
-import { equityOf, cumBSC } from "../engine/simulationEngine";
 import { getAccessibleUniverses } from "../lib/authStore";
-import {
-  Lock,
-  Unlock,
-  TrendingUp,
-  ShieldAlert,
-  Award,
-  DollarSign,
-  PieChart,
-  Users,
-  LogOut,
-  UserCheck,
-  Shield,
-  GraduationCap,
-  Clock,
-  Calendar,
-  Pencil,
-  X,
-  Check,
-  Globe,
-  KeyRound
-} from "lucide-react";
+import { Lock, Unlock, LogOut, Clock, Calendar, X, Check, KeyRound, Menu, PanelRight, ChevronDown, Sparkles, Eye } from "lucide-react";
 
 interface ExecutiveHeaderProps {
   team: TeamState;
@@ -32,15 +11,39 @@ interface ExecutiveHeaderProps {
   currentUser: User;
   universe: Universe;
   allUniverses?: Universe[];
-  activeTeamIdx: number;
-  onSelectTeam: (teamI: number) => void;
+  /** Team being viewed. For staff this is a read-only observation; null = no team selected. */
+  observedTeamIdx?: number | null;
+  onObserveTeam?: (teamI: number | null) => void;
   onSelectUniverse?: (universe: Universe) => void;
   onLockToggle: () => void;
-  onOpenAdvisor: () => void;
+  onOpenAdvisor?: () => void;
   onLogout: () => void;
-  onOpenRoster?: () => void;
   onUpdateDeadline?: (deadlineISO: string | null) => void;
   onOpenChangePassword?: () => void;
+  onToggleNav: () => void;
+  onToggleForecast: () => void;
+}
+
+function useCountdown(deadlineISO?: string | null) {
+  const [left, setLeft] = useState<{ text: string; expired: boolean; urgent: boolean } | null>(null);
+  useEffect(() => {
+    if (!deadlineISO) {
+      setLeft(null);
+      return;
+    }
+    const tick = () => {
+      const diff = new Date(deadlineISO).getTime() - Date.now();
+      if (diff <= 0) return setLeft({ text: "Deadline passed", expired: true, urgent: true });
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setLeft({ text: d > 0 ? `${d}d ${h}h left` : h > 0 ? `${h}h ${m}m left` : `${m}m left`, expired: false, urgent: diff < 3 * 3600000 });
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [deadlineISO]);
+  return left;
 }
 
 export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
@@ -49,376 +52,224 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
   currentUser,
   universe,
   allUniverses = [],
-  activeTeamIdx,
-  onSelectTeam,
+  observedTeamIdx = null,
+  onObserveTeam,
   onSelectUniverse,
   onLockToggle,
   onOpenAdvisor,
   onLogout,
-  onOpenRoster,
   onUpdateDeadline,
-  onOpenChangePassword
+  onOpenChangePassword,
+  onToggleNav,
+  onToggleForecast
 }) => {
-  const equity = equityOf(team);
-  const bsc = cumBSC(team);
-  const lastResult = team.hist[team.hist.length - 1];
-  const share = lastResult ? (lastResult.share * 100).toFixed(1) : "0.0";
-
-  const isManagementRole = currentUser.role === "instructor" || currentUser.role === "admin";
+  const isStaff = currentUser.role === "instructor" || currentUser.role === "admin";
   const accessibleUniverses = getAccessibleUniverses(currentUser, allUniverses.length > 0 ? allUniverses : [universe]);
+  const countdown = useCountdown(universe.deadlineISO);
+  const gameOver = gameState.phase === "gameover";
+  const quarterLabel = gameOver ? "Game complete" : `Quarter ${gameState.quarter} of ${gameState.cfg.quarters}`;
 
-  // Countdown timer state
-  const [timeLeft, setTimeLeft] = useState<string | null>(null);
-  const [isExpired, setIsExpired] = useState<boolean>(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
-  // Deadline modal state
   const [isDeadlineModalOpen, setIsDeadlineModalOpen] = useState<boolean>(false);
   const [dtValue, setDtValue] = useState<string>("");
-
-  useEffect(() => {
-    if (!universe.deadlineISO) {
-      setTimeLeft(null);
-      setIsExpired(false);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      const now = new Date().getTime();
-      const deadline = new Date(universe.deadlineISO!).getTime();
-      const diff = deadline - now;
-
-      if (diff <= 0) {
-        setTimeLeft("00h 00m 00s");
-        setIsExpired(true);
-      } else {
-        setIsExpired(false);
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-        const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-        setTimeLeft(`${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [universe.deadlineISO]);
-
-  // Format deadline for datetime-local picker input
+  const toLocalInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const openDeadlinePicker = () => {
-    if (universe.deadlineISO) {
-      const d = new Date(universe.deadlineISO);
-      const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16);
-      setDtValue(isoLocal);
-    } else {
-      // Default to +24 hours from now
-      const d = new Date(Date.now() + 24 * 3600 * 1000);
-      const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-        .toISOString()
-        .slice(0, 16);
-      setDtValue(isoLocal);
-    }
+    setDtValue(toLocalInput(universe.deadlineISO ? new Date(universe.deadlineISO) : new Date(Date.now() + 24 * 3600 * 1000)));
     setIsDeadlineModalOpen(true);
   };
-
-  const applyPresetDeadline = (hoursFromNow: number) => {
-    const d = new Date(Date.now() + hoursFromNow * 3600 * 1000);
-    const isoLocal = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-    setDtValue(isoLocal);
-  };
-
+  const applyPresetDeadline = (hoursFromNow: number) => setDtValue(toLocalInput(new Date(Date.now() + hoursFromNow * 3600 * 1000)));
   const handleSaveDeadline = () => {
-    if (!dtValue) {
-      onUpdateDeadline?.(null);
-    } else {
-      const iso = new Date(dtValue).toISOString();
-      onUpdateDeadline?.(iso);
-    }
+    onUpdateDeadline?.(dtValue ? new Date(dtValue).toISOString() : null);
     setIsDeadlineModalOpen(false);
   };
-
   const handleClearDeadline = () => {
     onUpdateDeadline?.(null);
     setIsDeadlineModalOpen(false);
   };
 
+  const initials = currentUser.name
+    .replace(/\(.*?\)/g, "")
+    .split(/\s+/)
+    .filter((w) => /^[A-Za-z]/.test(w) && !/^(dr|prof|mr|ms|mrs)\.?$/i.test(w))
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join("");
+  const showTeam = !isStaff || observedTeamIdx !== null;
+
   return (
-    <div className="bg-[#FAF8F5] text-[#1F2022] border-b border-[#E5E1D8] shadow-sm">
-      {/* Top Session & Role Bar */}
-      <div className="bg-[#F3F0EA] px-4 py-1.5 border-b border-[#E5E1D8] text-xs flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          {/* Role Badge */}
-          <span
-            className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] uppercase flex items-center gap-1 ${
-              currentUser.role === "admin"
-                ? "bg-amber-100 text-amber-900 border border-amber-300"
-                : currentUser.role === "instructor"
-                ? "bg-purple-100 text-purple-900 border border-purple-300"
-                : "bg-emerald-100 text-emerald-900 border border-emerald-300"
-            }`}
-          >
-            {currentUser.role === "admin" && <Shield className="w-3 h-3 text-amber-700" />}
-            {currentUser.role === "instructor" && <GraduationCap className="w-3 h-3 text-purple-700" />}
-            {currentUser.role === "player" && <UserCheck className="w-3 h-3 text-emerald-700" />}
-            <span>{currentUser.role.toUpperCase()}</span>
-          </span>
+    <header className="sticky top-0 z-30 bg-white border-b border-[#E5E1D8]">
+      <div className="h-14 px-2 sm:px-4 flex items-center gap-2 sm:gap-3">
+        <button onClick={onToggleNav} className="lg:hidden p-2 -ml-1 rounded-lg text-[#3A3C40] hover:bg-[#F3F0EA]" aria-label="Open navigation">
+          <Menu className="w-5 h-5" />
+        </button>
 
-          <div className="font-semibold text-[#1F2022]">
-            {currentUser.name} <span className="text-[#6C6D70] font-normal font-mono">({currentUser.institution || "NIT Warangal"})</span>
+        <div className="hidden sm:flex items-center gap-2 pr-3 border-r border-[#EEEAE2]">
+          <div className="w-7 h-7 rounded-sm bg-[#C83E2B] text-white flex items-center justify-center font-serif font-bold text-[11px] tracking-widest">EV</div>
+          <span className="hidden xl:block text-sm font-semibold text-[#1F2022]">EV Venture League</span>
+        </div>
+
+        {showTeam ? (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center font-bold text-white text-xs" style={{ backgroundColor: team.color || "#1F2022" }} aria-hidden="true">
+              {team.name.substring(0, 2).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-semibold text-sm text-[#1F2022] truncate">{team.name}</span>
+                {team.bankrupt ? (
+                  <span className="hidden sm:flex shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-red-50 text-red-800 border border-red-200">Insolvent</span>
+                ) : team.dec.locked ? (
+                  <span className="hidden sm:flex shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1"><Lock className="w-2.5 h-2.5" />Submitted</span>
+                ) : (
+                  <span className="hidden sm:flex shrink-0 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-50 text-amber-800 border border-amber-200">Planning</span>
+                )}
+              </div>
+              <div className="text-[11px] text-[#6C6D70] truncate">
+                {quarterLabel}
+                {gameState.quarter === 1 && !gameOver ? " · setup quarter, sales start in Q2" : ""}
+              </div>
+            </div>
           </div>
+        ) : (
+          <div className="min-w-0">
+            <div className="font-semibold text-sm text-[#1F2022] truncate">{universe.name}</div>
+            <div className="text-[11px] text-[#6C6D70]">{quarterLabel} · Instructor view</div>
+          </div>
+        )}
 
-          <span className="text-[#C5C2BA]">•</span>
+        <div className="flex-1" />
 
-          <div className="text-[#5A5C60] font-mono text-[11px] flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-            <span className="font-semibold text-[#1F2022]">Universe:</span>
-            {accessibleUniverses.length > 1 || isManagementRole ? (
+        {countdown && (
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold tabular-nums ${
+              countdown.expired ? "bg-red-50 text-red-800 border-red-200" : countdown.urgent ? "bg-amber-50 text-amber-900 border-amber-200" : "bg-[#F7F5F0] text-[#3A3C40] border-[#E5E1D8]"
+            }`}
+            title={`Q${gameState.quarter} deadline: ${new Date(universe.deadlineISO!).toLocaleString()}`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            {countdown.text}
+          </div>
+        )}
+
+        {showTeam && (
+          <div className="hidden md:flex flex-col items-end leading-tight px-2" title="Cash on hand at the start of this quarter">
+            <span className="text-[10px] uppercase tracking-wide text-[#8A8C90]">Cash</span>
+            <span className={`text-sm font-semibold tabular-nums ${team.cash < 200 ? "text-red-700" : "text-[#1F2022]"}`}>Rs. {fmtL(team.cash)} L</span>
+          </div>
+        )}
+
+        {isStaff && (
+          <>
+            {accessibleUniverses.length > 1 && (
               <select
+                aria-label="Cohort"
                 value={universe.id}
                 onChange={(e) => {
                   const selected = accessibleUniverses.find((u) => u.id === e.target.value);
-                  if (selected && onSelectUniverse) {
-                    onSelectUniverse(selected);
-                  }
+                  if (selected) onSelectUniverse?.(selected);
                 }}
-                className="bg-white border border-[#E0DCD3] rounded px-2 py-0.5 text-xs font-bold text-[#1F2022] shadow-2xs focus:outline-none focus:ring-1 focus:ring-purple-600 cursor-pointer"
+                className="hidden md:block max-w-[180px] bg-white border border-[#E0DCD3] rounded-lg px-2 py-1.5 text-xs text-[#1F2022]"
               >
                 {accessibleUniverses.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.code})
-                  </option>
+                  <option key={u.id} value={u.id}>{u.name}</option>
                 ))}
               </select>
-            ) : (
-              <>
-                <strong className="text-[#1F2022]">{universe.name}</strong>
-                <span className="text-[#8A8C90]">({universe.code})</span>
-              </>
             )}
-          </div>
-
-          {isManagementRole && (
-            <>
-              <span className="text-[#C5C2BA]">•</span>
-
-              <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-[10px] font-mono text-emerald-800" title="Cloudflare D1 synchronization active">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>D1 Live</span>
-              </div>
-            </>
-          )}
-
-          {/* Quarter Deadline Countdown Timer */}
-          {timeLeft && (
-            <>
-              <span className="text-[#C5C2BA]">•</span>
-              <div
-                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded border text-[11px] font-mono font-bold shadow-sm ${
-                  isExpired
-                    ? "bg-red-100 text-red-900 border-red-300 animate-pulse"
-                    : "bg-amber-100 text-amber-950 border-amber-300"
-                }`}
-              >
-                <Clock className="w-3.5 h-3.5 text-amber-800" />
-                <span>Q{gameState.quarter} Deadline: {timeLeft}</span>
-                {isExpired && <span className="text-[10px] font-sans font-normal">(Time's Up!)</span>}
-              </div>
-            </>
-          )}
-
-          {/* Instructor / Admin Quarter Deadline Config Button */}
-          {isManagementRole && (
-            <>
-              <span className="text-[#C5C2BA]">•</span>
-              <button
-                onClick={openDeadlinePicker}
-                title="Configure Quarter Submission Deadline"
-                className="px-2 py-0.5 rounded bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[11px] font-mono text-purple-900 font-medium flex items-center gap-1 transition shadow-2xs"
-              >
-                <Calendar className="w-3.5 h-3.5 text-purple-700" />
-                <span>{universe.deadlineISO ? "Edit Deadline" : "Set Q" + gameState.quarter + " Deadline"}</span>
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Team Switcher for Instructor & Admin */}
-          {isManagementRole && (
-            <div className="flex items-center gap-1.5 bg-white px-2 py-0.5 rounded border border-[#E0DCD3]">
-              <span className="text-[10px] font-mono text-purple-800 font-bold uppercase">Inspect Team:</span>
+            <div className="hidden sm:flex items-center gap-1">
+              <Eye className="w-3.5 h-3.5 text-[#8A8C90]" aria-hidden="true" />
               <select
-                value={activeTeamIdx}
-                onChange={(e) => onSelectTeam(Number(e.target.value))}
-                className="bg-[#FAF8F5] text-[#1F2022] font-mono font-bold text-xs px-2 py-0.5 rounded border border-[#E0DCD3] focus:outline-none focus:border-purple-600"
+                aria-label="Observe a team"
+                value={observedTeamIdx ?? ""}
+                onChange={(e) => onObserveTeam?.(e.target.value === "" ? null : Number(e.target.value))}
+                className="max-w-[170px] bg-white border border-[#E0DCD3] rounded-lg px-2 py-1.5 text-xs text-[#1F2022]"
               >
+                <option value="">Observe a team…</option>
                 {gameState.teams.map((t, idx) => (
-                  <option key={idx} value={idx}>
-                    Team {idx + 1}: {t.name} {t.isBot ? "(Bot)" : ""}
-                  </option>
+                  <option key={idx} value={idx}>{t.name}{t.isBot ? " (bot)" : ""}</option>
                 ))}
               </select>
             </div>
-          )}
-
-          {/* Universe Roster Modal trigger - ONLY FOR INSTRUCTOR & ADMIN */}
-          {isManagementRole && onOpenRoster && (
-            <button
-              onClick={onOpenRoster}
-              className="text-[11px] font-mono text-slate-700 hover:text-slate-900 flex items-center gap-1 bg-white px-2.5 py-1 rounded border border-[#E0DCD3] transition cursor-pointer"
-            >
-              <Users className="w-3.5 h-3.5 text-slate-600" /> 10-Team Roster
+            <button onClick={openDeadlinePicker} className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E0DCD3] text-xs font-medium text-[#1F2022] hover:bg-[#F3F0EA]">
+              <Calendar className="w-3.5 h-3.5" />
+              {universe.deadlineISO ? "Deadline" : "Set deadline"}
             </button>
-          )}
+          </>
+        )}
 
-          {/* Change Password Button */}
-          {onOpenChangePassword && (
-            <button
-              onClick={onOpenChangePassword}
-              title="Change your account password"
-              className="text-[11px] font-mono text-[#5A5C60] hover:text-[#1F2022] flex items-center gap-1 bg-white hover:bg-[#F3F0EA] px-2.5 py-1 rounded border border-[#E0DCD3] transition shadow-2xs font-medium cursor-pointer"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-slate-600" />
-              <span>Password</span>
-            </button>
-          )}
-
-          {/* Logout */}
-          <button
-            onClick={onLogout}
-            className="text-[11px] font-mono text-[#C83E2B] hover:text-[#9A2D1E] flex items-center gap-1 transition ml-1 font-medium cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Exit
-          </button>
-        </div>
-      </div>
-
-      {/* Team Level Ticker */}
-      <div className="px-4 py-3 flex flex-wrap items-center justify-between gap-4">
-        {/* Company Identity */}
-        <div className="flex items-center gap-3">
-          <div
-            className="w-9 h-9 rounded-md flex items-center justify-center font-extrabold text-white shadow-sm text-sm border border-black/10"
-            style={{ backgroundColor: team.color || "#1F2022" }}
-          >
-            {team.name.substring(0, 2).toUpperCase()}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-base text-[#1F2022] tracking-tight">{team.name}</h1>
-              <span className="text-xs text-[#7A7C80] font-mono">Team {team.i + 1} of {gameState.teams.length}</span>
-              {team.bankrupt && (
-                <span className="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider bg-red-100 text-red-800 rounded border border-red-300">
-                  ADMINISTRATION
-                </span>
-              )}
-              {team.dec.locked ? (
-                <span className="px-2.5 py-0.5 text-xs font-medium bg-emerald-50 text-emerald-800 rounded-md border border-emerald-300 flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                  <Lock className="w-3 h-3 text-emerald-700" /> Locked
-                </span>
-              ) : (
-                <span className="px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-800 rounded-md border border-amber-300 flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
-                  <Unlock className="w-3 h-3 text-amber-700" /> Planning
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-[#6C6D70] flex items-center gap-2 mt-0.5">
-              <span className="bg-white px-2 py-0.5 rounded border border-[#E0DCD3] text-[11px] font-mono text-[#3A3C40]">
-                PERIOD: Q{gameState.quarter} / {gameState.cfg.quarters}
-              </span>
-              {gameState.quarter === 1 && (
-                <>
-                  <span className="text-[#C5C2BA]">•</span>
-                  <span className="bg-amber-50 px-2 py-0.5 rounded border border-amber-300 text-[11px] font-mono text-amber-800">
-                    SETUP QUARTER — sales begin Q2
-                  </span>
-                </>
-              )}
-              <span className="text-[#C5C2BA]">•</span>
-              <span className="text-[#6C6D70] text-xs">
-                TARGET SEGMENTS: <strong className="text-[#1F2022] uppercase font-mono">{team.prim} / {team.sec}</strong>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Executive Ticker Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center">
-          <div className="bg-white px-3.5 py-1.5 rounded-lg border border-[#E0DCD3] shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-[#6C6D70] flex items-center justify-center gap-1">
-              <DollarSign className="w-3 h-3 text-emerald-600" /> Ending Cash
-            </div>
-            <div className={`font-mono font-bold text-sm ${team.cash < 200 ? "text-red-600" : "text-emerald-700"}`}>
-              {fmtL(team.cash)} L
-            </div>
-          </div>
-
-          <div className="bg-white px-3.5 py-1.5 rounded-lg border border-[#E0DCD3] shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-[#6C6D70] flex items-center justify-center gap-1">
-              <TrendingUp className="w-3 h-3 text-blue-600" /> Net Equity
-            </div>
-            <div className={`font-mono font-bold text-sm ${equity < 500 ? "text-red-600" : "text-blue-800"}`}>
-              {fmtL(equity)} L
-            </div>
-          </div>
-
-          <div className="bg-white px-3.5 py-1.5 rounded-lg border border-[#E0DCD3] shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-[#6C6D70] flex items-center justify-center gap-1">
-              <Award className="w-3 h-3 text-purple-600" /> BSC Score
-            </div>
-            <div className="font-mono font-bold text-sm text-purple-800">
-              {bsc.toFixed(1)}
-            </div>
-          </div>
-
-          <div className="bg-white px-3.5 py-1.5 rounded-lg border border-[#E0DCD3] shadow-[0_1px_4px_rgba(0,0,0,0.02)]">
-            <div className="text-[10px] uppercase font-mono tracking-wider text-[#6C6D70] flex items-center justify-center gap-1">
-              <PieChart className="w-3 h-3 text-amber-600" /> Mkt Share
-            </div>
-            <div className="font-mono font-bold text-sm text-amber-800">
-              {share}%
-            </div>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2 ml-auto">
-          <button
-            onClick={onOpenAdvisor}
-            className="px-3.5 py-2 bg-white hover:bg-[#F3F0EA] text-purple-900 border border-[#E0DCD3] rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-2xs"
-            title="AI Board Advisor (Feature Under Progress)"
-          >
-            <ShieldAlert className="w-4 h-4 text-purple-700" />
-            <span>AI Board Advisor</span>
-            <span className="text-[9px] font-mono font-bold uppercase px-1.5 py-0.2 bg-amber-100 text-amber-800 border border-amber-300 rounded-full">
-              Under Progress
-            </span>
-          </button>
-
+        {!isStaff && !gameOver && (
           <button
             onClick={onLockToggle}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 shadow-sm ${
-              team.dec.locked
-                ? "bg-amber-700 hover:bg-amber-800 text-white"
-                : "bg-[#1F2022] hover:bg-[#343538] text-white"
+            className={`shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
+              team.dec.locked ? "bg-white border border-[#E0DCD3] text-[#1F2022] hover:bg-[#F3F0EA]" : "bg-[#1F2022] hover:bg-[#343538] text-white"
             }`}
           >
-            {team.dec.locked ? (
-              <>
-                <Unlock className="w-4 h-4" /> Unlock Decisions
-              </>
-            ) : (
-              <>
-                <Lock className="w-4 h-4" /> Lock & Submit
-              </>
-            )}
+            {team.dec.locked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+            <span className="hidden sm:inline">{team.dec.locked ? "Unlock to edit" : "Lock & submit"}</span>
+            <span className="sm:hidden">{team.dec.locked ? "Unlock" : "Submit"}</span>
           </button>
+        )}
+
+        {showTeam && (
+          <button onClick={onToggleForecast} className="xl:hidden p-2 rounded-lg text-[#3A3C40] hover:bg-[#F3F0EA]" aria-label="Show cash forecast and checklist">
+            <PanelRight className="w-5 h-5" />
+          </button>
+        )}
+
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((o) => !o)}
+            className="flex items-center gap-1 p-1 rounded-full hover:bg-[#F3F0EA]"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label="Account menu"
+          >
+            <span className="w-8 h-8 rounded-full bg-[#1F2022] text-white text-xs font-semibold flex items-center justify-center">{initials || "?"}</span>
+            <ChevronDown className="hidden sm:block w-3.5 h-3.5 text-[#6C6D70]" />
+          </button>
+          {menuOpen && (
+            <div role="menu" className="absolute right-0 mt-2 w-64 bg-white border border-[#E5E1D8] rounded-xl shadow-lg py-2 z-40">
+              <div className="px-4 py-2 border-b border-[#EEEAE2]">
+                <div className="text-sm font-semibold text-[#1F2022] truncate">{currentUser.name}</div>
+                <div className="text-xs text-[#6C6D70] truncate">{currentUser.email}</div>
+                <div className="mt-1 text-[11px] text-[#6C6D70] capitalize">
+                  {currentUser.role === "player" ? "Student" : currentUser.role} · {universe.name}
+                </div>
+              </div>
+              {isStaff && (
+                <button role="menuitem" onClick={() => { setMenuOpen(false); openDeadlinePicker(); }} className="md:hidden w-full px-4 py-2 text-left text-sm text-[#1F2022] hover:bg-[#F7F5F0] flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-[#6C6D70]" /> Quarter deadline
+                </button>
+              )}
+              {onOpenAdvisor && (
+                <button role="menuitem" onClick={() => { setMenuOpen(false); onOpenAdvisor(); }} className="w-full px-4 py-2 text-left text-sm text-[#1F2022] hover:bg-[#F7F5F0] flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#6C6D70]" /> Ask the board advisor
+                </button>
+              )}
+              {onOpenChangePassword && (
+                <button role="menuitem" onClick={() => { setMenuOpen(false); onOpenChangePassword(); }} className="w-full px-4 py-2 text-left text-sm text-[#1F2022] hover:bg-[#F7F5F0] flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-[#6C6D70]" /> Change password
+                </button>
+              )}
+              <button role="menuitem" onClick={onLogout} className="w-full px-4 py-2 text-left text-sm text-[#B83828] hover:bg-red-50 flex items-center gap-2">
+                <LogOut className="w-4 h-4" /> Sign out
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -542,6 +393,6 @@ export const ExecutiveHeader: React.FC<ExecutiveHeaderProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </header>
   );
 };

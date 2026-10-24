@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { GameState } from "../../types/simulation";
 import { Universe, User } from "../../types/auth";
-import { fmtL } from "../../engine/catalog";
-import { simulateQuarter, cumBSC, equityOf, newState } from "../../engine/simulationEngine";
+import { fmtL, BALANCE } from "../../engine/catalog";
+import { cumBSC, equityOf, newState } from "../../engine/simulationEngine";
 import { loadUsers, saveActiveUniverse, saveUniverses, getAccessibleUniverses, DEFAULT_10_TEAMS } from "../../lib/authStore";
-import { saveUniverseUnified } from "../../lib/dbProvider";
+import { saveUniverseUnified, fetchUniversesUnified } from "../../lib/dbProvider";
 import { isUserOnline, formatLastActive, getFullTimestamp, formatActiveTime } from "../../lib/presence";
 import VisibilitySettingsPanel from "../VisibilitySettingsPanel";
 import {
@@ -39,6 +39,7 @@ interface InstructorConsoleTabProps {
   onSelectUniverse?: (selectedUniv: Universe) => void;
   onNotify: (msg: string) => void;
   onObserveTeam?: (teamIdx: number) => void;
+  onResetGame?: () => void;
 }
 
 export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
@@ -51,7 +52,8 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
   onUpdateUniverse,
   onSelectUniverse,
   onNotify,
-  onObserveTeam
+  onObserveTeam,
+  onResetGame
 }) => {
   const [jsonExport, setJsonExport] = useState<string>("");
   const [bscExportQuarter, setBscExportQuarter] = useState<number>(Math.max(1, gameState.quarter - 1));
@@ -87,7 +89,7 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
 
     const codeClean = newUnivCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
     const newUnivId = "univ_" + codeClean.toLowerCase() + "_" + Date.now().toString().slice(-4);
-    const initialGs = newState(DEFAULT_10_TEAMS, 12, 25000, 5);
+    const initialGs = newState(DEFAULT_10_TEAMS, 12, BALANCE.tam0, 5);
 
     const newUniv: Universe = {
       id: newUnivId,
@@ -139,30 +141,32 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
     onNotify("Quarter deadline cleared.");
   };
 
-  const handleSimulateNextQuarter = () => {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Quarters always run on the server, where policy events, charging networks, licences,
+  // battery decisions and scorecards are applied in one atomic step.
+  const handleSimulateNextQuarter = async () => {
     const unLockedCount = gameState.teams.filter((t) => !t.isBot && !t.dec.locked).length;
+    if (unLockedCount > 0 && !confirm(`${unLockedCount} team(s) have not locked their decisions. Run Quarter ${gameState.quarter} anyway with their current decisions?`)) return;
 
-    if (unLockedCount > 0) {
-      const confirmForce = confirm(
-        `There are ${unLockedCount} human teams that have not locked their decisions yet. Force run quarter simulation anyway?`
-      );
-      if (!confirmForce) return;
+    setIsProcessing(true);
+    try {
+      const response = await fetch("/api/process-quarter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ universeId: universe.id, quarter: gameState.quarter })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Quarter processing failed.");
+      // fetchUniversesUnified also refreshes the local cache used as the patch baseline.
+      const refreshed = (await fetchUniversesUnified()).find((u) => u.id === universe.id);
+      if (refreshed) onUpdateUniverse?.(refreshed);
+      onNotify(`Quarter ${payload.quarter - 1} results are published. Teams are now on Quarter ${payload.quarter}.`);
+    } catch (err: any) {
+      onNotify(err.message || "Quarter processing failed.");
+    } finally {
+      setIsProcessing(false);
     }
-
-    const updatedState = { ...gameState };
-    simulateQuarter(updatedState);
-    
-    // Clear deadline upon simulation completion
-    const updatedUniv: Universe = {
-      ...universe,
-      gameState: updatedState,
-      deadlineISO: null
-    };
-    saveActiveUniverse(updatedUniv);
-    if (onUpdateUniverse) onUpdateUniverse(updatedUniv);
-
-    onUpdateState(updatedState);
-    onNotify(`Quarter ${updatedState.quarter - 1} simulation executed! Results published.`);
   };
 
   const handleToggleLockTeam = (teamIndex: number) => {
@@ -416,10 +420,16 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
         <div className="flex items-center gap-3">
           <button
             onClick={handleSimulateNextQuarter}
+            disabled={isProcessing || gameState.phase === "gameover"}
             className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl transition flex items-center gap-2 shadow-sm"
           >
-            <Play className="w-4 h-4 fill-current" /> Run Quarter {gameState.quarter} Simulation
+            <Play className="w-4 h-4 fill-current" /> {isProcessing ? "Running…" : gameState.phase === "gameover" ? "Game complete" : `Run Quarter ${gameState.quarter}`}
           </button>
+          {onResetGame && (
+            <button onClick={onResetGame} className="px-4 py-3 rounded-xl border border-[#E0DCD3] bg-white text-sm font-semibold text-[#B83828] hover:bg-red-50 transition">
+              Restart cohort
+            </button>
+          )}
         </div>
       </div>
 
