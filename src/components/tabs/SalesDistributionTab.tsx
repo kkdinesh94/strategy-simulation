@@ -1,14 +1,12 @@
 import React from "react";
-import { FEATURES } from "../../lib/features";
 import { TeamState, GameState } from "../../types/simulation";
-import { CENTRE, HR, MARKETS, fmtRs } from "../../engine/catalog";
-import { reachOf, hrMults, centreOpenCost, marketBonusOf } from "../../engine/simulationEngine";
+import { CENTRE, HR, MARKETS, WEB_STORE, fmtRs } from "../../engine/catalog";
+import { reachOf, hrMults, centreOpenCost, marketBonusOf, withWebStore } from "../../engine/simulationEngine";
 import { Store, Users, MapPin, DollarSign, Award, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
 import { StoreVisualizer } from "../StoreVisualizer";
 import TerritoryMap from "../TerritoryMap";
 import SalesForceManager from "../SalesForceManager";
 import SalesPricingPanel from "../SalesPricingPanel";
-import WebSalesCenter from "../WebSalesCenter";
 
 interface SalesDistributionTabProps {
   team: TeamState;
@@ -84,10 +82,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
   const isWebStoreActive = !!team.dec.webStore;
   const hrM = hrMults(gameState, team);
   const marketBonus = marketBonusOf(gameState, team);
-  let netReach = reachOf({ centres: totalCentres, staff: totalStaff }, hrM.sales, marketBonus);
-  if (isWebStoreActive) {
-    netReach = Math.min(0.98, netReach + 0.12); // Digital web store expands reach
-  }
+  const netReach = withWebStore(reachOf({ centres: totalCentres, staff: totalStaff }, hrM.sales, marketBonus), team);
 
   const newCentreCost = centreOpenCost(pendingCities);
   const otherTeams = gameState.teams.filter((t) => t !== team);
@@ -131,7 +126,6 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
       {/* Store & Outlet Visualizer */}
       <StoreVisualizer team={team} gameState={gameState} />
 
-      {FEATURES.webSalesCenter && <WebSalesCenter team={team} gameState={gameState} />}
 
       <TerritoryMap team={team} gameState={gameState} />
 
@@ -237,7 +231,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
                 <ShoppingBag className="w-4 h-4 text-indigo-600" /> Online Web Storefront
               </div>
               <div className="text-[11px] text-[#5A5C60]">
-                Setup: Rs. 15 L one-time / Opex: Rs. 5 L / Qtr (+12% Reach Boost)
+                {team.webStoreSetupPaid ? "Setup paid" : `Setup: Rs. ${WEB_STORE.setup} L one-time`} / Running cost: Rs. {WEB_STORE.opex} L / Qtr (+{Math.round(WEB_STORE.reach * 100)} points of reach)
               </div>
             </div>
 

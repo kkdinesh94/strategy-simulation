@@ -1,31 +1,7 @@
 import React, { useMemo } from "react";
 import { Activity, Check, CircleDollarSign, FlaskConical, Search, ShieldCheck, Wrench } from "lucide-react";
 import { reliabilityOf } from "../engine/simulationEngine";
-
-const COMPONENTS = [
-  { id: "battery-pack", category: "Battery Pack", warranty: 18, defect: 12, inspection: 8 },
-  { id: "charging-system", category: "Charging System", warranty: 12, defect: 8, inspection: 6 },
-  { id: "drive-motor", category: "Drive Motor", warranty: 10, defect: 7, inspection: 5 },
-  { id: "software", category: "Software", warranty: 8, defect: 5, inspection: 4 }
-];
-
-const STUDY_COST = 12;
-const ACTION_COST = 25;
-
-function initialComponents() {
-  return COMPONENTS.map((component) => ({
-    qcId: component.id,
-    componentCategory: component.category,
-    inspectionActive: false,
-    varianceStudyDone: false,
-    sourceActionStudyDone: false,
-    improvementInvested: 0,
-    warrantyCostPerQuarter: component.warranty,
-    defectCostPerQuarter: component.defect,
-    inspectionCost: component.inspection,
-    reliabilityImprovement: 0
-  }));
-}
+import { QUALITY_ACTION_COST as ACTION_COST, QUALITY_STUDY_COST as STUDY_COST, applyQualityAction, initialQualityComponents as initialComponents, qualityActionBlocker, qualityActionCost } from "../lib/qualityProgramme";
 
 function statusFor(component, quarter) {
   if (component.sourceActionStudyDone && (component.improvementQuarter || quarter) <= quarter) return "improved";
@@ -50,36 +26,19 @@ export default function QualityDashboard({ team, gameState, onChange, onNotify }
     const component = components[index];
     if (!component) return;
 
-    const cost = action === "inspect" ? component.inspectionCost : action === "study" ? STUDY_COST : ACTION_COST;
-
-    if (action === "study" && !component.inspectionActive) {
-      onNotify?.("Start inspection before studying variance.");
+    const blocker = qualityActionBlocker(component, action);
+    if (blocker) {
+      onNotify?.(blocker);
       return;
     }
-    if (action === "improve" && !component.varianceStudyDone) {
-      onNotify?.("Complete the variance study before funding an action.");
-      return;
-    }
-
-    const next = { ...component };
-    if (action === "inspect") {
-      next.inspectionActive = true;
-      next.warrantyCostPerQuarter = Math.round(next.warrantyCostPerQuarter * 0.85 * 10) / 10;
-    }
-    if (action === "study") next.varianceStudyDone = true;
-    if (action === "improve") {
-      next.sourceActionStudyDone = true;
-      next.improvementInvested += cost;
-      next.reliabilityImprovement += 12;
-      next.improvementQuarter = currentQuarter + 2;
-      next.warrantyCostPerQuarter = Math.round(next.warrantyCostPerQuarter * 0.65 * 10) / 10;
-      next.defectCostPerQuarter = Math.round(next.defectCostPerQuarter * 0.55 * 10) / 10;
-    }
+    const cost = qualityActionCost(component, action);
+    const next = applyQualityAction(component, action, currentQuarter);
 
     const updatedComponents = [...components];
     updatedComponents[index] = next;
     // The cost is charged as quality spending when the quarter runs (and checked by the
-    // auditor's cash projection), not deducted from cash in the browser.
+    // auditor's cash projection), not deducted from cash in the browser. The server replays
+    // the same step from qualityProgramme.ts and sets the cost itself.
     onChange({
       ...team,
       qualityComponents: updatedComponents,

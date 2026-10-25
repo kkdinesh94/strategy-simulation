@@ -27,6 +27,7 @@ import {
 } from "../../server/api/auth";
 import { applyUniversePatch, PatchError, redactUniverseForTeam, type UniversePatch } from "../../src/lib/universePatch";
 import { runTeamDataQuery } from "../../server/api/teamData";
+import { ADVISOR_PROMPT_MAX, ADVISOR_QUESTIONS_PER_QUARTER, buildAdvisorContext } from "../../src/lib/advisorContext";
 
 const MARKET_SURVEY_ERROR_MARGIN: Record<string, number> = { low: 0.15, medium: 0.08, high: 0.04 };
 
@@ -122,58 +123,6 @@ interface Env {
   DB: any; // Cloudflare D1Database binding
   GEMINI_API_KEY?: string;
   NODE_ENV?: string;
-  VEHICLE_REDESIGN_FEE?: string;
-}
-
-const componentBenefitKey: Record<string, string> = {
-  Battery: "range",
-  Charging: "charging",
-  Autonomy: "autonomy",
-  Motor: "image",
-  Interior: "image",
-  Exterior: "image",
-  Software: "autonomy",
-  Safety: "autonomy"
-};
-
-function jaroWinkler(first: string, second: string): number {
-  const a = first.trim().toLowerCase();
-  const b = second.trim().toLowerCase();
-  if (a === b) return 1;
-  if (!a || !b) return 0;
-
-  const matchDistance = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
-  const firstMatches = new Array(a.length).fill(false);
-  const secondMatches = new Array(b.length).fill(false);
-  let matches = 0;
-
-  for (let firstIndex = 0; firstIndex < a.length; firstIndex += 1) {
-    const start = Math.max(0, firstIndex - matchDistance);
-    const end = Math.min(firstIndex + matchDistance + 1, b.length);
-    for (let secondIndex = start; secondIndex < end; secondIndex += 1) {
-      if (secondMatches[secondIndex] || a[firstIndex] !== b[secondIndex]) continue;
-      firstMatches[firstIndex] = true;
-      secondMatches[secondIndex] = true;
-      matches += 1;
-      break;
-    }
-  }
-  if (!matches) return 0;
-
-  const firstOrdered = a.split("").filter((_, index) => firstMatches[index]);
-  const secondOrdered = b.split("").filter((_, index) => secondMatches[index]);
-  let transpositions = 0;
-  for (let index = 0; index < firstOrdered.length; index += 1) {
-    if (firstOrdered[index] !== secondOrdered[index]) transpositions += 1;
-  }
-  const jaro = (matches / a.length + matches / b.length + (matches - transpositions / 2) / matches) / 3;
-  let prefix = 0;
-  while (prefix < Math.min(4, a.length, b.length) && a[prefix] === b[prefix]) prefix += 1;
-  return jaro + prefix * 0.1 * (1 - jaro);
-}
-
-function normalizeComponentIds(componentIds: string[]): string[] {
-  return [...new Set(componentIds.map((componentId) => String(componentId).trim()).filter(Boolean))].sort();
 }
 
 type AdClaimResult = {
@@ -283,24 +232,26 @@ async function optionalRows(db: any, sql: string, ...params: any[]): Promise<any
 /** Compute and persist the paid quarterly Fast Test report for one team. */
 export const FAST_TEST_REPORT_COST = 20;
 
-export async function computeFastTests(teamId: string | number, quarter: number, region: string, db?: any): Promise<FastTestResult[]> {
+export async function computeFastTests(universeId: string, teamId: string | number, quarter: number, region: string, db?: any): Promise<FastTestResult[]> {
   if (!db) throw new Error("D1 database binding is required to compute fast tests.");
   const normalizedTeamId = String(teamId).trim();
+  // Rows are keyed per cohort so teams with the same number in different cohorts never share results.
+  const scopedTeamId = `${universeId}:${normalizedTeamId}`;
   const normalizedRegion = String(region || "Global").trim() || "Global";
-  if (!normalizedTeamId || !Number.isInteger(quarter) || quarter < 1) throw new Error("teamId and a positive integer quarter are required.");
+  if (!universeId || !normalizedTeamId || !Number.isInteger(quarter) || quarter < 1) throw new Error("universeId, teamId and a positive integer quarter are required.");
 
   await db.exec("CREATE TABLE IF NOT EXISTS fast_test_results (result_id TEXT PRIMARY KEY, team_id TEXT NOT NULL, quarter INTEGER NOT NULL, region TEXT NOT NULL, result_type TEXT NOT NULL CHECK (result_type IN ('brand', 'ad', 'reliability')), subject_id TEXT NOT NULL, subject_name TEXT NOT NULL, segment_id TEXT NOT NULL, segment_name TEXT NOT NULL, brand_judgment REAL, price_judgment REAL, ad_judgment REAL, reliability_judgment REAL, purchase_cost REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (team_id, quarter, region, result_type, subject_id, segment_id))");
 
   const segments = await optionalRows(db, "SELECT * FROM market_segments ORDER BY segment_id");
   const components = await optionalRows(db, "SELECT * FROM vehicle_components");
   const componentMap = new Map(components.map((component: any) => [String(component.component_id), component]));
-  const brands = await optionalRows(db, "SELECT * FROM brands WHERE team_id = ?", normalizedTeamId);
-  const campaigns = await optionalRows(db, "SELECT * FROM ad_campaigns WHERE team_id = ? AND quarter = ?", normalizedTeamId, quarter);
-  const universeRows = await optionalRows(db, "SELECT game_state FROM universes ORDER BY updated_at DESC");
-  const state = universeRows.map((row: any) => readJson(row.game_state)).find((candidate: any) => (candidate.teams || []).some((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId));
-  const stateTeam = (state?.teams || []).find((team: any) => String(team.i) === normalizedTeamId || String(team.name) === normalizedTeamId);
+  const brands = await optionalRows(db, "SELECT * FROM brands WHERE universe_id = ? AND team_id = ?", universeId, normalizedTeamId);
+  const campaigns = await optionalRows(db, "SELECT * FROM ad_campaigns WHERE universe_id = ? AND team_id = ? AND quarter = ?", universeId, normalizedTeamId, quarter);
+  const [universeRow] = await optionalRows(db, "SELECT game_state FROM universes WHERE id = ?", universeId);
+  const state = readJson(universeRow?.game_state);
+  const stateTeam = (state?.teams || []).find((team: any) => String(team.i) === normalizedTeamId);
   const purchaseCost = FAST_TEST_REPORT_COST;
-  const designs = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC", normalizedTeamId, quarter);
+  const designs = await optionalRows(db, "SELECT decision_json FROM team_decisions WHERE universe_id = ? AND team_i = ? AND quarter <= ? ORDER BY quarter DESC, submitted_at DESC", universeId, Number(normalizedTeamId), quarter);
   const designRows = designs.map((row: any) => readJson(row.decision_json)).filter((row: any) => row.type === "vehicle_design");
   const subjects = brands.length ? brands : designRows.length ? designRows : (stateTeam?.models || []);
   const normalizedSegments = segments.length ? segments : Object.entries(stateTeam?.base || {}).map(([id, row]: [string, any]) => ({ segment_id: id, name: id, ...row }));
@@ -343,28 +294,28 @@ export async function computeFastTests(teamId: string | number, quarter: number,
   for (const brand of subjects) for (const segment of normalizedSegments) {
     const scored = scoreBrand(brand, segment);
     const subjectId = fastTestText(brand, ["brand_id", "brandId", "id"], `${normalizedTeamId}-brand-${rows.length}`);
-    rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:brand:${subjectId}:${segment.segment_id}`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "brand", subject_id: subjectId, subject_name: fastTestText(brand, ["name", "brandName"], subjectId), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: Math.round(scored.brand), price_judgment: Math.round(scored.price), ad_judgment: null, reliability_judgment: null });
+    rows.push({ result_id: `fast:${scopedTeamId}:${quarter}:${normalizedRegion}:brand:${subjectId}:${segment.segment_id}`, team_id: scopedTeamId, quarter, region: normalizedRegion, result_type: "brand", subject_id: subjectId, subject_name: fastTestText(brand, ["name", "brandName"], subjectId), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: Math.round(scored.brand), price_judgment: Math.round(scored.price), ad_judgment: null, reliability_judgment: null });
   }
   for (const campaign of campaigns) for (const segment of normalizedSegments) {
     const benefits = [1, 2, 3, 4, 5].map((index) => campaign[`benefit_${index}`]).filter(Boolean);
     const weights = benefits.reduce((sum, benefit, index) => sum + fastTestNumber(segment, [String(benefit), `${String(benefit)}_priority`, `${String(benefit)}_importance`]) / (index + 1), 0);
     const maxWeight = Math.max(1, Object.keys(segment).filter((key) => /priority|importance/.test(key)).reduce((sum, key) => sum + Number(segment[key] || 0), 0));
-    rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:ad:${campaign.campaign_id}:${segment.segment_id}`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "ad", subject_id: String(campaign.campaign_id), subject_name: fastTestText(campaign, ["campaign_name", "campaign_id"]), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: null, price_judgment: null, ad_judgment: Math.round(Math.max(0, Math.min(100, weights / maxWeight * 100))), reliability_judgment: null });
+    rows.push({ result_id: `fast:${scopedTeamId}:${quarter}:${normalizedRegion}:ad:${campaign.campaign_id}:${segment.segment_id}`, team_id: scopedTeamId, quarter, region: normalizedRegion, result_type: "ad", subject_id: String(campaign.campaign_id), subject_name: fastTestText(campaign, ["campaign_name", "campaign_id"]), segment_id: String(segment.segment_id), segment_name: fastTestText(segment, ["name", "segment_name"], String(segment.segment_id)), brand_judgment: null, price_judgment: null, ad_judgment: Math.round(Math.max(0, Math.min(100, weights / maxWeight * 100))), reliability_judgment: null });
   }
   const reliability = stateTeam ? reliabilityOf(stateTeam) * 100 : 100;
-  rows.push({ result_id: `fast:${normalizedTeamId}:${quarter}:${normalizedRegion}:reliability:company`, team_id: normalizedTeamId, quarter, region: normalizedRegion, result_type: "reliability", subject_id: "company", subject_name: "Company reliability", segment_id: "company", segment_name: "Company-wide", brand_judgment: null, price_judgment: null, ad_judgment: null, reliability_judgment: Math.round(reliability) });
+  rows.push({ result_id: `fast:${scopedTeamId}:${quarter}:${normalizedRegion}:reliability:company`, team_id: scopedTeamId, quarter, region: normalizedRegion, result_type: "reliability", subject_id: "company", subject_name: "Company reliability", segment_id: "company", segment_name: "Company-wide", brand_judgment: null, price_judgment: null, ad_judgment: null, reliability_judgment: Math.round(reliability) });
   await db.batch(rows.map((row) => db.prepare(`INSERT INTO fast_test_results (result_id, team_id, quarter, region, result_type, subject_id, subject_name, segment_id, segment_name, brand_judgment, price_judgment, ad_judgment, reliability_judgment, purchase_cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(result_id) DO UPDATE SET brand_judgment=excluded.brand_judgment, price_judgment=excluded.price_judgment, ad_judgment=excluded.ad_judgment, reliability_judgment=excluded.reliability_judgment, purchase_cost=excluded.purchase_cost`).bind(row.result_id, row.team_id, row.quarter, row.region, row.result_type, row.subject_id, row.subject_name, row.segment_id, row.segment_name, row.brand_judgment, row.price_judgment, row.ad_judgment, row.reliability_judgment, purchaseCost)));
   return rows;
 }
 
 /** Validate a campaign against the previous quarter's persisted market snapshot. */
-export async function validateAdClaims(campaignId: string, teamId: string, quarter: number, db?: any): Promise<{ valid: boolean; results: AdClaimResult[] }> {
+export async function validateAdClaims(campaignId: string, teamId: string, quarter: number, db?: any, universeId?: string): Promise<{ valid: boolean; results: AdClaimResult[] }> {
   if (!db) throw new Error("D1 database binding is required to validate ad claims.");
   if (!Number.isInteger(quarter) || quarter < 1) throw new Error("quarter must be a positive integer.");
   await db.exec(`CREATE TABLE IF NOT EXISTS ad_violations (violation_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL, universe_id TEXT NOT NULL, team_id TEXT NOT NULL, claim TEXT NOT NULL, quarter INTEGER NOT NULL, offense_number INTEGER NOT NULL, penalty_type TEXT NOT NULL, fine_pct REAL NOT NULL DEFAULT 0, fine_amount REAL NOT NULL DEFAULT 0, ban_until_quarter INTEGER NOT NULL, reason TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
 
   const campaign = await db.prepare("SELECT * FROM ad_campaigns WHERE campaign_id = ?").bind(campaignId).first();
-  if (!campaign) throw new Error("Advertising campaign was not found.");
+  if (!campaign || (universeId && String(campaign.universe_id || "") !== universeId)) throw new Error("Advertising campaign was not found.");
   const campaignTeamId = String(teamId || campaign.team_id || "");
   const requestedUniverseId = campaign.universe_id || null;
   const universeRows = await db.prepare(requestedUniverseId ? "SELECT * FROM universes WHERE id = ?" : "SELECT * FROM universes ORDER BY updated_at DESC").bind(...(requestedUniverseId ? [requestedUniverseId] : [])).all();
@@ -960,17 +911,23 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       await env.DB.exec("CREATE TABLE IF NOT EXISTS decision_audit_log (log_id TEXT PRIMARY KEY, team_id TEXT, quarter INTEGER, decision_area TEXT, field_changed TEXT, old_value TEXT, new_value TEXT, timestamp TEXT)");
       await env.DB.exec("CREATE INDEX IF NOT EXISTS idx_decision_audit_team_quarter ON decision_audit_log(team_id, quarter, timestamp)");
 
+      // Log rows are keyed "<universeId>:<team>" so cohorts with the same team numbers stay apart.
+      const auditBody = method === "GET" ? {} : (parsedBody || {});
+      const auditUniverseId = String(auditBody.universeId || url.searchParams.get("universeId") || session!.universeId || "").trim();
+      if (!auditUniverseId) return json({ error: "universeId is required." }, 400);
+
       if (method === "GET") {
         const teamId = String(url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
         const quarter = Number(url.searchParams.get("quarter"));
         const area = String(url.searchParams.get("decisionArea") || url.searchParams.get("decision_area") || "").trim();
         if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
-        const params: any[] = [teamId, quarter];
+        const params: any[] = [`${auditUniverseId}:${teamId}`, quarter];
         let query = "SELECT log_id, team_id, quarter, decision_area, field_changed, old_value, new_value, timestamp FROM decision_audit_log WHERE team_id = ? AND quarter = ?";
         if (area) { query += " AND decision_area = ?"; params.push(area); }
         query += " ORDER BY timestamp DESC, log_id DESC";
         const rows = await env.DB.prepare(query).bind(...params).all();
-        return new Response(JSON.stringify({ decisions: rows.results || [] }), { status: 200, headers: corsHeaders });
+        const decisions = (rows.results || []).map((row: any) => ({ ...row, team_id: teamId }));
+        return new Response(JSON.stringify({ decisions }), { status: 200, headers: corsHeaders });
       }
 
       const body = await request.json() as any;
@@ -991,7 +948,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         "INSERT INTO decision_audit_log (log_id, team_id, quarter, decision_area, field_changed, old_value, new_value, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         crypto.randomUUID(),
-        teamId,
+        `${auditUniverseId}:${teamId}`,
         quarter,
         String(change.decisionArea ?? change.decision_area ?? decisionArea).trim() || decisionArea,
         String(change.fieldChanged ?? change.field_changed ?? change.field ?? "decision"),
@@ -1099,7 +1056,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     if (path === "/api/competitive-benchmark" && (method === "GET" || method === "POST")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = method === "POST" ? await request.json() as any : {};
-      const teamId = String(body.teamId || body.team_id || url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
+      const teamId = String(body.teamId ?? body.team_id ?? url.searchParams.get("teamId") ?? url.searchParams.get("team_id") ?? "").trim();
       const quarter = Number(body.quarter || url.searchParams.get("quarter"));
       const region = String(body.region || url.searchParams.get("region") || "Global").trim() || "Global";
       const scope = String(body.scope || url.searchParams.get("scope") || (region.toLowerCase() === "global" ? "global" : "region"));
@@ -1130,30 +1087,28 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     if (path === "/api/fast-tests" && (method === "GET" || method === "POST")) {
       if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
       const body = method === "POST" ? await request.json() as any : {};
-      const teamId = String(body.teamId || body.team_id || url.searchParams.get("teamId") || url.searchParams.get("team_id") || "").trim();
+      const teamId = String(body.teamId ?? body.team_id ?? url.searchParams.get("teamId") ?? url.searchParams.get("team_id") ?? "").trim();
       const quarter = Number(body.quarter || url.searchParams.get("quarter"));
       const region = String(body.region || url.searchParams.get("region") || "Global").trim() || "Global";
       if (!teamId || !Number.isInteger(quarter) || quarter < 1) return new Response(JSON.stringify({ error: "teamId and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
+      const fastUniverseId = String(body.universeId || body.universe_id || url.searchParams.get("universeId") || url.searchParams.get("universe_id") || session!.universeId || "").trim();
+      if (!fastUniverseId) return json({ error: "universeId is required." }, 400);
       if (method === "POST") {
-        const results = await computeFastTests(teamId, quarter, region, env.DB);
+        const results = await computeFastTests(fastUniverseId, teamId, quarter, region, env.DB);
         return new Response(JSON.stringify({ success: true, purchased: true, results }), { status: 200, headers: corsHeaders });
       }
       // The table is created on first purchase or quarter run; before that there are simply no results.
-      let resultsList = await optionalRows(env.DB, "SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id", teamId, quarter, region);
+      const scopedTeamId = `${fastUniverseId}:${teamId}`;
+      let resultsList = await optionalRows(env.DB, "SELECT * FROM fast_test_results WHERE team_id = ? AND quarter = ? AND region = ? ORDER BY result_type, subject_name, segment_id", scopedTeamId, quarter, region);
 
-      const resolvedGameId = url.searchParams.get("game_id") || url.searchParams.get("universe_id");
-      let gameIdToUse = resolvedGameId;
-      if (!gameIdToUse) {
-        const universe: any = await env.DB.prepare("SELECT id FROM universes ORDER BY updated_at DESC LIMIT 1").first();
-        gameIdToUse = universe?.id;
-      }
-      if (gameIdToUse) {
+      const gameIdToUse = fastUniverseId;
+      {
         await env.DB.exec("CREATE TABLE IF NOT EXISTS visibility_settings (id TEXT PRIMARY KEY, game_id TEXT NOT NULL UNIQUE, reveal_brand_specs INTEGER NOT NULL DEFAULT 0, reveal_sales_data INTEGER NOT NULL DEFAULT 0, reveal_financials INTEGER NOT NULL DEFAULT 0, reveal_rd_projects INTEGER NOT NULL DEFAULT 0, competitive_benchmark_purchasable INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
         const visRow = await env.DB.prepare("SELECT * FROM visibility_settings WHERE game_id = ?").bind(gameIdToUse).first();
         const revealSalesData = visRow ? Number(visRow.reveal_sales_data) : 0;
         if (revealSalesData === 0) {
           resultsList = resultsList.map((row: any) => {
-            const isOwnTeam = String(row.team_id || row.teamId) === teamId;
+            const isOwnTeam = String(row.team_id || row.teamId) === scopedTeamId;
             if (!isOwnTeam) {
               const { unit_sales, units_sold, unit_sales_data, ...rest } = row;
               return rest;
@@ -1241,118 +1196,6 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       await env.DB.prepare("INSERT INTO market_survey_purchases (id, universe_id, team_id, quarter, precision_level, cost) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_id, quarter, precision_level) DO UPDATE SET cost = excluded.cost, purchased_at = datetime('now')").bind(`${universeId}:${teamId}:${quarter}:${precisionLevel}`, universeId, teamId, quarter, precisionLevel, purchaseCost).run();
 
       return new Response(JSON.stringify({ success: true, cost: purchaseCost }), { status: 200, headers: corsHeaders });
-    }
-
-    // Vehicle designer catalog and brand save API.
-    if (path === "/api/vehicle-designer" && method === "GET") {
-      if (!env.DB) return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      const requestedQuarter = Number(url.searchParams.get("quarter") || 1);
-      const currentQuarter = Number.isFinite(requestedQuarter) ? Math.max(1, requestedQuarter) : 1;
-      const componentRows = await env.DB.prepare(
-        "SELECT component_id, category, name, material_cost, performance_score, benefit_delivered FROM vehicle_components WHERE available_from_quarter <= ? ORDER BY category, material_cost"
-      ).bind(currentQuarter).all();
-      const segmentRows = await env.DB.prepare(
-        "SELECT segment_id, name, price_sensitivity, range_priority, charging_speed_priority, autonomy_priority, brand_image_priority, segment_size_pct FROM market_segments ORDER BY segment_id"
-      ).all();
-
-      return new Response(JSON.stringify({
-        components: (componentRows.results || []).map((row: any) => ({
-          componentId: row.component_id,
-          category: row.category,
-          name: row.name,
-          cost: Number(row.material_cost),
-          performance: Number(row.performance_score),
-          benefit: row.benefit_delivered,
-          benefitKey: componentBenefitKey[row.category] || "range"
-        })),
-        segments: (segmentRows.results || []).map((row: any) => ({
-          segmentId: row.segment_id,
-          name: row.name,
-          priceWillingToPay: Math.round(60000 - Number(row.price_sensitivity || 0) * 3500),
-          weights: {
-            range: Number(row.range_priority || 0),
-            charging: Number(row.charging_speed_priority || 0),
-            autonomy: Number(row.autonomy_priority || 0),
-            image: Number(row.brand_image_priority || 0)
-          }
-        }))
-      }), { status: 200, headers: corsHeaders });
-    }
-
-    if (path.startsWith("/api/vehicle-designer/brands/") && method === "POST") {
-      if (!env.DB) {
-        return new Response(JSON.stringify({ error: "D1 database binding 'DB' is not configured." }), { status: 500, headers: corsHeaders });
-      }
-      const brandId = decodeURIComponent(path.split("/").filter(Boolean).pop() || "");
-      const body = await request.json() as {
-        quarter?: number;
-        componentIds?: string[];
-        multiplier?: number;
-        brandName?: string;
-        submittedBy?: string;
-      };
-      const quarter = Number(body.quarter);
-      const componentIds = normalizeComponentIds(Array.isArray(body.componentIds) ? body.componentIds : []);
-      const brandName = typeof body.brandName === "string" ? body.brandName.trim() : "";
-      const multiplier = Number(body.multiplier ?? 2.5);
-      const redesignFee = Math.max(0, Number(env.VEHICLE_REDESIGN_FEE ?? 500));
-      if (!brandId || !Number.isInteger(quarter) || quarter < 1 || !Number.isFinite(multiplier) || multiplier <= 0) {
-        return new Response(JSON.stringify({ error: "brandId, a positive integer quarter, and a positive multiplier are required." }), { status: 400, headers: corsHeaders });
-      }
-
-      const decisionId = `vehicle-design:${brandId}:Q${quarter}`;
-      const existingQuarter = await env.DB.prepare(
-        "SELECT id FROM team_decisions WHERE id = ?"
-      ).bind(decisionId).first();
-      const latestDecision = await env.DB.prepare(
-        "SELECT quarter, decision_json FROM team_decisions WHERE id LIKE ? AND quarter < ? ORDER BY quarter DESC LIMIT 1"
-      ).bind(`vehicle-design:${brandId}:Q%`, quarter).first();
-      const fee = existingQuarter ? 0 : (latestDecision ? redesignFee : 0);
-      let priorBrandName = brandId;
-      let configurationChanged = false;
-      if (latestDecision?.decision_json) {
-        try {
-          const priorDecision = JSON.parse(latestDecision.decision_json);
-          priorBrandName = typeof priorDecision.brandName === "string" && priorDecision.brandName.trim()
-            ? priorDecision.brandName.trim()
-            : brandId;
-          configurationChanged = JSON.stringify(normalizeComponentIds(priorDecision.componentIds || [])) !== JSON.stringify(componentIds);
-        } catch {
-          configurationChanged = true;
-        }
-      }
-      if (configurationChanged && (!brandName || brandName.toLowerCase() === priorBrandName.toLowerCase())) {
-        return new Response(JSON.stringify({
-          error: "A changed component configuration requires a new brand name.",
-          originalBrandName: priorBrandName
-        }), { status: 400, headers: corsHeaders });
-      }
-      const finalBrandName = brandName || priorBrandName;
-      const brandLoyaltyCarryOver = configurationChanged && jaroWinkler(finalBrandName, priorBrandName) >= 0.6 ? 1 : 0;
-      const decision = JSON.stringify({
-        type: "vehicle_design",
-        brandId,
-        brandName: finalBrandName,
-        quarter,
-        componentIds,
-        multiplier,
-        redesignFee: fee,
-        brand_loyalty_carry_over: brandLoyaltyCarryOver
-      });
-      await env.DB.prepare(`
-        INSERT INTO team_decisions (id, universe_id, team_i, quarter, decision_json, redesign_fee, submitted_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET decision_json = excluded.decision_json, redesign_fee = excluded.redesign_fee, submitted_at = datetime('now'), submitted_by = excluded.submitted_by
-      `).bind(
-        decisionId,
-        "vehicle-designer",
-        -1,
-        quarter,
-        decision,
-        fee,
-        body.submittedBy || "vehicle-designer"
-      ).run();
-      return new Response(JSON.stringify({ success: true, brandId, brandName: finalBrandName, quarter, redesignFee: fee, brand_loyalty_carry_over: brandLoyaltyCarryOver, decisionId }), { status: 200, headers: corsHeaders });
     }
 
     if (path === "/api/charging-network" && (method === "GET" || method === "POST")) {
@@ -1512,7 +1355,7 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       if (!universeId || !Number.isInteger(quarter) || quarter < 4 || !records.length) return new Response(JSON.stringify({ error: "universeId, Q4-or-later quarter, and scorecard records are required." }), { status: 400, headers: corsHeaders });
       await env.DB.exec("CREATE TABLE IF NOT EXISTS balanced_scorecard (id TEXT PRIMARY KEY, universe_id TEXT NOT NULL, team_i TEXT NOT NULL, quarter INTEGER NOT NULL, team_name TEXT NOT NULL, overall_score REAL NOT NULL, dimensions_json TEXT NOT NULL, raw_metrics_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (universe_id, team_i, quarter))");
       await env.DB.batch(records.map((record: any) => {
-        const teamId = String(record.teamId || "").trim();
+        const teamId = String(record.teamId ?? "").trim();
         const id = `${universeId}:${teamId}:${quarter}`;
         return env.DB.prepare("INSERT INTO balanced_scorecard (id, universe_id, team_i, quarter, team_name, overall_score, dimensions_json, raw_metrics_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET team_name = excluded.team_name, overall_score = excluded.overall_score, dimensions_json = excluded.dimensions_json, raw_metrics_json = excluded.raw_metrics_json, updated_at = datetime('now')").bind(id, universeId, teamId, quarter, String(record.teamName || teamId), Number(record.score) || 0, JSON.stringify(record.dimensions || {}), JSON.stringify(record.raw || {}));
       }));
@@ -1819,12 +1662,13 @@ export async function onRequest(context: { request: Request; env: Env; params: {
     if (path.startsWith("/api/ad-campaigns/") && path.endsWith("/validate") && method === "POST") {
       const campaignId = decodeURIComponent(path.split("/").filter(Boolean).slice(-2, -1)[0] || "");
       const body = await request.json() as { teamId?: string; quarter?: number };
-      const teamId = String(body.teamId || "").trim();
+      const teamId = String(body.teamId ?? "").trim();
       const quarter = Number(body.quarter);
       if (!campaignId || !teamId || !Number.isInteger(quarter) || quarter < 1) {
         return new Response(JSON.stringify({ error: "campaignId, teamId, and a positive integer quarter are required." }), { status: 400, headers: corsHeaders });
       }
-      const validation = await validateAdClaims(campaignId, teamId, quarter, env.DB);
+      const campaignUniverse = isStaff(session) ? String((body as any).universeId || "") || undefined : session!.universeId;
+      const validation = await validateAdClaims(campaignId, teamId, quarter, env.DB, campaignUniverse);
       return new Response(JSON.stringify(validation), { status: 200, headers: corsHeaders });
     }
 
@@ -1923,35 +1767,41 @@ export async function onRequest(context: { request: Request; env: Env; params: {
       return new Response(JSON.stringify({ sourceData, sections }), { status: 200, headers: corsHeaders });
     }
 
-    // Gemini advisor endpoint (Cloudflare Edge compatible)
+    // Board advisor (Gemini). The server builds the context from the stored game so a team
+    // only ever sends its own position, and questions are capped per team per quarter.
     if (path === "/api/advisor" && method === "POST") {
       const apiKey = env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 400, headers: corsHeaders });
-      }
-      const { prompt, context: simContext } = await request.json();
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const systemInstruction = `You are an elite Business School Professor and Board of Directors Chairperson for the EV Venture League simulation. Analyze the student team metrics and provide 3 concise, highly actionable recommendations in markdown.`;
+      if (!apiKey) return json({ error: "The board advisor is not set up for this site." }, 503);
+      const body = parsedBody || {};
+      const universeId = String(body.universeId || session!.universeId || "").trim();
+      const teamI = session!.role === "player" ? session!.teamI : Number(body.teamId);
+      const prompt = String(body.prompt || "").trim().slice(0, ADVISOR_PROMPT_MAX);
+      if (!universeId || !Number.isInteger(teamI) || teamI < 0) return json({ error: "universeId and teamId are required." }, 400);
+      const row: any = await env.DB.prepare("SELECT game_state FROM universes WHERE id = ?").bind(universeId).first();
+      if (!row) return json({ error: "Simulation universe was not found." }, 404);
+      const state = readJson(row.game_state);
+      let advisorContext;
+      try { advisorContext = buildAdvisorContext(state, teamI); } catch (err: any) { return json({ error: err.message }, 404); }
 
-      const aiRes = await fetch(geminiUrl, {
+      await env.DB.exec("CREATE TABLE IF NOT EXISTS advisor_usage (universe_id TEXT NOT NULL, team_i INTEGER NOT NULL, quarter INTEGER NOT NULL, questions INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (universe_id, team_i, quarter))");
+      const usage: any = await env.DB.prepare("SELECT questions FROM advisor_usage WHERE universe_id = ? AND team_i = ? AND quarter = ?").bind(universeId, teamI, state.quarter).first();
+      const used = Number(usage?.questions || 0);
+      if (used >= ADVISOR_QUESTIONS_PER_QUARTER) return json({ error: `Your team has used all ${ADVISOR_QUESTIONS_PER_QUARTER} advisor questions for this quarter.`, remaining: 0 }, 429);
+
+      const systemInstruction = "You are the chair of the board advising a student team in EV Venture League, a business strategy simulation of an Indian electric-scooter market. Use only the figures in the context; do not invent numbers. Give at most three concise, specific recommendations in markdown, each tied to a figure in the context, and say which screen of the game the decision is made on (Product, Market & Sales, Operations or Finance).";
+      const aiRes = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                {
-                  text: `${systemInstruction}\n\nContext:\n${JSON.stringify(simContext, null, 2)}\n\nQuery: ${prompt || "Analyze our current strategy."}`
-                }
-              ]
-            }
-          ]
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents: [{ role: "user", parts: [{ text: `Context:\n${JSON.stringify(advisorContext)}\n\nQuestion: ${prompt || "What should we change this quarter?"}` }] }]
         })
       });
-      const aiData: any = await aiRes.json();
-      const text = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || "Unable to generate advice at this moment.";
-      return new Response(JSON.stringify({ advice: text }), { status: 200, headers: corsHeaders });
+      const aiData: any = await aiRes.json().catch(() => ({}));
+      const text = aiData?.candidates?.[0]?.content?.parts?.map((part: any) => part.text || "").join("").trim();
+      if (!aiRes.ok || !text) return json({ error: "The advisor could not answer right now. Try again in a minute." }, 502);
+      await env.DB.prepare("INSERT INTO advisor_usage (universe_id, team_i, quarter, questions) VALUES (?, ?, ?, 1) ON CONFLICT(universe_id, team_i, quarter) DO UPDATE SET questions = questions + 1").bind(universeId, teamI, state.quarter).run();
+      return json({ advice: text, remaining: ADVISOR_QUESTIONS_PER_QUARTER - used - 1 });
     }
 
     if (path === "/api/game-state/quarter" && method === "GET") {

@@ -292,14 +292,14 @@ export async function runQuarterWorkflow(db: any, universeId: string, expectedQu
       writes.push(db.prepare("UPDATE battery_lifecycle_decisions SET returned_units = ?, cost = ?, revenue = ?, esg_impact = ?, updated_at = datetime('now') WHERE universe_id = ? AND team_i = ? AND quarter = ?")
         .bind(Number(r?.batteryReturns || 0), Number(r?.batteryLifecycleCost || 0), Number(r?.batteryLifecycleRevenue || 0), Number(r?.sustainabilityScore || 0), universeId, String(team.i), currentQuarter));
       writes.push(db.prepare("INSERT OR REPLACE INTO fast_test_results (result_id, team_id, quarter, region, result_type, subject_id, subject_name, segment_id, segment_name, reliability_judgment) VALUES (?, ?, ?, 'Global', 'reliability', 'company', 'Company reliability', 'company', 'Company-wide', ?)")
-        .bind(`fast:${universeId}:${team.i}:${currentQuarter}:reliability`, String(team.i), currentQuarter, Math.round(Number(r?.reliab || 0) * 100)));
+        .bind(`fast:${universeId}:${team.i}:${currentQuarter}:reliability`, `${universeId}:${team.i}`, currentQuarter, Math.round(Number(r?.reliab || 0) * 100)));
     }
     const demandColumns = "(demand_id, universe_id, quarter, region, team_i, brand_id, brand_name, segment_id, base_segment_size, brand_judgment_score, price_judgment_score, advertising_impact_score, sales_force_productivity, channel_coverage_factor, demand_units, policy_demand_impact_pct)";
     for (const row of result.demand) {
       writes.push(db.prepare(`INSERT OR REPLACE INTO demand_results ${demandColumns} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(row.demand_id, row.universe_id, row.quarter, row.region, row.team_i, row.brand_id, row.brand_name, row.segment_id, row.base_segment_size, row.brand_judgment_score, row.price_judgment_score, row.advertising_impact_score, row.sales_force_productivity, row.channel_coverage_factor, row.demand_units, row.policy_demand_impact_pct));
       const segment = SEGMENTS.find((candidate) => candidate.id === row.segment_id);
       writes.push(db.prepare("INSERT OR REPLACE INTO fast_test_results (result_id, team_id, quarter, region, result_type, subject_id, subject_name, segment_id, segment_name, brand_judgment, price_judgment, ad_judgment, reliability_judgment) VALUES (?, ?, ?, ?, 'brand', ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(`fast:${row.demand_id}`, row.team_i, currentQuarter, row.region, row.brand_id, row.brand_name, row.segment_id, segment?.name || row.segment_id, row.brand_judgment_score, row.price_judgment_score, row.advertising_impact_score * 100, null));
+        .bind(`fast:${row.demand_id}`, `${universeId}:${row.team_i}`, currentQuarter, row.region, row.brand_id, row.brand_name, row.segment_id, segment?.name || row.segment_id, row.brand_judgment_score, row.price_judgment_score, row.advertising_impact_score * 100, null));
     }
     const records = scorecardRecords(result.state, currentQuarter);
     for (const record of records) {

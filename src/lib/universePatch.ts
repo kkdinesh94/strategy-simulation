@@ -10,6 +10,7 @@
 import type { GameState, LicenceContract, TeamState } from "../types/simulation";
 import type { Universe } from "../types/auth";
 import { auditTeam, botDecideLicence } from "../engine/simulationEngine";
+import { mergeQualityComponents } from "./qualityProgramme";
 
 export interface TeamPatch {
   set?: Record<string, unknown>;
@@ -32,6 +33,34 @@ export const PLAYER_TEAM_FIELDS = new Set([
   "name", "tagline", "vision", "mission", "goals", "prim", "sec", "roles", "draft",
   "models", "hr", "hrCompensation", "qualityComponents", "charterDone"
 ]);
+
+/** Decision fields that are spending or issuing amounts and so can never be negative. */
+const NON_NEGATIVE_DECISIONS: Record<string, string> = {
+  ad: "Advertising", quality: "Quality spending", expBlocks: "Capacity expansion", bankTarget: "Bank loan",
+  ltIssue: "Long-term debt issue", shareIssue: "Share issue", shareBuyback: "Share buyback",
+  dividendPerShare: "Dividend", cdInvestment: "CD investment", market_research_budget: "Market research budget",
+  changeoverInvestment: "Changeover investment"
+};
+
+/** Decision fields only the server sets. Values sent by a browser are ignored. */
+const SERVER_DECISIONS = ["qualityActionCost"];
+
+const isNonNegative = (v: unknown) => Number.isFinite(Number(v)) && Number(v) >= 0;
+
+function validateDecisionPatch(dec: Record<string, unknown>) {
+  for (const [field, label] of Object.entries(NON_NEGATIVE_DECISIONS)) {
+    if (dec[field] !== undefined && dec[field] !== null && !isNonNegative(dec[field])) throw new PatchError(`${label} cannot be negative.`, 400);
+  }
+  for (const field of ["prod", "alloc"]) {
+    const value = dec[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "object" || Array.isArray(value) || !Object.values(value).every(isNonNegative)) {
+      throw new PatchError(field === "prod" ? "Production quantities cannot be negative." : "Segment allocations cannot be negative.", 400);
+    }
+  }
+  const vc = dec.vc as any;
+  if (vc && (!isNonNegative(vc.ask) || !isNonNegative(vc.equity))) throw new PatchError("A venture capital ask cannot be negative.", 400);
+}
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -133,15 +162,31 @@ export function applyUniversePatch(universe: Universe, patch: UniversePatch, act
       throw new PatchError("Your decisions are locked. Unlock them before making changes.", 409);
     }
 
+    if (tp.dec) {
+      validateDecisionPatch(tp.dec);
+      for (const field of SERVER_DECISIONS) delete tp.dec[field];
+    }
+
+    let qualityCost = 0;
     for (const [field, value] of Object.entries(tp.set || {})) {
       if (!staff && !PLAYER_TEAM_FIELDS.has(field)) continue; // engine-owned (cash, hist, debt...) — ignore silently
       if (field === "models") team.models = mergeModels(team, value, st.quarter);
-      else (team as any)[field] = value;
+      else if (field === "qualityComponents") {
+        // Replay only the new quality steps; costs and reliability gains come from the rules, not the client.
+        try {
+          const merged = mergeQualityComponents(team.qualityComponents, value, st.quarter);
+          team.qualityComponents = merged.components;
+          qualityCost += merged.cost;
+        } catch (err: any) {
+          throw new PatchError(err.message, 400);
+        }
+      } else (team as any)[field] = value;
     }
     if (tp.dec) {
       team.dec = { ...team.dec, ...(tp.dec as any) };
       if (!staff && tp.dec.locked) team.dec.lockedBy = actor.name;
     }
+    if (qualityCost) team.dec.qualityActionCost = (Number(team.dec.qualityActionCost) || 0) + qualityCost;
 
     // Locking is validated by the same auditor the browser shows, so it cannot be skipped.
     if (!wasLocked && team.dec.locked && !staff) {

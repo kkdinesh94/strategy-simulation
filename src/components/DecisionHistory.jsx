@@ -16,7 +16,7 @@ function formatTimestamp(timestamp) {
   return Number.isNaN(date.getTime()) ? timestamp : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
-export default function DecisionHistory({ teamId, quarter, onNotify }) {
+export default function DecisionHistory({ universeId, teamId, quarter, onNotify }) {
   const [entries, setEntries] = useState([]);
   const [search, setSearch] = useState("");
   const [area, setArea] = useState("all");
@@ -25,7 +25,7 @@ export default function DecisionHistory({ teamId, quarter, onNotify }) {
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
-    fetch(`/api/decisions?teamId=${encodeURIComponent(teamId)}&quarter=${encodeURIComponent(quarter)}`)
+    fetch(`/api/decisions?universeId=${encodeURIComponent(universeId)}&teamId=${encodeURIComponent(teamId)}&quarter=${encodeURIComponent(quarter)}`)
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Decision history could not be loaded.");
@@ -44,7 +44,7 @@ export default function DecisionHistory({ teamId, quarter, onNotify }) {
         }
       });
     return () => { cancelled = true; };
-  }, [teamId, quarter, onNotify]);
+  }, [universeId, teamId, quarter, onNotify]);
 
   const areas = useMemo(() => [...new Set(entries.map((entry) => entry.decision_area).filter(Boolean))].sort(), [entries]);
   const groups = useMemo(() => {

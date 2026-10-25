@@ -619,7 +619,7 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
       {activeReportTab === "swot" && <SWOTAnalysis universeId={universeId} teamId={team.i} quarter={selectedQuarter} teamName={team.name} onNotify={onNotify} />}
 
-      {activeReportTab === "history" && <DecisionHistory teamId={team.i} quarter={gameState.quarter} onNotify={onNotify} />}
+      {activeReportTab === "history" && <DecisionHistory universeId={universeId} teamId={team.i} quarter={gameState.quarter} onNotify={onNotify} />}
 
       {/* SUB-TAB: MARKET MAP */}
       {activeReportTab === "market_map" && (

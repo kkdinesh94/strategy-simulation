@@ -179,7 +179,7 @@ export const MarketingTab: React.FC<MarketingTabProps> = ({
           <h3 className="text-lg font-bold text-[#1F2022]">Fast Test Report</h3>
           <p className="text-xs text-[#5A5C60]">Purchase this quarter's brand, price, and advertising judgments — flat fee, same every quarter.</p>
         </div>
-        <FastTestReport teamId={team.i} quarter={gameState.quarter} region="Global" disabled={isLocked} />
+        <FastTestReport universeId={universeId} teamId={team.i} quarter={gameState.quarter} region="Global" disabled={isLocked} />
       </div>
 
       <div className="bg-white p-6 rounded-xl border border-[#E5E1D8] shadow-sm">

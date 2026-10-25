@@ -1,6 +1,6 @@
 import React from "react";
 import { TeamState, GameState } from "../types/simulation";
-import { reachOf, hrMults, marketBonusOf } from "../engine/simulationEngine";
+import { reachOf, hrMults, marketBonusOf, withWebStore } from "../engine/simulationEngine";
 import { MARKETS } from "../engine/catalog";
 import { Store, MapPin, Users, Globe, Smartphone, ShoppingBag, CheckCircle2, ArrowUpRight } from "lucide-react";
 
@@ -15,10 +15,7 @@ export const StoreVisualizer: React.FC<StoreVisualizerProps> = ({ team, gameStat
   const isWebStoreActive = !!team.dec.webStore;
   const hrM = hrMults(gameState, team);
   const marketBonus = marketBonusOf(gameState, team);
-  let netReach = reachOf({ centres: totalCentres, staff: team.staff + (team.dec.hire || 0) }, hrM.sales, marketBonus);
-  if (isWebStoreActive) {
-    netReach = Math.min(0.98, netReach + 0.12);
-  }
+  const netReach = withWebStore(reachOf({ centres: totalCentres, staff: team.staff + (team.dec.hire || 0) }, hrM.sales, marketBonus), team);
 
   // Real owned/opening markets, drawn from this team's actual store decisions
   const ownedCities = team.storeCities || [];

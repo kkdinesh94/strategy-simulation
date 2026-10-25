@@ -292,7 +292,7 @@ function wrapWithSelfHealing(rawDb: any, sqliteModule: any) {
 }
 
 
-function initD1Tables(db: any) {
+export function initD1Tables(db: any) {
   try {
     db.exec(`
       PRAGMA journal_mode = WAL;

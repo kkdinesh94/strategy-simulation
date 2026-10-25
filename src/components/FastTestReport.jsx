@@ -5,7 +5,7 @@ export const FAST_TEST_REPORT_COST = 20;
 
 const scoreClass = (score) => score < 70 ? "bg-red-100 text-red-800" : score <= 80 ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-900";
 
-export default function FastTestReport({ teamId, quarter, region = "Global", disabled = false }) {
+export default function FastTestReport({ universeId, teamId, quarter, region = "Global", disabled = false }) {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [purchased, setPurchased] = useState(false);
@@ -16,7 +16,7 @@ export default function FastTestReport({ teamId, quarter, region = "Global", dis
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/fast-tests?teamId=${encodeURIComponent(teamId)}&quarter=${quarter}&region=${encodeURIComponent(region)}`);
+      const response = await fetch(`/api/fast-tests?universeId=${encodeURIComponent(universeId)}&teamId=${encodeURIComponent(teamId)}&quarter=${quarter}&region=${encodeURIComponent(region)}`);
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Fast Test report could not be loaded.");
       setResults(payload.results || []);
@@ -26,12 +26,12 @@ export default function FastTestReport({ teamId, quarter, region = "Global", dis
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [teamId, quarter, region]);
+  useEffect(() => { load(); }, [universeId, teamId, quarter, region]);
 
   const purchase = async () => {
     setPurchasing(true);
     try {
-      const response = await fetch("/api/fast-tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId, quarter, region }) });
+      const response = await fetch("/api/fast-tests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ universeId, teamId, quarter, region }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Fast Test purchase failed.");
       setResults(payload.results || []);

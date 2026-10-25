@@ -45,8 +45,8 @@ class LocalStatement {
   }
 }
 
-export function createLocalD1() {
-  const db = getD1Database();
+/** Pass a node:sqlite DatabaseSync (tests use ":memory:"); defaults to the local dev database file. */
+export function createLocalD1(db: any = getD1Database()) {
   return {
     prepare: (sql: string) => new LocalStatement(db, sql),
     exec: async (sql: string) => {

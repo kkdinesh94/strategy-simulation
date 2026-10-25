@@ -302,6 +302,7 @@ export interface TeamState {
   };
   centres: number; // count, derived from storeCities.length
   storeCities?: string[]; // MARKETS ids where this team has an open store
+  webStoreSetupPaid?: boolean; // engine-owned: the one-time web store setup has been charged
   staff: number; // headcount
   qualityCum: number;
   techs: string[];

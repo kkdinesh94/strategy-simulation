@@ -21,8 +21,7 @@ async function startServer() {
   const env = {
     DB: createLocalD1(),
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-    NODE_ENV: process.env.NODE_ENV,
-    VEHICLE_REDESIGN_FEE: process.env.VEHICLE_REDESIGN_FEE
+    NODE_ENV: process.env.NODE_ENV
   };
 
   app.use("/api", express.raw({ type: "*/*", limit: "25mb" }), async (req, res) => {

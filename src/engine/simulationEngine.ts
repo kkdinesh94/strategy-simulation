@@ -15,6 +15,7 @@ import {
   CLAIMS,
   HR,
   CENTRE,
+  WEB_STORE,
   CAP_BLOCK,
   DEP_RATE,
   HOLD_COST,
@@ -343,6 +344,17 @@ export function reachOf(t: { centres: number; staff: number }, salesMult?: numbe
   return clamp(1 - Math.exp(-(t.centres * 0.28 + t.staff * (salesMult || 1) * 0.035 + (marketBonus || 0))), 0.15, 0.97);
 }
 
+/** Reach after the D2C web store, if the team runs one this quarter. */
+export function withWebStore(reach: number, t: { dec: { webStore?: boolean } }): number {
+  return t.dec.webStore ? Math.min(WEB_STORE.maxReach, reach + WEB_STORE.reach) : reach;
+}
+
+/** Web store costs this quarter: running cost while active, plus setup the first time. */
+export function webStoreCostOf(t: TeamState): { setup: number; opex: number } {
+  if (!t.dec.webStore) return { setup: 0, opex: 0 };
+  return { setup: t.webStoreSetupPaid ? 0 : WEB_STORE.setup, opex: WEB_STORE.opex };
+}
+
 export function futureInvOf(r: QuarterResult): number {
   return (
     (r.rndSpend || 0) +
@@ -422,14 +434,15 @@ export function proFormaCalc(st: GameState, t: TeamState) {
   const dev = BALANCE.modelLaunchCost * modelsLaunchingOf(t, st.quarter).length;
   const rnd = rndStartsOf(t).reduce((sum, p) => sum + p.cost, 0);
   const research = (t.dec.buyIntel ? 15 : 0) + (t.dec.buyClinic ? 10 : 0);
-  const centreOpen = centreOpenCost(t.dec.newCentreCities);
+  const web = webStoreCostOf(t);
+  const centreOpen = centreOpenCost(t.dec.newCentreCities) + web.setup;
   const capex = (+t.dec.expBlocks || 0) * CAP_BLOCK.cost;
 
   const newStaff = t.staff + (+t.dec.hire || 0);
   const newCentres = t.centres + (+t.dec.newCentres || 0);
   const salesPayroll = newStaff * HR.salesCost * (t.hr.sales / 100);
   const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
-  const netOpex = newCentres * CENTRE.opex;
+  const netOpex = newCentres * CENTRE.opex + web.opex;
   const fixed = fixedCostOf(t.capacity);
   const interest = t.debt.bank * 0.04 + t.debt.lt * 0.045 + t.debt.shark * 0.15;
 
@@ -735,7 +748,7 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
   }
   for (const t of st.teams) {
     (t as any)._hrM = hrMults(st, t);
-    (t as any)._reach = reachOf(t, (t as any)._hrM.sales, marketBonusOf(st, t));
+    (t as any)._reach = withWebStore(reachOf(t, (t as any)._hrM.sales, marketBonusOf(st, t)), t);
   }
 
   for (const t of st.teams) {
@@ -895,8 +908,10 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
     const ad = t.dec.ad;
     const salesPayroll = t.staff * HR.salesCost * (t.hr.sales / 100);
     const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
-    const netOpex = t.centres * CENTRE.opex;
-    const centreOpen = centreOpenCost(t.dec.newCentreCities);
+    const web = webStoreCostOf(t);
+    const netOpex = t.centres * CENTRE.opex + web.opex;
+    const centreOpen = centreOpenCost(t.dec.newCentreCities) + web.setup;
+    if (web.setup) t.webStoreSetupPaid = true;
     const fixed = fixedCostOf(t.capacity);
     const ga = gaCostOf(revenue);
     const reliab = reliabilityOf(t);

@@ -8,16 +8,16 @@ export const QUARTER_ITEMS = {
     ["Purchase Market Opportunity Analysis (top of Marketing tab)", "marketing", "marketSurvey"]
   ],
   2: [
-    ["Review MOA", "charter", "decisions"],
-    ["Select target segments", "marketing", "decisions"],
-    ["Design initial EV models", "product", "decisions"],
-    ["Select test cities", "sales", "decisions"],
+    ["Review MOA", "charter", "marketSurveyAny"],
+    ["Select target segments", "marketing", "segments"],
+    ["Design initial EV models", "product", "models"],
+    ["Select test cities", "sales", "cities"],
     ["Choose facility location", "operations", "facility"],
-    ["Invest in initial fixed capacity", "finance", "decisions"]
+    ["Invest in initial fixed capacity", "finance", "capacity"]
   ],
   3: [
     ["Set HR compensation", "hr", "hr"],
-    ["Hire sales staff", "sales", "sales"],
+    ["Hire sales staff", "sales", "hire"],
     ["Set brand prices", "marketing", "pricing"],
     ["Place ads", "marketing", "ads"],
     ["Run production simulation", "operations", "schedule"],
@@ -26,7 +26,7 @@ export const QUARTER_ITEMS = {
   4: [
     ["Evaluate fast test results", "performance", "fastTests"],
     ["Evaluate competitive benchmark", "performance", "benchmark"],
-    ["Revise brand designs", "product", "decisions"],
+    ["Revise brand designs", "product", "pricing"],
     ["Revise prices", "marketing", "pricing"],
     ["Revise ad copy", "marketing", "ads"],
     ["Create quality improvement plan", "operations", "quality"]
@@ -34,23 +34,31 @@ export const QUARTER_ITEMS = {
   5: [
     ["Prepare business plan", "strategy", "strategy"],
     ["Negotiate VC funding", "finance", "financing"],
-    ["Expand market", "sales", "decisions"],
-    ["Invest in R&D", "rnd", "decisions"]
+    ["Expand market", "sales", "newCities"],
+    ["Invest in R&D", "rnd", "rnd"]
   ],
   continuous: [
     ["Monitor performance", "performance", "scorecard"],
-    ["Improve products and operations", "operations", "decisions"],
+    ["Improve products and operations", "operations", "pricing"],
     ["Execute the continuous improvement loop", "strategy", "strategy"]
   ],
   final: [["Board report: performance, market position and valuation", "performance", "scorecard"]]
 };
 
 // Completion of these items is recorded server-side; see server/api/teamData.ts for the queries.
-const RECORD_KEYS = new Set(["decisions", "strategy", "schedule", "fastTests", "benchmark", "sales", "ads", "scorecard", "marketSurvey"]);
+const RECORD_KEYS = new Set(["strategy", "schedule", "fastTests", "benchmark", "scorecard", "marketSurvey", "marketSurveyAny"]);
 
 // These decisions live only on the in-memory team state (team.dec / team.qualityComponents),
 // never in D1, so completion is checked locally instead of against a nonexistent table.
 const LOCAL_CHECKS = {
+  segments: (team) => Boolean(team?.prim),
+  models: (team) => Boolean(team?.models?.length && team.models.every((m) => m.name && m.price > 0)),
+  cities: (team) => Boolean((team?.storeCities?.length || 0) + (team?.dec?.newCentreCities?.length || 0)),
+  newCities: (team) => Boolean(team?.dec?.newCentreCities?.length),
+  capacity: (team) => Boolean((team?.dec?.expBlocks || 0) > 0 || (team?.hist || []).some((r) => r.capAdd > 0)),
+  hire: (team) => Boolean((team?.dec?.hire || 0) > 0),
+  ads: (team) => Boolean((team?.dec?.ad || 0) > 0 && team?.dec?.claims?.length),
+  rnd: (team) => Boolean(team?.dec?.rndStarts?.length || (team?.rnd || []).length),
   facility: (team) => Boolean(team?.dec?.facilityLocation),
   financing: (team) => Boolean(team?.dec?.vc?.ask > 0 || (team?.dec?.bankTarget || 0) !== (team?.debt?.bank || 0) || team?.dec?.cdInvestment > 0),
   quality: (team) => Boolean(team?.qualityComponents?.length),

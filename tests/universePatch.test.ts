@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { applyUniversePatch, buildUniversePatch, PatchError, redactUniverseForTeam } from "../src/lib/universePatch";
 import type { Universe } from "../src/types/auth";
 import { league } from "./helpers";
+import { initialQualityComponents } from "../src/lib/qualityProgramme";
 
 const universe = (): Universe => ({ id: "u1", name: "Test", code: "TEST", instructorEmail: "prof@x", maxTeams: 10, maxMembersPerTeam: 8, gameState: league(), createdAt: "" });
 const player = { role: "player" as const, teamI: 0, name: "Asha" };
@@ -79,4 +80,32 @@ test("staff can manage any team; players only see their own pending decisions", 
   assert.equal(seen.gameState.teams[1].dec.ad, 0);
   assert.deepEqual(seen.gameState.teams[1].dec.prod, {});
   assert.equal(seen.gameState.teams[0].dec.ad, u.gameState.teams[0].dec.ad);
+});
+
+test("quality steps are replayed on the server; edited figures and costs are ignored", () => {
+  const u = universe();
+  const forged = initialQualityComponents().map((c) => ({ ...c, inspectionActive: true, reliabilityImprovement: 90, warrantyCostPerQuarter: 0 }));
+  applyUniversePatch(u, { universeId: "u1", quarter: 1, teams: { "0": { set: { qualityComponents: forged }, dec: { qualityActionCost: 0 } } } }, player);
+  const team = u.gameState.teams[0];
+  // Four inspections were bought at their catalog price; nothing else changed.
+  assert.equal(team.dec.qualityActionCost, 8 + 6 + 5 + 4);
+  assert.ok(team.qualityComponents!.every((c) => c.inspectionActive && c.reliabilityImprovement === 0));
+  assert.equal(team.qualityComponents![0].warrantyCostPerQuarter, 15.3);
+
+  // Several clicks merged into one debounced save still replay in order: study, then improve.
+  const next = team.qualityComponents!.map((c, i) => i === 0 ? { ...c, varianceStudyDone: true, sourceActionStudyDone: true } : c);
+  applyUniversePatch(u, { universeId: "u1", quarter: 1, teams: { "0": { set: { qualityComponents: next } } } }, player);
+  assert.equal(team.dec.qualityActionCost, 23 + 12 + 25);
+  assert.equal(team.qualityComponents![0].reliabilityImprovement, 12);
+});
+
+test("quality steps cannot be skipped", () => {
+  const skip = initialQualityComponents().map((c, i) => i === 0 ? { ...c, varianceStudyDone: true } : c);
+  expectError(() => applyUniversePatch(universe(), { universeId: "u1", quarter: 1, teams: { "0": { set: { qualityComponents: skip } } } }, player), 400);
+});
+
+test("spending decisions cannot be negative", () => {
+  expectError(() => applyUniversePatch(universe(), { universeId: "u1", quarter: 1, teams: { "0": { dec: { ad: -5000 } } } }, player), 400);
+  expectError(() => applyUniversePatch(universe(), { universeId: "u1", quarter: 1, teams: { "0": { dec: { prod: { m1: -10 } } } } }, player), 400);
+  expectError(() => applyUniversePatch(universe(), { universeId: "u1", quarter: 1, teams: { "0": { dec: { quality: "lots" } } } }, player), 400);
 });

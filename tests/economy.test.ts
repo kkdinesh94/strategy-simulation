@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { auditTeam, debtOf, equityOf, newState, simulateQuarter, cumBSC, leaderboardOf } from "../src/engine/simulationEngine";
 import { ARCHES, competent, lateMargin, league, passive, playGame } from "./helpers";
+import { buildAbcReport } from "../src/lib/abcReport";
 
 test("every archetype's starting design passes the auditor once the charter is written", () => {
   const st = newState(ARCHES.map((arch, i) => ({ name: `T${i}`, arch, isBot: false })), 12);
@@ -104,4 +105,40 @@ test("battery packs return a year after sale and only once", () => {
   assert.equal(byQ(6).batteryReturns, Math.round(byQ(2).units * 0.1));
   assert.equal(byQ(7).batteryReturns, Math.round(byQ(3).units * 0.1));
   assert.ok(byQ(7).batteryReturns > 0, "Q3 sales should produce returns in Q7");
+});
+
+test("the D2C web store adds reach, charges setup once and a running cost every quarter", () => {
+  const run = (web: boolean) => {
+    const st = league();
+    for (let q = 0; q < 4; q++) {
+      for (const t of st.teams) if (!t.isBot) competent(t, st);
+      st.teams[1].dec.webStore = web && st.quarter >= 2;
+      simulateQuarter(st);
+    }
+    return st.teams[1];
+  };
+  const off = run(false);
+  const on = run(true);
+  const row = (t: typeof on, q: number) => t.hist.find((r) => r.q === q)!;
+  for (const q of [2, 3, 4]) {
+    assert.ok(Math.abs(row(on, q).reach - Math.min(0.98, row(off, q).reach + 0.12)) < 0.02, `Q${q} reach not boosted`);
+    assert.equal(Math.round(row(on, q).netOpex - row(off, q).netOpex), 5, `Q${q} running cost`);
+  }
+  assert.equal(Math.round(row(on, 2).centreOpen - row(off, 2).centreOpen), 15, "setup charged in the first quarter");
+  assert.equal(Math.round(row(on, 3).centreOpen - row(off, 3).centreOpen), 0, "setup charged again");
+  assert.ok(row(on, 3).units > row(off, 3).units, "extra reach did not raise sales");
+});
+
+test("ABC report traces revenue and materials to models and reconciles to net profit", () => {
+  const st = playGame(competent);
+  for (const t of st.teams.slice(0, 4)) {
+    for (const r of t.hist.filter((h) => h.q >= 2)) {
+      const abc = buildAbcReport(r);
+      const sum = (f: (m: (typeof abc.models)[number]) => number) => abc.models.reduce((s, m) => s + f(m), 0);
+      assert.ok(Math.abs(sum((m) => m.revenue) - r.revenue) < 0.5, "model revenue does not add up");
+      assert.ok(Math.abs(sum((m) => m.materials) - r.cogs) < 0.5, "materials do not add up");
+      for (const p of abc.pools) assert.ok(Math.abs(sum((m) => m.pools[p.key]) - p.amount) < 0.5 || r.units === 0, `${p.label} not fully allocated`);
+      assert.ok(Math.abs(abc.totalContribution - abc.companyLevel - r.profit) < 1e-6);
+    }
+  }
 });

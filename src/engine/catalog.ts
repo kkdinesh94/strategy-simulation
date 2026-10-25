@@ -215,6 +215,10 @@ export const BALANCE = {
 export const HR = { salesCost: 3.5, plantRate: 0.012, min: 80, max: 130 };
 export const CENTRE = { open: 40, opex: 8 };
 
+// D2C web storefront: one-time setup the first quarter it is switched on, then a running
+// cost every active quarter. It adds `reach` to the team's distribution reach.
+export const WEB_STORE = { setup: 15, opex: 5, reach: 0.12, maxReach: 0.98 };
+
 // Curated store/outlet markets. Entry cost scales with market size (bigger
 // markets cost more to enter but grant a bigger reach bonus once occupied).
 // demandBonus is added to reachOf() and split between every team present

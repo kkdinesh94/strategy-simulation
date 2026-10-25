@@ -34,7 +34,6 @@ import { CheckCircle, AlertTriangle, X } from "lucide-react";
 import RightPanel from "./components/RightPanel";
 import { QuarterAdvancedBanner } from "./components/QuarterAdvancedBanner";
 import { useQuarterPoller } from "./hooks/useQuarterPoller";
-import { FEATURES } from "./lib/features";
 
 // Each area's screens load on first visit, keeping the initial download small.
 const UniverseRosterManager = lazy(() => import("./components/UniverseRosterManager").then((m) => ({ default: m.UniverseRosterManager })));
@@ -451,7 +450,7 @@ export default function App() {
       fetch("/api/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId: updatedTeam.i, quarter: gameState.quarter, changes })
+        body: JSON.stringify({ universeId: universe.id, teamId: updatedTeam.i, quarter: gameState.quarter, changes })
       }).catch(() => {});
     }
     const updatedTeams = [...gameState.teams];
@@ -616,7 +615,7 @@ export default function App() {
         }}
         onSelectUniverse={handleSelectUniverse}
         onLockToggle={handleLockToggle}
-        onOpenAdvisor={FEATURES.aiAdvisor && advisorAvailable ? () => setIsAdvisorOpen(true) : undefined}
+        onOpenAdvisor={advisorAvailable ? () => setIsAdvisorOpen(true) : undefined}
         onLogout={handleLogout}
         onUpdateDeadline={handleUpdateDeadline}
         onOpenChangePassword={() => setIsChangePasswordOpen(true)}
@@ -932,6 +931,7 @@ export default function App() {
       {isAdvisorOpen && <Suspense fallback={null}><AIConsultantModal
         isOpen={isAdvisorOpen}
         onClose={() => setIsAdvisorOpen(false)}
+        universeId={universe.id}
         team={currentTeam}
         gameState={gameState}
       /></Suspense>}

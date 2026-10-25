@@ -97,7 +97,7 @@ export default function RDDashboard({
         )}
       </section>
 
-      <div className="flex items-center gap-2 text-xs text-slate-500"><CheckCircle2 className="h-4 w-4 text-teal-600" /> Completed projects make their linked component selectable in VehicleDesigner.</div>
+      <div className="flex items-center gap-2 text-xs text-slate-500"><CheckCircle2 className="h-4 w-4 text-teal-600" /> Completed projects make their linked component selectable in Product design.</div>
     </div>
   );
 }
