@@ -4,7 +4,6 @@ compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
 
 [vars]
-NODE_ENV = "production"
 APP_TITLE = "EV Venture League Simulation"
 
 [[d1_databases]]

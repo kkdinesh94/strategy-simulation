@@ -15,7 +15,6 @@
     }
   ],
   "vars": {
-    "NODE_ENV": "production",
     "APP_TITLE": "EV Venture League Simulation"
   }
 }
