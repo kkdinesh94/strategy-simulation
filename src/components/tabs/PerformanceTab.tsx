@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { SectionTabs } from "../SectionTabs";
 import { NewsText } from "../NewsText";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
@@ -18,27 +19,12 @@ import {
   cumBSC
 } from "../../engine/simulationEngine";
 import {
-  Award,
-  BarChart3,
-  TrendingUp,
-  Newspaper,
-  Users,
   Eye,
-  FileText,
   Lock,
-  ShieldAlert,
   Sparkles,
   Building2,
-  MapPin,
-  Store,
-  DollarSign,
-  Target,
   Receipt,
-  Scale,
-  Coins,
-  History,
-  ArrowUpRight,
-  ArrowDownRight
+  Coins
 } from "lucide-react";
 
 interface PerformanceTabProps {
@@ -69,159 +55,31 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
-      {/* Sub-Tab Navigation Bar */}
-      <div className="bg-white p-3 rounded-2xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => setActiveReportTab("bsc")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "bsc"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Award className="w-3.5 h-3.5 text-amber-500" /> Balanced Scorecard
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("trends")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "trends"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <TrendingUp className="w-3.5 h-3.5 text-teal-600" /> Trends
-        </button>
-
-        <button onClick={() => setActiveReportTab("swot")} className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${activeReportTab === "swot" ? "bg-[#1F2022] text-white shadow-sm" : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"}`}>
-          <Target className="w-3.5 h-3.5 text-rose-600" /> SWOT Analysis
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("statements")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "statements"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Receipt className="w-3.5 h-3.5 text-emerald-600" /> 3-Way Financial Statements
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("valuation")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "valuation"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Coins className="w-3.5 h-3.5 text-amber-600" /> Stock & Valuation League
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("debrief")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "debrief"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5 text-indigo-500" /> Executive Debrief Pack
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("rivals")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "rivals"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Building2 className="w-3.5 h-3.5 text-emerald-600" /> Competitor Benchmarks
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("intel")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "intel"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : hasIntelReport
-              ? "bg-purple-50 text-purple-800 border border-purple-200"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Lock className="w-3.5 h-3.5 text-purple-600" /> Competitor Intelligence
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("benchmark")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "benchmark"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <BarChart3 className="w-3.5 h-3.5 text-teal-600" /> Competitive Research
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("clinic")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "clinic"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : hasClinicReport
-              ? "bg-blue-50 text-blue-800 border border-blue-200"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Eye className="w-3.5 h-3.5 text-blue-600" /> Consumer Clinic Report
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("share")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "share"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <BarChart3 className="w-3.5 h-3.5 text-teal-600" /> Market Share & Demand
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("news")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "news"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <Newspaper className="w-3.5 h-3.5 text-rose-600" /> Industry Press
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("market_map")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "market_map"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <MapPin className="w-3.5 h-3.5 text-teal-700" /> Market Map
-        </button>
-
-        <button
-          onClick={() => setActiveReportTab("history")}
-          className={`px-3.5 py-2 rounded-xl text-xs font-bold font-mono transition flex items-center gap-1.5 ${
-            activeReportTab === "history"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#5A5C60] hover:bg-[#E5E1D8]"
-          }`}
-        >
-          <History className="w-3.5 h-3.5 text-rose-600" /> Decision History
-        </button>
-      </div>
+      <SectionTabs
+        ariaLabel="Report views"
+        active={activeReportTab}
+        onChange={setActiveReportTab}
+        groups={[
+          { label: "Your company", tabs: [
+            { key: "bsc", label: "Balanced scorecard" },
+            { key: "trends", label: "Trends" },
+            { key: "statements", label: "Financial statements" },
+            { key: "valuation", label: "Share price and valuation" },
+            { key: "debrief", label: "Executive debrief" },
+            { key: "swot", label: "SWOT" },
+            { key: "history", label: "Decision history" }
+          ] },
+          { label: "Market and competitors", tabs: [
+            { key: "share", label: "Market share and demand" },
+            { key: "rivals", label: "Competitor benchmarks" },
+            { key: "benchmark", label: "Competitive research" },
+            { key: "intel", label: "Competitor intelligence", badge: hasIntelReport ? "New" : undefined },
+            { key: "clinic", label: "Consumer clinic", badge: hasClinicReport ? "New" : undefined },
+            { key: "market_map", label: "Market map" },
+            { key: "news", label: "Industry press" }
+          ] }
+        ]}
+      />
 
       {/* SUB-TAB: AUDITED 3-WAY FINANCIAL STATEMENTS */}
       {activeReportTab === "statements" && (

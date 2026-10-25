@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { SectionTabs } from "../SectionTabs";
 import { TeamState, GameState } from "../../types/simulation";
 import { fmtL, fmtRs } from "../../engine/catalog";
 import {
@@ -18,16 +19,11 @@ import { FinancingPanel } from "../FinancingPanel";
 import { DecisionComparison } from "../DecisionComparison";
 import ABCReport from "../ABCReport";
 import {
-  DollarSign,
   Landmark,
-  PieChart,
-  FileText,
   Sparkles,
-  ShieldCheck,
   Coins,
   TrendingUp,
   ArrowUpRight,
-  ArrowDownRight,
   RefreshCw,
   Gift
 } from "lucide-react";
@@ -144,93 +140,25 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
     <div className="space-y-6 font-sans">
       <DecisionComparison team={team} gameState={gameState} />
 
-      {/* Sub-Tab Selector */}
-      <div className="bg-white p-3 rounded-xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => setActiveSubTab("financing")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${activeSubTab === "financing" ? "bg-emerald-700 text-white shadow-sm" : "bg-emerald-50 text-emerald-900 border border-emerald-200 hover:bg-emerald-100"}`}
-        >
-          <Landmark className="w-3.5 h-3.5" /> Financing Desk
-        </button>
-        <button
-          onClick={() => setActiveSubTab("proforma")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "proforma"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
-          }`}
-        >
-          <FileText className="w-3.5 h-3.5" /> Pro Forma Budget
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab("equity")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "equity"
-              ? "bg-amber-600 text-white shadow-sm"
-              : "bg-amber-50 text-amber-900 border border-amber-200 hover:bg-amber-100"
-          }`}
-        >
-          <Coins className="w-3.5 h-3.5" /> Capital Structure & Shares
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab("workbench")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "workbench"
-              ? "bg-blue-600 text-white shadow-sm"
-              : "bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100"
-          }`}
-        >
-          <Sparkles className="w-3.5 h-3.5" /> Scenario What-If Workbench
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab("auditor")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "auditor"
-              ? "bg-purple-600 text-white shadow-sm"
-              : "bg-purple-50 text-purple-800 border border-purple-200 hover:bg-purple-100"
-          }`}
-        >
-          <ShieldCheck className="w-3.5 h-3.5" /> Decision Auditor Checklist
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab("abc")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "abc"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
-          }`}
-        >
-          <PieChart className="w-3.5 h-3.5" /> Activity Based Costing (ABC)
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab("debt")}
-          className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-            activeSubTab === "debt"
-              ? "bg-[#1F2022] text-white shadow-sm"
-              : "bg-[#FAF8F5] text-[#1F2022] border border-[#E0DCD3] hover:bg-slate-100"
-          }`}
-        >
-          <Landmark className="w-3.5 h-3.5" /> Debt & Credit Lines
-        </button>
-
-        {gameState.quarter === gameState.cfg.vcQuarter && (
-          <button
-            onClick={() => setActiveSubTab("vc")}
-            className={`px-4 py-2 rounded-lg text-xs font-semibold font-mono transition flex items-center gap-1.5 ${
-              activeSubTab === "vc"
-                ? "bg-purple-600 text-white shadow-sm"
-                : "bg-purple-100 text-purple-900 border border-purple-300 hover:bg-purple-200"
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" /> VC Negotiation Room
-          </button>
-        )}
-      </div>
+      <SectionTabs
+        ariaLabel="Finance views"
+        active={activeSubTab}
+        onChange={setActiveSubTab}
+        groups={[
+          { label: "Plan", tabs: [
+            { key: "proforma", label: "Pro forma budget" },
+            { key: "workbench", label: "What-if workbench" },
+            { key: "auditor", label: "Decision auditor" }
+          ] },
+          { label: "Funding", tabs: [
+            { key: "financing", label: "Financing desk" },
+            { key: "debt", label: "Debt and credit" },
+            { key: "equity", label: "Shares and capital" },
+            ...(gameState.quarter === gameState.cfg.vcQuarter ? [{ key: "vc" as const, label: "Venture capital", badge: "This quarter" }] : [])
+          ] },
+          { label: "Analysis", tabs: [{ key: "abc", label: "Activity-based costing" }] }
+        ]}
+      />
 
       {activeSubTab === "financing" && (
         <FinancingPanel team={team} gameState={gameState} onChange={onChange} isLocked={isLocked} />

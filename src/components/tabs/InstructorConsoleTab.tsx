@@ -20,7 +20,6 @@ import {
   Calendar,
   Sparkles,
   TrendingUp,
-  BarChart3,
   Globe,
   Plus,
   Check,
@@ -239,182 +238,26 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
     (u) => u.universeId === universe.id && u.role === "player"
   );
 
+  const humanTeams = gameState.teams.filter((t) => !t.isBot);
+  const lockedTeams = humanTeams.filter((t) => t.dec.locked);
+  const pendingTeams = humanTeams.filter((t) => !t.dec.locked);
+
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
-      {/* Multi-Universe Cohort Selection & Management Card */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0DCD3] pb-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200 text-[10px] font-mono font-bold uppercase flex items-center gap-1">
-                <Globe className="w-3 h-3 text-purple-700" /> Multi-Universe Management
-              </span>
-            </div>
-            <h3 className="text-base font-bold text-[#1F2022]">
-              Assigned Cohort Universes ({accessibleUniverses.length})
-            </h3>
-            <p className="text-xs text-[#5A5C60]">
-              Select and switch active simulation cohorts. Instructors assigned to multiple universes can manage each cohort independently.
-            </p>
-          </div>
-
-          <button
-            onClick={() => setShowCreateUnivModal(true)}
-            className="px-4 py-2 bg-[#1F2022] hover:bg-[#343538] text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" /> Create New Cohort Universe
-          </button>
-        </div>
-
-        {/* Cohort Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {accessibleUniverses.map((u) => {
-            const isSelected = u.id === universe.id;
-            const univStudents = allUsers.filter((user) => user.universeId === u.id && user.role === "player").length;
-            const currentQ = u.gameState?.quarter || 1;
-
-            return (
-              <div
-                key={u.id}
-                className={`p-4 rounded-xl border transition flex flex-col justify-between gap-3 ${
-                  isSelected
-                    ? "bg-purple-50/70 border-purple-300 ring-1 ring-purple-400/50 shadow-2xs"
-                    : "bg-[#FAF8F5] border-[#E0DCD3] hover:border-purple-200"
-                }`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white border border-[#E0DCD3] text-[#1F2022]">
-                      CODE: {u.code}
-                    </span>
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200">
-                      Q{currentQ} Active
-                    </span>
-                  </div>
-                  <h4 className="text-sm font-bold text-[#1F2022] line-clamp-1" title={u.name}>
-                    {u.name}
-                  </h4>
-                  <div className="text-[11px] text-[#5A5C60] font-mono mt-1 space-y-0.5">
-                    <div>Instructor: <strong className="text-[#1F2022]">{u.instructorEmail || "Unassigned"}</strong></div>
-                    <div>Enrolled: <strong className="text-[#1F2022]">{univStudents} Students</strong> across 10 Teams</div>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-[#E0DCD3]/60 flex items-center justify-between">
-                  {isSelected ? (
-                    <span className="px-3 py-1 bg-purple-700 text-white text-[11px] font-mono font-bold rounded-lg flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" /> ACTIVE COHORT
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => onSelectUniverse && onSelectUniverse(u)}
-                      className="px-3 py-1 bg-white hover:bg-purple-100/60 text-purple-900 border border-[#E0DCD3] text-[11px] font-mono font-bold rounded-lg transition flex items-center gap-1 shadow-2xs"
-                    >
-                      <span>Select Cohort</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-purple-700" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Modal for Creating New Universe */}
-      {showCreateUnivModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full rounded-2xl border border-[#E5E1D8] shadow-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-3">
-              <h3 className="text-lg font-extrabold text-[#1F2022] flex items-center gap-2">
-                <Globe className="w-5 h-5 text-purple-700" /> Create Cohort Universe
-              </h3>
-              <button
-                onClick={() => setShowCreateUnivModal(false)}
-                className="text-[#5A5C60] hover:text-[#1F2022] text-sm font-mono"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateUniverseSubmit} className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
-                  Universe / Cohort Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. EV League - MBA Batch 2026-B"
-                  value={newUnivName}
-                  onChange={(e) => setNewUnivName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-semibold focus:outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
-                  Access Join Code *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. NITWB2026"
-                  value={newUnivCode}
-                  onChange={(e) => setNewUnivCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-mono font-bold uppercase focus:outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
-                  Assigned Instructor Email
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. instructor@nitw.ac.in"
-                  value={newUnivInstructorEmail}
-                  onChange={(e) => setNewUnivInstructorEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-mono focus:outline-none focus:border-purple-600"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateUnivModal(false)}
-                  className="px-4 py-2 bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[#5A5C60] text-xs font-bold rounded-xl transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl transition shadow-sm"
-                >
-                  Create & Select Cohort
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Console Controls & Quarter Simulation Header */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 text-[10px] font-mono font-bold uppercase">
-              Faculty Command Console
-            </span>
-            <span className="text-xs text-[#5A5C60] font-mono">Period: Quarter {gameState.quarter} of {gameState.cfg.quarters}</span>
-          </div>
-          <h2 className="text-xl font-bold text-[#1F2022]">
-            Instructor & Administrator Console
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#C83E2B]">{universe.name}</div>
+          <h2 className="mt-1 text-xl font-semibold text-[#1F2022]">
+            {gameState.phase === "gameover" ? "The game is complete" : `Quarter ${gameState.quarter} of ${gameState.cfg.quarters}`}
           </h2>
-          <p className="text-xs text-[#5A5C60]">
-            Configure decision deadlines, track student engagement, inspect team lock-in states, and run quarterly market simulations.
+          <p className="mt-1 text-sm text-[#5A5C60]">
+            {humanTeams.length === 0
+              ? "No student teams yet. Add students under Teams and students."
+              : `${lockedTeams.length} of ${humanTeams.length} student teams have locked their decisions.`}
+            {pendingTeams.length > 0 && pendingTeams.length <= 5 && ` Waiting for ${pendingTeams.map((t) => t.name).join(", ")}.`}
           </p>
+          <p className="mt-1 text-xs text-[#8A8C90]">Bot teams decide automatically. Running the quarter processes every team, locked or not.</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -430,6 +273,70 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
               Restart cohort
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Team Lock Status Overview */}
+      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+        <h3 className="text-base font-bold text-[#1F2022] flex items-center gap-2">
+          Teams
+        </h3>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          {gameState.teams.map((t, idx) => {
+            const bsc = cumBSC(t);
+
+            return (
+              <div
+                key={t.i}
+                className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF8F5] border-[#E0DCD3]"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-4 h-4 rounded-full shrink-0 shadow-sm"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-[#1F2022]">
+                      Team {t.i + 1}: {t.name} {t.isBot && "(AI Bot)"}
+                    </div>
+                    <div className="text-xs text-[#5A5C60] font-mono mt-0.5">
+                      Cash: {fmtL(t.cash)} L | BSC: {bsc.toFixed(1)} | Models: {t.models.length}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {t.dec.locked ? (
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-mono font-bold flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Locked
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-mono font-bold flex items-center gap-1">
+                      <Unlock className="w-3 h-3" /> Pending
+                    </span>
+                  )}
+
+                  <button
+                    onClick={() => handleToggleLockTeam(idx)}
+                    className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-slate-100 text-[#1F2022]"
+                  >
+                    {t.dec.locked ? "Unlock" : "Lock"}
+                  </button>
+
+                  {onObserveTeam && (
+                    <button
+                      onClick={() => onObserveTeam(idx)}
+                      className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-slate-100 text-[#1F2022] flex items-center gap-1"
+                      title={`Observe Team ${idx + 1}'s dashboard (read-only)`}
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Observe
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -618,62 +525,72 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
         )}
       </div>
 
-      {/* Team Lock Status Overview */}
+      {/* Multi-Universe Cohort Selection & Management Card */}
       <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
-        <h3 className="text-base font-bold text-[#1F2022] flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-indigo-600" />
-          Executive Teams Lock & Decision Control
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0DCD3] pb-3">
+          <div>
+            <h3 className="text-base font-bold text-[#1F2022]">
+              Your cohorts ({accessibleUniverses.length})
+            </h3>
+            <p className="text-xs text-[#5A5C60]">
+              Each cohort is a separate game with its own teams, students and quarter. Switch to manage another one.
+            </p>
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {gameState.teams.map((t, idx) => {
-            const bsc = cumBSC(t);
+          <button
+            onClick={() => setShowCreateUnivModal(true)}
+            className="px-4 py-2 bg-[#1F2022] hover:bg-[#343538] text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm shrink-0"
+          >
+            <Plus className="w-4 h-4" /> New cohort
+          </button>
+        </div>
+
+        {/* Cohort Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {accessibleUniverses.map((u) => {
+            const isSelected = u.id === universe.id;
+            const univStudents = allUsers.filter((user) => user.universeId === u.id && user.role === "player").length;
+            const currentQ = u.gameState?.quarter || 1;
 
             return (
               <div
-                key={t.i}
-                className="p-4 rounded-xl border flex items-center justify-between gap-3 bg-[#FAF8F5] border-[#E0DCD3]"
+                key={u.id}
+                className={`p-4 rounded-xl border transition flex flex-col justify-between gap-3 ${
+                  isSelected
+                    ? "bg-purple-50/70 border-purple-300 ring-1 ring-purple-400/50 shadow-2xs"
+                    : "bg-[#FAF8F5] border-[#E0DCD3] hover:border-purple-200"
+                }`}
               >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-4 h-4 rounded-full shrink-0 shadow-sm"
-                    style={{ backgroundColor: t.color }}
-                  />
-                  <div>
-                    <div className="font-bold text-sm text-[#1F2022]">
-                      Team {t.i + 1}: {t.name} {t.isBot && "(AI Bot)"}
-                    </div>
-                    <div className="text-xs text-[#5A5C60] font-mono mt-0.5">
-                      Cash: {fmtL(t.cash)} L | BSC: {bsc.toFixed(1)} | Models: {t.models.length}
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white border border-[#E0DCD3] text-[#1F2022]">
+                      CODE: {u.code}
+                    </span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-100 text-purple-900 border border-purple-200">
+                      Q{currentQ} Active
+                    </span>
+                  </div>
+                  <h4 className="text-sm font-bold text-[#1F2022] line-clamp-1" title={u.name}>
+                    {u.name}
+                  </h4>
+                  <div className="text-[11px] text-[#5A5C60] font-mono mt-1 space-y-0.5">
+                    <div>Instructor: <strong className="text-[#1F2022]">{u.instructorEmail || "Unassigned"}</strong></div>
+                    <div>Enrolled: <strong className="text-[#1F2022]">{univStudents} Students</strong> across 10 Teams</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  {t.dec.locked ? (
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-mono font-bold flex items-center gap-1">
-                      <Lock className="w-3 h-3" /> Locked
+                <div className="pt-2 border-t border-[#E0DCD3]/60 flex items-center justify-between">
+                  {isSelected ? (
+                    <span className="px-3 py-1 bg-purple-700 text-white text-[11px] font-mono font-bold rounded-lg flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> ACTIVE COHORT
                     </span>
                   ) : (
-                    <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-mono font-bold flex items-center gap-1">
-                      <Unlock className="w-3 h-3" /> Pending
-                    </span>
-                  )}
-
-                  <button
-                    onClick={() => handleToggleLockTeam(idx)}
-                    className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-slate-100 text-[#1F2022]"
-                  >
-                    {t.dec.locked ? "Unlock" : "Lock"}
-                  </button>
-
-                  {onObserveTeam && (
                     <button
-                      onClick={() => onObserveTeam(idx)}
-                      className="px-3 py-1.5 bg-white border border-[#E0DCD3] text-xs font-semibold rounded-lg hover:bg-slate-100 text-[#1F2022] flex items-center gap-1"
-                      title={`Observe Team ${idx + 1}'s dashboard (read-only)`}
+                      onClick={() => onSelectUniverse && onSelectUniverse(u)}
+                      className="px-3 py-1 bg-white hover:bg-purple-100/60 text-purple-900 border border-[#E0DCD3] text-[11px] font-mono font-bold rounded-lg transition flex items-center gap-1 shadow-2xs"
                     >
-                      <Eye className="w-3.5 h-3.5" /> Observe
+                      <span>Select Cohort</span>
+                      <ChevronRight className="w-3.5 h-3.5 text-purple-700" />
                     </button>
                   )}
                 </div>
@@ -682,6 +599,85 @@ export const InstructorConsoleTab: React.FC<InstructorConsoleTabProps> = ({
           })}
         </div>
       </div>
+
+      {/* Modal for Creating New Universe */}
+      {showCreateUnivModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full rounded-2xl border border-[#E5E1D8] shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-3">
+              <h3 className="text-lg font-extrabold text-[#1F2022] flex items-center gap-2">
+                <Globe className="w-5 h-5 text-purple-700" /> Create Cohort Universe
+              </h3>
+              <button
+                onClick={() => setShowCreateUnivModal(false)}
+                className="text-[#5A5C60] hover:text-[#1F2022] text-sm font-mono"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUniverseSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
+                  Universe / Cohort Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. EV League - MBA Batch 2026-B"
+                  value={newUnivName}
+                  onChange={(e) => setNewUnivName(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-semibold focus:outline-none focus:border-purple-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
+                  Access Join Code *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. NITWB2026"
+                  value={newUnivCode}
+                  onChange={(e) => setNewUnivCode(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-mono font-bold uppercase focus:outline-none focus:border-purple-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase font-mono text-[#5A5C60] mb-1">
+                  Assigned Instructor Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. instructor@nitw.ac.in"
+                  value={newUnivInstructorEmail}
+                  onChange={(e) => setNewUnivInstructorEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs font-mono focus:outline-none focus:border-purple-600"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateUnivModal(false)}
+                  className="px-4 py-2 bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[#5A5C60] text-xs font-bold rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl transition shadow-sm"
+                >
+                  Create & Select Cohort
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Instructor Visibility Controls */}
       <VisibilitySettingsPanel universeId={universe.id} onNotify={onNotify} />
