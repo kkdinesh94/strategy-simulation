@@ -1,6 +1,6 @@
 import React from "react";
 import { BadgeIndianRupee, ShoppingCart } from "lucide-react";
-import { unitCost } from "../engine/simulationEngine";
+import { payrollOf, unitCost } from "../engine/simulationEngine";
 import { MARKETS } from "../engine/catalog";
 
 const asNumber = (value, fallback = 0) => {
@@ -21,7 +21,7 @@ export default function SalesPricingPanel({ team }) {
   const latestRows = latestResult?.modelRows || [];
   const totalUnits = latestResult?.units || 0;
   const adCost = asNumber(team?.dec?.ad);
-  const salesForceCost = asNumber(team?.staff) * 3.5 * (asNumber(team?.hr?.sales, 100) / 100);
+  const salesForceCost = team ? payrollOf(team, asNumber(team.staff)).sales : 0;
 
   return (
     <section className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-5">

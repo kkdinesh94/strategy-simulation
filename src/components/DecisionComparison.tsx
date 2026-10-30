@@ -1,6 +1,7 @@
 import React from "react";
 import { TeamState, GameState, QuarterResult } from "../types/simulation";
 import { CAP_BLOCK } from "../engine/catalog";
+import { hrMults } from "../engine/simulationEngine";
 
 interface DecisionComparisonProps {
   team: TeamState;
@@ -40,7 +41,7 @@ export const DecisionComparison: React.FC<DecisionComparisonProps> = ({ team, ga
     { label: "Capacity Expansion Blocks", prior: expBlocksPrior, current: dec.expBlocks || 0 },
     { label: "New Experience Centres", prior: null, current: dec.newCentres || 0 },
     { label: "Net Staff Change", prior: null, current: dec.hire || 0 },
-    { label: "HR Sales Score", prior: priorHist.hrM ? priorHist.hrM.sales : null, current: team.hr.sales },
+    { label: "HR Sales Score", prior: priorHist.hrM ? priorHist.hrM.sales : null, current: hrMults(gameState, team).sales },
     { label: "Bank Loan Target (Rs. L)", prior: priorHist.debt ? priorHist.debt.bank : null, current: dec.bankTarget || 0 },
     { label: "Quality Investment (Rs. L)", prior: priorHist.quality, current: dec.quality || 0 }
   ];

@@ -14,6 +14,7 @@ import {
   SEGMENTS,
   CLAIMS,
   HR,
+  HR_PACKAGES,
   CENTRE,
   WEB_STORE,
   CAP_BLOCK,
@@ -317,20 +318,42 @@ export function maxShareBuybackLimit(t: TeamState): number {
   return Math.max(0, Math.min(Math.round(t.cash * 0.6), Math.round(maxSharesToBuy * p)));
 }
 
+type PayKind = "sales" | "production";
+
+/** Value of a compensation package per head: salary plus benefits, bonus and safety bonus, plus leave. */
+export function packageValue(pkg: any, kind: PayKind): number {
+  const safety = kind === "production" ? Number(pkg.safetyBonus || 0) : 0;
+  return Number(pkg.salary || 0) * (1 + Number(pkg.benefits || 0) / 100 + Number(pkg.bonus || 0) / 100 + safety / 100) + Number(pkg.vacation || 0) * 0.03;
+}
+
+export function payPackageOf(t: TeamState, kind: PayKind) {
+  return { ...HR_PACKAGES[kind], ...(t.hrCompensation?.[kind] || {}) };
+}
+
+/**
+ * Payroll multipliers (1 = the default package). A team that has set HR packages pays in
+ * proportion to their value; otherwise the legacy pay indices (hr.sales / hr.plant, % of benchmark) apply.
+ */
+export function payFactorsOf(t: TeamState): { sales: number; plant: number } {
+  if (t.hrCompensation && BALANCE.payFromPackages) {
+    return {
+      sales: packageValue(payPackageOf(t, "sales"), "sales") / packageValue(HR_PACKAGES.sales, "sales"),
+      plant: packageValue(payPackageOf(t, "production"), "production") / packageValue(HR_PACKAGES.production, "production")
+    };
+  }
+  return { sales: t.hr.sales / 100, plant: t.hr.plant / 100 };
+}
+
+export function payrollOf(t: TeamState, staff: number) {
+  const f = payFactorsOf(t);
+  return { sales: staff * HR.salesCost * f.sales, plant: t.capacity * HR.plantRate * f.plant };
+}
+
 export function hrMults(st: GameState, t: TeamState): { sales: number; plant: number } {
-  const defaults = {
-    sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
-    production: { salary: 2.5, benefits: 8, vacation: 18, bonus: 8, safetyBonus: 5 }
-  };
-  const value = (pkg: any, kind: "sales" | "production") => {
-    const safety = kind === "production" ? Number(pkg.safetyBonus || 0) : 0;
-    return Number(pkg.salary || 0) * (1 + Number(pkg.benefits || 0) / 100 + Number(pkg.bonus || 0) / 100 + safety / 100) + Number(pkg.vacation || 0) * 0.03;
-  };
   if (t.hrCompensation) {
-    const packageFor = (team: TeamState, kind: "sales" | "production") => ({ ...defaults[kind], ...(team.hrCompensation?.[kind] || {}) });
-    const score = (kind: "sales" | "production") => {
-      const benchmark = st.teams.reduce((sum, team) => sum + value(packageFor(team, kind), kind), 0) / Math.max(1, st.teams.length);
-      return clamp(value(packageFor(t, kind), kind) / Math.max(0.0001, benchmark), 0.75, 1.25);
+    const score = (kind: PayKind) => {
+      const benchmark = st.teams.reduce((sum, team) => sum + packageValue(payPackageOf(team, kind), kind), 0) / Math.max(1, st.teams.length);
+      return clamp(packageValue(payPackageOf(t, kind), kind) / Math.max(0.0001, benchmark), 0.75, 1.25);
     };
     return { sales: score("sales"), plant: score("production") };
   }
@@ -440,8 +463,7 @@ export function proFormaCalc(st: GameState, t: TeamState) {
 
   const newStaff = t.staff + (+t.dec.hire || 0);
   const newCentres = t.centres + (+t.dec.newCentres || 0);
-  const salesPayroll = newStaff * HR.salesCost * (t.hr.sales / 100);
-  const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
+  const { sales: salesPayroll, plant: plantPayroll } = payrollOf(t, newStaff);
   const netOpex = newCentres * CENTRE.opex + web.opex;
   const fixed = fixedCostOf(t.capacity);
   const interest = t.debt.bank * 0.04 + t.debt.lt * 0.045 + t.debt.shark * 0.15;
@@ -720,7 +742,8 @@ export function claimAudit(t: TeamState, claims: string[]): Record<string, strin
 /**
  * Share of scheduled units the line actually delivers: changeover losses grow with the number
  * of models and how different their specifications are, then plant productivity (pay relative
- * to the industry) scales the result.
+ * to the industry) scales the result. A well-paid workforce can win back changeover losses but
+ * never builds more than was scheduled; an underpaid one loses output to turnover and absence.
  */
 export function lineEfficiencyOf(st: GameState, t: TeamState, plantMult = hrMults(st, t).plant) {
   const cats = Object.keys(CATALOG);
@@ -736,7 +759,9 @@ export function lineEfficiencyOf(st: GameState, t: TeamState, plantMult = hrMult
       }
     changeover = 1 - 0.1 * (n - 1) * (0.4 + 0.6 * (diff / (pairs || 1)));
   }
-  return { changeover, plant: plantMult, eff: changeover * plantMult };
+  let eff = changeover * plantMult;
+  if (BALANCE.capOutputAtSchedule) eff = Math.min(1, eff);
+  return { changeover, plant: plantMult, eff };
 }
 
 /** Awareness response: spend per segment saturates against AD_K; unfed awareness decays by AW_DECAY. */
@@ -927,8 +952,7 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
     const dev = BALANCE.modelLaunchCost * modelsLaunchingOf(t, q).length;
     const research = (t.dec.buyIntel ? 15 : 0) + (t.dec.buyClinic ? 10 : 0);
     const ad = t.dec.ad;
-    const salesPayroll = t.staff * HR.salesCost * (t.hr.sales / 100);
-    const plantPayroll = t.capacity * HR.plantRate * (t.hr.plant / 100);
+    const { sales: salesPayroll, plant: plantPayroll } = payrollOf(t, t.staff);
     const web = webStoreCostOf(t);
     const netOpex = t.centres * CENTRE.opex + web.opex;
     const centreOpen = centreOpenCost(t.dec.newCentreCities) + web.setup;

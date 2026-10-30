@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BarChart3, Factory, ShieldCheck, Users } from "lucide-react";
-import { lineEfficiencyOf, marketBonusOf, reachOf, withWebStore } from "../engine/simulationEngine";
+import { lineEfficiencyOf, marketBonusOf, payFactorsOf, payrollOf, reachOf, withWebStore } from "../engine/simulationEngine";
 
 const DEFAULTS = {
   sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
@@ -228,6 +228,17 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
   const reachAt = (m) => withWebStore(reachOf({ centres, staff }, m, bonus), team);
   const line = lineEfficiencyOf(gameState, team, productionStats.score);
   const scheduled = team.models.reduce((x, m) => x + (team.dec.prod[m.id] || 0), 0);
+  const live = { ...team, hrCompensation: { ...(team.hrCompensation || {}), sales, production } };
+  const pay = payrollOf(live, staff);
+  const factors = payFactorsOf(live);
+  const costLine = (cost, factor) => (
+    <div className="mt-1.5 pt-1.5 border-t border-[#EFEBE3] flex justify-between">
+      <span>Payroll this quarter</span>
+      <span className="font-mono font-semibold">
+        Rs. {cost.toFixed(1)} L <span className={factor > 1.005 ? "text-red-700" : factor < 0.995 ? "text-emerald-700" : "text-[#8A8C90]"}>({Math.round(factor * 100)}% of default pay)</span>
+      </span>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -259,7 +270,8 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
           effect={
             <>
               Each salesperson extends reach {salesStats.score >= 1 ? "further" : "less far"} than at market pay: projected reach{" "}
-              <strong>{(reachAt(salesStats.score) * 100).toFixed(1)}%</strong> versus {(reachAt(1) * 100).toFixed(1)}% at the industry average.
+              <strong>{(reachAt(salesStats.score) * 100).toFixed(1)}%</strong> versus {(reachAt(1) * 100).toFixed(1)}% at the industry average. Extra reach only pays if you can supply the extra demand.
+              {costLine(pay.sales, factors.sales)}
             </>
           }
         />
@@ -275,7 +287,8 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
           effect={
             <>
               Of {scheduled.toLocaleString("en-IN")} units scheduled the line is expected to build <strong>{Math.round(scheduled * line.eff).toLocaleString("en-IN")}</strong>{" "}
-              (changeover x{line.changeover.toFixed(2)} × productivity x{line.plant.toFixed(2)}).
+              (changeover x{line.changeover.toFixed(2)} × productivity x{line.plant.toFixed(2)}). Productivity above 1x can win back changeover losses, never build beyond the schedule.
+              {costLine(pay.plant, factors.plant)}
             </>
           }
         />
@@ -322,7 +335,7 @@ export default function HRDashboard({ team, gameState, universeId, onChange, onN
         </div>
       </section>
       <div className="flex items-center gap-2 text-[11px] text-[#77797D]">
-        <Factory className="w-4 h-4" /> The sales score multiplies how much reach each salesperson adds; the production score multiplies the units the line builds from the schedule.
+        <Factory className="w-4 h-4" /> Packages set productivity relative to the industry and payroll relative to the default package. Underpaying the plant loses output; overpaying it only helps when changeovers lose output.
       </div>
     </div>
   );

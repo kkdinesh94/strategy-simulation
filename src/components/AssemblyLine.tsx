@@ -1,7 +1,7 @@
 import React from "react";
 import { GameState, TeamState } from "../types/simulation";
 import { CAP_BLOCK } from "../engine/catalog";
-import { hrMults, reliabilityOf } from "../engine/simulationEngine";
+import { hrMults, payFactorsOf, reliabilityOf } from "../engine/simulationEngine";
 
 const MODEL_TINTS = ["#C77D0A", "#2563EB", "#7C3AED"];
 
@@ -37,7 +37,7 @@ export function AssemblyLine({ team, gameState }: { team: TeamState; gameState: 
     { x: 40, title: "Cell & pack", sub: chem, icon: "battery" },
     { x: 182, title: "Frame & paint", sub: "Body shop", icon: "paint" },
     { x: 324, title: "Powertrain", sub: motors, icon: "motor" },
-    { x: 466, title: "Final assembly", sub: `Pay ${team.hr.plant}% · x${hrM.plant.toFixed(2)}`, icon: "wrench" },
+    { x: 466, title: "Final assembly", sub: `Pay ${Math.round(payFactorsOf(team).plant * 100)}% · x${hrM.plant.toFixed(2)}`, icon: "wrench" },
     { x: 608, title: "End-of-line test", sub: `Reliability ${(reliab * 100).toFixed(0)}`, icon: "gate" }
   ];
 

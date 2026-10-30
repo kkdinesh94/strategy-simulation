@@ -209,10 +209,23 @@ export const BALANCE = {
   /** Development charge per new model launched (Rs. L). */
   modelLaunchCost: 50,
   /** Demand boost cap from charging infrastructure (fraction). */
-  maxChargingBoost: 0.3
+  maxChargingBoost: 0.3,
+  /** Payroll scales with the HR package's value relative to the default package (else pay is free). */
+  payFromPackages: true,
+  /**
+   * Plant productivity recovers changeover losses but never builds more than was scheduled
+   * (and so never beyond capacity). Off: productivity above 1x adds output on top of the schedule.
+   */
+  capOutputAtSchedule: true
 };
 
 export const HR = { salesCost: 3.5, plantRate: 0.012, min: 80, max: 130 };
+
+/** Default compensation packages: salary in Rs. L a quarter, benefits/bonus/safety as % of salary, vacation in days a year. */
+export const HR_PACKAGES = {
+  sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
+  production: { salary: 2.5, benefits: 8, vacation: 18, bonus: 8, safetyBonus: 5 }
+};
 export const CENTRE = { open: 40, opex: 8 };
 
 // D2C web storefront: one-time setup the first quarter it is switched on, then a running

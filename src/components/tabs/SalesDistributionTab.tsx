@@ -1,7 +1,7 @@
 import React from "react";
 import { TeamState, GameState } from "../../types/simulation";
-import { CENTRE, HR, MARKETS, WEB_STORE, fmtRs } from "../../engine/catalog";
-import { reachOf, hrMults, centreOpenCost, withWebStore, cityOccupancy } from "../../engine/simulationEngine";
+import { CENTRE, MARKETS, WEB_STORE, fmtRs } from "../../engine/catalog";
+import { reachOf, hrMults, centreOpenCost, withWebStore, cityOccupancy, payrollOf, payFactorsOf } from "../../engine/simulationEngine";
 import { Store, Users, MapPin, DollarSign, Award, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
 import { SectionTabs } from "../SectionTabs";
 import MarketNetworkMap from "../MarketNetworkMap";
@@ -60,17 +60,6 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
       dec: {
         ...team.dec,
         hire: Math.max(-team.staff, Math.min(60, Math.round(val)))
-      }
-    });
-  };
-
-  const handleHRChange = (field: "sales" | "plant", val: number) => {
-    if (isLocked) return;
-    onChange({
-      ...team,
-      hr: {
-        ...team.hr,
-        [field]: Math.max(HR.min, Math.min(HR.max, Math.round(val)))
       }
     });
   };
@@ -157,7 +146,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
           />
         </div>
         <div className="p-4 drawer-flat">
-          {drawer === "force" && <SalesForceManager team={team} gameState={gameState} onChange={onChange} />}
+          {drawer === "force" && <SalesForceManager team={team} gameState={gameState} />}
           {drawer === "channels" && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-4">
@@ -239,51 +228,37 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
               </span>
             </div>
             <div className="flex justify-between py-1">
-              <span className="text-[#5A5C60]">Payroll Cost (Rs. 3.5 L/head):</span>
+              <span className="text-[#5A5C60]">Payroll cost (from your HR package):</span>
               <span className="font-bold text-[#1F2022]">
-                Rs. {(totalStaff * HR.salesCost * (team.hr.sales / 100)).toFixed(1)} L / qtr
+                Rs. {payrollOf(team, totalStaff).sales.toFixed(1)} L / qtr
               </span>
             </div>
           </div>
         </div>
 
-        {/* HR Compensation Packages */}
-        <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-4">
+        {/* Pay is set once, on the HR screen */}
+        <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-3">
           <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
-            <Award className="w-5 h-5 text-amber-600" />
-            <h3 className="text-base font-bold text-[#1F2022]">
-              HR Compensation Packages (% Benchmark)
-            </h3>
+            <Award className="w-5 h-5 text-[#5A5C60]" />
+            <h3 className="text-base font-bold text-[#1F2022]">Pay and productivity</h3>
           </div>
-
-          <div className="space-y-4">
-            <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E5E1D8] text-[11px] text-[#5A5C60]">
-              Sales staff pay ({team.hr.sales}% · x{hrM.sales.toFixed(2)} productivity) is set via the compensation package builder in Sales Force Manager above.
-            </div>
-
-            <div className="p-3.5 bg-[#FAF8F5] rounded-xl border border-[#E5E1D8]">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-mono font-bold uppercase text-[#5A5C60]">
-                  Plant Workers Pay Package
-                </label>
-                <span className="text-xs font-bold font-mono text-emerald-700">
-                  {team.hr.plant}%
-                </span>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {[
+              { label: "Sales force", mult: hrM.sales, factor: payFactorsOf(team).sales, cost: payrollOf(team, totalStaff).sales },
+              { label: "Plant workforce", mult: hrM.plant, factor: payFactorsOf(team).plant, cost: payrollOf(team, totalStaff).plant }
+            ].map((r) => (
+              <div key={r.label} className="p-3 rounded-lg bg-[#FAF8F5] border border-[#EFEBE3]">
+                <div className="text-[11px] text-[#6C6D70]">{r.label}</div>
+                <div className={`text-lg font-bold font-mono ${r.mult >= 1 ? "text-emerald-700" : "text-amber-700"}`}>x{r.mult.toFixed(2)}</div>
+                <div className="text-[10px] text-[#8A8C90]">
+                  pay {Math.round(r.factor * 100)}% of default · Rs. {r.cost.toFixed(1)} L / qtr
+                </div>
               </div>
-              <input
-                type="range"
-                min={HR.min}
-                max={HR.max}
-                value={team.hr.plant}
-                disabled={isLocked}
-                onChange={(e) => handleHRChange("plant", +e.target.value)}
-                className="w-full accent-emerald-700"
-              />
-              <div className="text-[11px] text-[#5A5C60] mt-1 font-mono">
-                Plant Productivity Multiplier: <strong>x{hrM.plant.toFixed(2)}</strong>
-              </div>
-            </div>
+            ))}
           </div>
+          <p className="text-[11px] text-[#5A5C60]">
+            Both packages are set on the <strong>HR</strong> screen. A package drives productivity relative to the industry and its payroll cost.
+          </p>
         </div>
       </div>
           )}

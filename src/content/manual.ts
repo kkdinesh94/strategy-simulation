@@ -137,7 +137,7 @@ Assign roles on the Strategy page. Anyone on the team can edit decisions, so agr
       },
       {
         title: "Sales staff",
-        body: `You need at least 4 sales staff and no more than 8 per store. Staff productivity depends on how your pay package compares with other teams'.`
+        body: `You need at least 4 sales staff and no more than 8 per store. Pay for sales and plant staff is set on the HR page. A package's value compared with other teams' sets productivity (between 0.75x and 1.25x), and its value compared with the default package sets payroll, so better pay costs more. Sales productivity multiplies the reach each salesperson adds, which only helps if you can supply the extra demand. Plant productivity below 1x loses output; above 1x it wins back output lost to model changeovers, but the line never builds more than you scheduled.`
       },
       {
         title: "Charging network",
