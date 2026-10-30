@@ -1,10 +1,10 @@
 import React from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { CENTRE, HR, MARKETS, WEB_STORE, fmtRs } from "../../engine/catalog";
-import { reachOf, hrMults, centreOpenCost, marketBonusOf, withWebStore } from "../../engine/simulationEngine";
+import { reachOf, hrMults, centreOpenCost, withWebStore, cityOccupancy } from "../../engine/simulationEngine";
 import { Store, Users, MapPin, DollarSign, Award, ShoppingBag, CheckCircle, Smartphone } from "lucide-react";
-import { StoreVisualizer } from "../StoreVisualizer";
-import TerritoryMap from "../TerritoryMap";
+import { SectionTabs } from "../SectionTabs";
+import MarketNetworkMap from "../MarketNetworkMap";
 import SalesForceManager from "../SalesForceManager";
 import SalesPricingPanel from "../SalesPricingPanel";
 
@@ -81,16 +81,35 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
 
   const isWebStoreActive = !!team.dec.webStore;
   const hrM = hrMults(gameState, team);
-  const marketBonus = marketBonusOf(gameState, team);
-  const netReach = withWebStore(reachOf({ centres: totalCentres, staff: totalStaff }, hrM.sales, marketBonus), team);
 
   const newCentreCost = centreOpenCost(pendingCities);
-  const otherTeams = gameState.teams.filter((t) => t !== team);
+
+  // Reach the engine will compute once pending cities open: every store counts as a centre,
+  // and each city's bonus is split between all teams present (this one included).
+  const reachFor = (cities: string[]) => {
+    const all = [...ownedCities, ...cities.filter((id) => !ownedCities.includes(id))];
+    const bonus = all.reduce((sum, id) => {
+      const m = MARKETS.find((x) => x.id === id);
+      if (!m) return sum;
+      const occupants = cityOccupancy(gameState, id) + (ownedCities.includes(id) ? 0 : 1);
+      return sum + m.demandBonus / Math.max(1, occupants);
+    }, 0);
+    return withWebStore(reachOf({ centres: all.length, staff: totalStaff }, hrM.sales, bonus), team);
+  };
+  const projectedReach = reachFor(pendingCities);
+  const [drawer, setDrawer] = React.useState<"force" | "channels" | "staffing">("force");
+
+  const kpis = [
+    { label: "Projected reach", value: `${(projectedReach * 100).toFixed(0)}%`, note: "share of buyers who can find you", tone: "text-emerald-700" },
+    { label: "Stores", value: `${ownedCities.length}${pendingCities.length ? ` + ${pendingCities.length}` : ""}`, note: pendingCities.length ? "opening this quarter" : "experience centres", tone: "text-[#1F2022]" },
+    { label: "Sales staff", value: `${totalStaff}`, note: `max ${maxStaffAllowed} (8 per store)`, tone: totalStaff > maxStaffAllowed ? "text-red-600" : "text-[#1F2022]" },
+    { label: "Entry capex", value: `Rs. ${newCentreCost} L`, note: `+ Rs. ${totalCentres * CENTRE.opex} L store opex a quarter`, tone: "text-[#1F2022]" }
+  ];
 
   return (
-    <div className="space-y-6 text-[#1F2022] font-sans">
+    <div className="space-y-4 text-[#1F2022] font-sans">
       {gameState.quarter === 1 && (
-        <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-start gap-3 text-xs text-amber-900">
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-3 text-xs text-amber-900">
           <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
           <div>
             <strong>Quarter 1 is a setup quarter.</strong> Pick the markets you're entering, size your sales staff, and lock in production capacity now.
@@ -99,121 +118,49 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
         </div>
       )}
 
-      {/* Network Overview Banner */}
-      <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Store className="w-6 h-6 text-emerald-700" />
-            <h2 className="text-xl font-bold text-[#1F2022]">
-              Distribution, Retail Outlets & E-Commerce Channels
-            </h2>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {kpis.map((k) => (
+          <div key={k.label} className="px-3 py-2.5 bg-white rounded-xl border border-[#E5E1D8] shadow-sm">
+            <div className="text-[11px] text-[#6C6D70]">{k.label}</div>
+            <div className={`text-base font-bold font-mono ${k.tone}`}>{k.value}</div>
+            <div className="text-[10px] text-[#8A8C90] truncate">{k.note}</div>
           </div>
-          <p className="text-xs text-[#5A5C60]">
-            Expand regional Experience Centers (Showrooms) and activate D2C E-Commerce storefronts to maximize retail coverage across Indian regional territories and export gateways.
-          </p>
-        </div>
-
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
-          <div className="text-[10px] font-mono font-bold uppercase text-emerald-800">
-            Projected Service & Distribution Reach
-          </div>
-          <div className="text-2xl font-bold font-mono text-emerald-700">
-            {(netReach * 100).toFixed(0)}%
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Store & Outlet Visualizer */}
-      <StoreVisualizer team={team} gameState={gameState} />
-
-
-      <TerritoryMap team={team} gameState={gameState} />
-
-      <SalesForceManager team={team} gameState={gameState} onChange={onChange} />
-
-      <SalesPricingPanel team={team} />
-
-      {/* Experience Centers & D2C E-Commerce */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Physical Experience Centers */}
-        <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
-            <MapPin className="w-5 h-5 text-emerald-700" />
-            <h3 className="text-base font-bold text-[#1F2022]">
-              Physical Experience Centers (Showrooms)
-            </h3>
-          </div>
-
-          <div className="space-y-2.5 text-xs font-mono">
-            <div className="flex justify-between py-1 border-b border-[#E5E1D8]">
-              <span className="text-[#5A5C60]">Currently Operational Centers:</span>
-              <span className="font-bold text-[#1F2022]">{team.centres}</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-[#E5E1D8]">
-              <span className="text-[#5A5C60]">Opening Capex ({pendingCities.length}/2 cities selected):</span>
-              <span className="font-bold text-emerald-700">
-                Rs. {newCentreCost} L
-              </span>
-            </div>
-            <div className="flex justify-between py-1">
-              <span className="text-[#5A5C60]">Quarterly Showroom Opex (Rs. 8 L / center):</span>
-              <span className="font-bold text-[#1F2022]">
-                Rs. {totalCentres * CENTRE.opex} L / qtr
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-2 pt-1">
-            <div className="text-[10px] font-bold uppercase text-[#7B8585]">
-              Pick up to 2 markets to enter this quarter
-            </div>
-            {MARKETS.map((market) => {
-              const owned = ownedCities.includes(market.id);
-              const pending = pendingCities.includes(market.id);
-              const rivals = otherTeams.filter((t) => (t.storeCities || []).includes(market.id));
-              const disabled = isLocked || owned || (!pending && pendingCities.length >= 2);
-              return (
-                <label
-                  key={market.id}
-                  className={`flex items-center justify-between gap-2 p-2.5 rounded-lg border text-xs ${
-                    owned
-                      ? "bg-emerald-50 border-emerald-200"
-                      : pending
-                      ? "bg-amber-50 border-amber-300"
-                      : "bg-[#FAF8F5] border-[#E0DCD3]"
-                  } ${disabled && !owned && !pending ? "opacity-50" : ""}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={owned || pending}
-                      disabled={disabled}
-                      onChange={() => handleToggleCity(market.id)}
-                      className="accent-emerald-700"
-                    />
-                    <div>
-                      <div className="font-bold text-[#1F2022]">{market.city}</div>
-                      <div className="text-[10px] text-[#5A5C60]">
-                        {market.region} · {(market.marketSize / 1000).toFixed(0)}k units/yr
-                        {rivals.length > 0 && <span className="text-red-600 font-semibold"> · {rivals.length} rival{rivals.length > 1 ? "s" : ""} here</span>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    {owned ? (
-                      <span className="text-[10px] font-bold text-emerald-700">Owned</span>
-                    ) : (
-                      <span className="font-bold text-[#1F2022]">Rs. {market.entryCost} L</span>
-                    )}
-                  </div>
-                </label>
-              );
-            })}
-          </div>
+      <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-3 space-y-2">
+        <div className="flex items-center gap-2 px-1">
+          <Store className="w-4 h-4 text-[#5A5C60]" />
+          <h3 className="text-sm font-bold text-[#1F2022]">Market network</h3>
+          <span className="text-[11px] text-[#6C6D70]">Select a city to inspect it and enter up to two new markets a quarter.</span>
         </div>
+        <MarketNetworkMap
+          team={team}
+          gameState={gameState}
+          isLocked={isLocked}
+          onToggleCity={handleToggleCity}
+          reachWith={(id: string) => reachFor(pendingCities.includes(id) ? pendingCities : [...pendingCities, id])}
+          reachWithout={(id: string) => reachFor(pendingCities.filter((x) => x !== id))}
+        />
+      </div>
 
-        {/* D2C E-Commerce Direct Channel */}
-        <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+      <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm">
+        <div className="px-4 pt-3">
+          <SectionTabs
+            ariaLabel="Sales decisions"
+            active={drawer}
+            onChange={setDrawer}
+            groups={[
+              { label: "People", tabs: [{ key: "force", label: "Sales force" }, { key: "staffing", label: "Headcount & pay" }] },
+              { label: "Channels", tabs: [{ key: "channels", label: "Web store & pricing" }] }
+            ]}
+          />
+        </div>
+        <div className="p-4 drawer-flat">
+          {drawer === "force" && <SalesForceManager team={team} gameState={gameState} onChange={onChange} />}
+          {drawer === "channels" && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-4">
           <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
             <Smartphone className="w-5 h-5 text-indigo-600" />
             <h3 className="text-base font-bold text-[#1F2022]">
@@ -254,12 +201,13 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
             </span>
           </div>
         </div>
-      </div>
-
-      {/* Sales Staffing & Compensation */}
+              <SalesPricingPanel team={team} />
+            </div>
+          )}
+          {drawer === "staffing" && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Sales Staff Headcount */}
-        <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+        <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-4">
           <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
             <Users className="w-5 h-5 text-emerald-700" />
             <h3 className="text-base font-bold text-[#1F2022]">
@@ -300,7 +248,7 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
         </div>
 
         {/* HR Compensation Packages */}
-        <div className="bg-white p-6 rounded-2xl border border-[#E5E1D8] shadow-sm space-y-4">
+        <div className="p-4 rounded-xl border border-[#E5E1D8] space-y-4">
           <div className="flex items-center gap-2 border-b border-[#E5E1D8] pb-3">
             <Award className="w-5 h-5 text-amber-600" />
             <h3 className="text-base font-bold text-[#1F2022]">
@@ -338,7 +286,9 @@ export const SalesDistributionTab: React.FC<SalesDistributionTabProps> = ({
           </div>
         </div>
       </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
-

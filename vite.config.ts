@@ -20,6 +20,7 @@ export default defineConfig(() => {
             const pkg = id.replace(/\\/g, "/").split("/node_modules/").pop()!.split("/")[0];
             if (["react", "react-dom", "scheduler"].includes(pkg)) return "react";
             if (pkg === "xlsx") return "spreadsheet";
+            if (pkg === "three") return "three";
             if (["react-simple-maps", "d3-geo", "topojson-client", "world-atlas"].includes(pkg)) return "maps";
             if (pkg === "recharts" || pkg.startsWith("d3-") || ["victory-vendor", "es-toolkit", "decimal.js-light", "@reduxjs", "redux", "reselect", "immer"].includes(pkg)) return "charts";
             return undefined;

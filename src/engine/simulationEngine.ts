@@ -658,42 +658,11 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
     }
   }
 
-  const claims = t.dec.claims || [];
-  if (claims.length) {
-    const best = t.models.slice().sort((a, b) => b.price - a.price)[0];
-    if (best) {
-      const c = best.cfg;
-      const fails: string[] = [];
-      if (claims.includes("perf") && !isTopTier("powertrain", c.powertrain, 2))
-        fails.push("Performance, with a mid or entry powertrain");
-      if (claims.includes("range") && !isTopTier("battery", c.battery, 3))
-        fails.push("Range, with one of the smaller battery packs");
-      if (claims.includes("charge") && !isTopTier("battery", c.battery, 2))
-        fails.push("Fast charging, without a fast-charge pack");
-      if (claims.includes("tech") && !isTopTier("tech", c.tech, 2))
-        fails.push("Smart tech, with a basic instrument cluster");
-      if (claims.includes("build") && !isTopTier("build", c.build, 2))
-        fails.push("Build and design, with an entry-level body");
-      if (claims.includes("safety") && !isTopTier("brakes", c.brakes, 2))
-        fails.push("Safety, without an upper-tier braking system");
-      if (
-        claims.includes("comfort") &&
-        !isTopTier("seat", c.seat, 2) &&
-        !isTopTier("susp", c.susp, 2)
-      )
-        fails.push("Comfort, with neither a better seat nor better suspension");
-      if (
-        claims.includes("econ") &&
-        reliabilityOf(t) < 0.6 &&
-        !(t.dec.quality > 0)
-      )
-        fails.push("Economy and reliability, with no quality programme and reliability still below 60%");
-
-      for (const f of fails) {
-        errs.push(
-          `Deceptive advertising: your campaign claims ${f}. A claim the product cannot support is refused by the auditor.`
-        );
-      }
+  for (const f of Object.values(claimAudit(t, t.dec.claims || []))) {
+    if (f) {
+      errs.push(
+        `Deceptive advertising: your campaign claims ${f}. A claim the product cannot support is refused by the auditor.`
+      );
     }
   }
 
@@ -716,6 +685,53 @@ export function auditTeam(st: GameState, t: TeamState): string[] {
   }
 
   return errs;
+}
+
+/**
+ * The auditor's advertising-claim check, per claim: null when the flagship (highest-priced)
+ * model can back the claim, otherwise the reason it cannot. Used by auditTeam and by the
+ * campaign preview so both always agree.
+ */
+export function claimAudit(t: TeamState, claims: string[]): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  const best = t.models.slice().sort((a, b) => b.price - a.price)[0];
+  if (!best) return out;
+  const c = best.cfg;
+  const checks: Record<string, () => string | null> = {
+    perf: () => (isTopTier("powertrain", c.powertrain, 2) ? null : "Performance, with a mid or entry powertrain"),
+    range: () => (isTopTier("battery", c.battery, 3) ? null : "Range, with one of the smaller battery packs"),
+    charge: () => (isTopTier("battery", c.battery, 2) ? null : "Fast charging, without a fast-charge pack"),
+    tech: () => (isTopTier("tech", c.tech, 2) ? null : "Smart tech, with a basic instrument cluster"),
+    build: () => (isTopTier("build", c.build, 2) ? null : "Build and design, with an entry-level body"),
+    safety: () => (isTopTier("brakes", c.brakes, 2) ? null : "Safety, without an upper-tier braking system"),
+    comfort: () =>
+      isTopTier("seat", c.seat, 2) || isTopTier("susp", c.susp, 2)
+        ? null
+        : "Comfort, with neither a better seat nor better suspension",
+    econ: () =>
+      reliabilityOf(t) < 0.6 && !(t.dec.quality > 0)
+        ? "Economy and reliability, with no quality programme and reliability still below 60%"
+        : null
+  };
+  for (const k of Object.keys(checks)) if (claims.includes(k)) out[k] = checks[k]();
+  return out;
+}
+
+/** Awareness response: spend per segment saturates against AD_K; unfed awareness decays by AW_DECAY. */
+export const AD_K = 120;
+export const AW_DECAY = 0.1;
+
+/**
+ * This quarter's media effect in one segment, before word of mouth: the spend that reaches it,
+ * how well the campaign claims match what the segment values (fit), the resulting ad
+ * multiplier, and the share of the unaware the campaign converts (me).
+ */
+export function mediaEffectOf(t: TeamState, s: SegmentDef) {
+  const spend = (t.dec.ad * (t.dec.alloc[s.id] || 0)) / 100;
+  const fit = (t.dec.claims || []).reduce((x, k) => x + (s.w[k] || 0), 0) / 100;
+  const adMult = t.dec.claims && t.dec.claims.length ? 0.8 + 0.8 * fit : 0.9;
+  const me = Math.min(0.97, adMult * 0.9 * (1 - Math.exp(-spend / AD_K)));
+  return { spend, fit, adMult, me };
 }
 
 export function seasonOf(q: number) {
@@ -764,18 +780,13 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
   const LAMBDA = 2.5,
     ALPHA = 1.3,
     RHO = 0.5,
-    OUTSIDE_U = BALANCE.outsideUtility,
-    AW_DECAY = 0.1,
-    AD_K = 120;
+    OUTSIDE_U = BALANCE.outsideUtility;
 
   for (const t of st.teams) {
     (t as any)._fit = {};
     for (const s of SEGMENTS) {
-      const spend = (t.dec.ad * (t.dec.alloc[s.id] || 0)) / 100;
-      const fit = (t.dec.claims || []).reduce((x, k) => x + (s.w[k] || 0), 0) / 100;
+      const { fit, me } = mediaEffectOf(t, s);
       (t as any)._fit[s.id] = fit;
-      const adMult = t.dec.claims && t.dec.claims.length ? 0.8 + 0.8 * fit : 0.9;
-      const me = Math.min(0.97, adMult * 0.9 * (1 - Math.exp(-spend / AD_K)));
       const wom = s.kappa * Math.min(1, t.base[s.id] / (pools[s.id] * 2 || 1)) * (t.rep - 0.5) * 2;
       let aw = t.aw[s.id];
       aw = aw + (1 - aw) * clamp(me + Math.max(0, wom), 0, 1) - AW_DECAY * aw + Math.min(0, wom) * 0.5;
