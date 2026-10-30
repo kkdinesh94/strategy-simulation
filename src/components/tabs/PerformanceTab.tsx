@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { SectionTabs } from "../SectionTabs";
+import { ResultsHero } from "../ResultsHero";
 import { NewsText } from "../NewsText";
 import { TeamState, GameState } from "../../types/simulation";
 import { SEGMENTS, fmtL, fmtRs } from "../../engine/catalog";
@@ -55,6 +56,8 @@ export const PerformanceTab: React.FC<PerformanceTabProps> = ({ team, gameState,
 
   return (
     <div className="space-y-6 text-[#1F2022] font-sans">
+      <ResultsHero team={team} gameState={gameState} />
+
       <SectionTabs
         ariaLabel="Report views"
         active={activeReportTab}

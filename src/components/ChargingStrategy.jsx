@@ -1,17 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { MARKETS, DEFAULT_MARKET_IDS } from "../engine/catalog";
-import { BatteryCharging, Check, Landmark, Save, Shield, TrendingUp } from "lucide-react";
+import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
+import worldTopoJson from "world-atlas/countries-110m.json";
+import { MARKETS, DEFAULT_MARKET_IDS, BALANCE, CHARGER_TYPES } from "../engine/catalog";
+import { unitCost } from "../engine/simulationEngine";
+import { BatteryCharging, Check, Save } from "lucide-react";
 
 // The four home metro clusters every team sells in (see DEFAULT_MARKET_IDS in the catalog).
-const REGIONS = MARKETS.filter((m) => DEFAULT_MARKET_IDS.includes(m.id)).map((m) => m.city);
-const CHARGER_TYPES = {
-  "Level 2 AC": { weight: 0.08, installationCost: 0.12, maintenance: 0.006, description: "Workplaces and destination charging" },
-  "DC Fast Charge": { weight: 0.18, installationCost: 0.35, maintenance: 0.014, description: "Corridor and fleet-ready charging" },
-  "Ultra-rapid 350kW": { weight: 0.3, installationCost: 0.7, maintenance: 0.025, description: "Premium high-throughput charging" }
-};
+const CITIES = MARKETS.filter((m) => DEFAULT_MARKET_IDS.includes(m.id));
+const REGIONS = CITIES.map((m) => m.city);
+const CAP = BALANCE.maxChargingBoost * 100;
 
 const emptyInvestment = (region) => ({ region, charger_count: 0, charger_type: "DC Fast Charge" });
-const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+const number = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0);
 
 function calculateInvestment(row) {
   const type = CHARGER_TYPES[row.charger_type] || CHARGER_TYPES["DC Fast Charge"];
@@ -25,7 +25,11 @@ function calculateInvestment(row) {
   };
 }
 
-export default function ChargingStrategy({ teamId, quarter, onNotify }) {
+/**
+ * Charging network: chargers stay in service once built, so the network and its demand boost
+ * accumulate quarter by quarter, capped in total; maintenance recurs, installation is paid once.
+ */
+export default function ChargingStrategy({ teamId, quarter, onNotify, team }) {
   const [investments, setInvestments] = useState(REGIONS.map(emptyInvestment));
   const [history, setHistory] = useState([]);
   const [status, setStatus] = useState("loading");
@@ -34,7 +38,7 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
     let cancelled = false;
     setStatus("loading");
     fetch(`/api/charging-network?teamId=${encodeURIComponent(teamId)}&quarter=${quarter}`)
-      .then((response) => response.ok ? response.json() : null)
+      .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (cancelled) return;
         const rows = Array.isArray(data?.investments) ? data.investments : [];
@@ -43,28 +47,45 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
         setHistory(rows);
         setStatus("ready");
       })
-      .catch(() => { if (!cancelled) setStatus("ready"); })
-      .finally(() => { if (!cancelled) setStatus((current) => current === "saving" ? current : "ready"); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) setStatus("ready");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [teamId, quarter]);
 
-  const totals = useMemo(() => investments.reduce((total, row) => {
-    const calculated = calculateInvestment(row);
-    return {
-      chargers: total.chargers + calculated.charger_count,
-      capex: total.capex + calculated.installation_cost,
-      maintenance: total.maintenance + calculated.quarterly_maintenance,
-      demand: total.demand + calculated.demand_boost_pct
-    };
-  }, { chargers: 0, capex: 0, maintenance: 0, demand: 0 }), [investments]);
+  const built = useMemo(() => history.filter((row) => number(row.quarter) < quarter), [history, quarter]);
+  const plan = investments.map(calculateInvestment);
+  const sum = (rows, key) => rows.reduce((t, r) => t + number(r[key]), 0);
+  const builtBoost = sum(built, "demand_boost_pct");
+  const planBoost = sum(plan, "demand_boost_pct");
+  const effectiveBefore = Math.min(CAP, builtBoost);
+  const effectiveAfter = Math.min(CAP, builtBoost + planBoost);
+  const wasted = Math.max(0, builtBoost + planBoost - CAP);
+  const capex = sum(plan, "installation_cost");
+  const maintenanceAfter = sum(built, "quarterly_maintenance") + sum(plan, "quarterly_maintenance");
+  const addedMaintenance = sum(plan, "quarterly_maintenance");
 
-  const depreciation = useMemo(() => history.reduce((total, row) => {
-    const age = quarter - number(row.quarter);
-    return age > 0 && age < 4 ? total + number(row.installation_cost) / 4 : total;
-  }, totals.capex / 4), [history, quarter, totals.capex]);
+  // Payback, if the extra demand can be supplied: last quarter's demand x added boost x unit margin
+  const last = team?.hist?.[team.hist.length - 1];
+  const demand = last ? last.units + last.lost : 0;
+  const unitMargin = team?.models?.length ? team.models.reduce((x, m) => x + (m.price - unitCost(m)), 0) / team.models.length / 1e5 : 0;
+  const addedUnits = demand * ((effectiveAfter - effectiveBefore) / 100) / (1 + effectiveBefore / 100);
+  const addedMargin = addedUnits * unitMargin;
+  const netPerQuarter = addedMargin - addedMaintenance;
+  const payback = capex > 0 && netPerQuarter > 0 ? capex / netPerQuarter : null;
+
+  const perCity = REGIONS.map((region) => {
+    const b = built.filter((r) => r.region === region);
+    const p = plan.find((r) => r.region === region);
+    return { region, built: sum(b, "charger_count"), planned: p?.charger_count || 0 };
+  });
+  const maxCity = Math.max(1, ...perCity.map((c) => c.built + c.planned));
 
   const updateInvestment = (region, changes) => {
-    setInvestments((current) => current.map((row) => row.region === region ? calculateInvestment({ ...row, ...changes }) : row));
+    setStatus((s) => (s === "saved" ? "ready" : s));
+    setInvestments((current) => current.map((row) => (row.region === region ? calculateInvestment({ ...row, ...changes }) : row)));
   };
 
   const save = async () => {
@@ -73,7 +94,7 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
       const response = await fetch("/api/charging-network", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teamId, quarter, investments: investments.map(calculateInvestment) })
+        body: JSON.stringify({ teamId, quarter, investments: plan })
       });
       if (!response.ok) throw new Error("Charging strategy could not be saved.");
       setStatus("saved");
@@ -84,31 +105,163 @@ export default function ChargingStrategy({ teamId, quarter, onNotify }) {
     }
   };
 
-  return <section className="space-y-6 font-sans">
-    <div className="bg-[#202a2e] text-white p-6 rounded-lg flex flex-wrap justify-between gap-5 items-end">
-      <div><div className="text-[#e77d8d] font-mono text-[10px] font-bold tracking-widest flex items-center gap-2"><BatteryCharging size={14} /> REGIONAL INFRASTRUCTURE</div><h1 className="text-3xl font-bold mt-3">Build the network that sells the vehicle.</h1><p className="text-[#c7d0ce] text-sm mt-2 max-w-2xl">Chargers ease range anxiety for Commuters and Fleet buyers. Each charger adds a small demand boost every quarter it stays in service (up to +30% in total), while maintenance is charged quarterly and installation once.</p></div>
-      <div className="text-xs text-[#d6dfdc]">Quarter {quarter} · {status === "loading" ? "Loading" : "Draft ready"}</div>
-    </div>
+  const fmt = (v, d = 1) => Number(v).toFixed(d);
 
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <Metric label="Chargers deployed" value={totals.chargers.toLocaleString()} icon={<BatteryCharging size={16} />} />
-      <Metric label="Current capex" value={`${totals.capex.toFixed(2)} L`} icon={<Landmark size={16} />} />
-      <Metric label="Quarterly opex" value={`${totals.maintenance.toFixed(2)} L`} icon={<TrendingUp size={16} />} />
-      <Metric label="Demand boost" value={`+${totals.demand.toFixed(2)}%`} icon={<Shield size={16} />} />
-    </div>
+  return (
+    <section className="space-y-4 font-sans">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {[
+          { label: "Chargers in service", value: `${sum(built, "charger_count")}${plan.some((p) => p.charger_count) ? ` + ${sum(plan, "charger_count")}` : ""}`, note: "built + planned this quarter" },
+          { label: "Demand boost", value: `+${fmt(effectiveAfter)}%`, note: `cap +${CAP}% · was +${fmt(effectiveBefore)}%`, tone: wasted > 0 ? "text-amber-700" : "text-emerald-700" },
+          { label: "Installation this quarter", value: `Rs. ${fmt(capex, 2)} L`, note: "capital spending, depreciated" },
+          { label: "Maintenance", value: `Rs. ${fmt(maintenanceAfter, 2)} L`, note: "every quarter, whole network" }
+        ].map((k) => (
+          <div key={k.label} className="px-3 py-2.5 bg-white rounded-xl border border-[#E5E1D8] shadow-sm">
+            <div className="text-[11px] text-[#6C6D70]">{k.label}</div>
+            <div className={`text-base font-bold font-mono ${k.tone || "text-[#1F2022]"}`}>{k.value}</div>
+            <div className="text-[10px] text-[#8A8C90] truncate">{k.note}</div>
+          </div>
+        ))}
+      </div>
 
-    <div className="bg-white border border-[#E5E1D8] rounded-lg overflow-hidden">
-      <div className="p-5 border-b border-[#E5E1D8] flex justify-between gap-3 items-center"><div><h2 className="font-bold text-[#1F2022]">Regional deployment plan</h2><p className="text-xs text-[#686b70] mt-1">Costs are in Rs. lakh. Demand boost = number of chargers × the charger type's weight.</p></div><span className="text-xs font-mono text-[#686b70]">{investments.length} regions</span></div>
-      <div className="divide-y divide-[#E5E1D8]">{investments.map((row) => { const calculated = calculateInvestment(row); return <div key={row.region} className="p-5 grid gap-4 lg:grid-cols-[1fr_1.3fr_1fr_1fr_1fr] items-end">
-        <div><div className="font-bold text-sm">{row.region}</div><div className="text-xs text-[#686b70] mt-1">+{calculated.demand_boost_pct.toFixed(2)}% demand</div></div>
-        <label className="text-xs font-semibold">Charger type<select value={row.charger_type} onChange={(event) => updateInvestment(row.region, { charger_type: event.target.value })} className="mt-1 w-full border border-[#D8D3C9] rounded-md p-2 text-sm font-normal bg-[#FAF8F5]">{Object.entries(CHARGER_TYPES).map(([type, config]) => <option key={type} value={type}>{type} ({config.weight}% / charger)</option>)}</select></label>
-        <label className="text-xs font-semibold">Charger count<input type="number" min="0" step="1" value={row.charger_count} onChange={(event) => updateInvestment(row.region, { charger_count: event.target.value })} className="mt-1 w-full border border-[#D8D3C9] rounded-md p-2 text-sm font-normal bg-[#FAF8F5]" /></label>
-        <div className="text-xs"><span className="text-[#686b70] block">Installation capex</span><strong>{calculated.installation_cost.toFixed(2)} L</strong></div>
-        <div className="text-xs"><span className="text-[#686b70] block">Quarterly maintenance</span><strong>{calculated.quarterly_maintenance.toFixed(2)} L</strong></div>
-      </div>; })}</div>
-      <div className="p-5 bg-[#FAF8F5] flex flex-wrap justify-between gap-3 items-center text-xs"><div><strong>Financial treatment:</strong> {depreciation.toFixed(2)} L depreciation this quarter; maintenance is operating expense.</div><button type="button" onClick={save} disabled={status === "saving" || status === "loading"} className="bg-[#1F2022] text-white rounded-md px-4 py-2 font-semibold flex items-center gap-2 disabled:opacity-50">{status === "saved" ? <Check size={15} /> : <Save size={15} />}{status === "saving" ? "Saving..." : status === "saved" ? "Saved" : "Save deployment"}</button></div>
-    </div>
-  </section>;
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-3">
+        <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-3 min-w-0">
+          <div className="flex items-center gap-2 px-1">
+            <BatteryCharging className="w-4 h-4 text-[#5A5C60]" />
+            <h2 className="text-sm font-bold text-[#1F2022]">Network across your home metros</h2>
+          </div>
+          <div className="rounded-lg bg-[#F4F7F8] mt-2 overflow-hidden">
+            <ComposableMap projection="geoMercator" width={800} height={460} projectionConfig={{ center: [80, 21], scale: 1050 }} style={{ width: "100%", height: "auto" }} aria-label="Map of charger deployment">
+              <Geographies geography={worldTopoJson}>
+                {({ geographies }) =>
+                  geographies.map((geo) => (
+                    <Geography key={geo.rsmKey} geography={geo} fill="#E4E0D6" stroke="#F4F7F8" strokeWidth={0.6} style={{ default: { outline: "none" }, hover: { outline: "none" }, pressed: { outline: "none" } }} />
+                  ))
+                }
+              </Geographies>
+              {CITIES.map((m) => {
+                const c = perCity.find((x) => x.region === m.city);
+                const total = c.built + c.planned;
+                const r = 8 + 26 * Math.sqrt(total / maxCity);
+                const builtR = total ? r * Math.sqrt(c.built / total) : 0;
+                return (
+                  <Marker key={m.id} coordinates={[m.lon, m.lat]}>
+                    <circle r={r} fill="#C77D0A" fillOpacity={total ? 0.25 : 0.08} stroke="#C77D0A" strokeDasharray={c.planned ? "3 2" : undefined} />
+                    {builtR > 0 && <circle r={builtR} fill="#15803D" fillOpacity={0.75} />}
+                    <text y={-r - 6} textAnchor="middle" style={{ fontSize: 13, fontWeight: 700, fill: "#1F2022" }}>
+                      {m.city}
+                    </text>
+                    <text y={5} textAnchor="middle" style={{ fontSize: 12, fontWeight: 700, fill: total ? "white" : "#8A8C90" }}>
+                      {total || "0"}
+                    </text>
+                  </Marker>
+                );
+              })}
+            </ComposableMap>
+          </div>
+          <div className="flex flex-wrap gap-4 px-1 pt-2 text-[11px] text-[#5A5C60]">
+            <span className="flex items-center gap-1.5">
+              <i className="w-2.5 h-2.5 rounded-full bg-[#15803D]" /> Built in earlier quarters
+            </span>
+            <span className="flex items-center gap-1.5">
+              <i className="w-2.5 h-2.5 rounded-full border border-dashed border-[#C77D0A] bg-[#C77D0A]/25" /> Planned this quarter
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-4">
+            <h3 className="text-sm font-bold text-[#1F2022]">Boost against the cap</h3>
+            <div className="relative mt-3 h-4 rounded-full bg-[#EDE9E1] overflow-hidden">
+              <div className="absolute inset-y-0 left-0 bg-[#15803D]" style={{ width: `${(Math.min(builtBoost, CAP * 1.25) / (CAP * 1.25)) * 100}%` }} />
+              <div className="absolute inset-y-0 bg-[#C77D0A]/70" style={{ left: `${(Math.min(builtBoost, CAP * 1.25) / (CAP * 1.25)) * 100}%`, width: `${(Math.min(planBoost, CAP * 1.25 - Math.min(builtBoost, CAP * 1.25)) / (CAP * 1.25)) * 100}%` }} />
+              <div className="absolute inset-y-0 w-0.5 bg-[#1F2022]" style={{ left: `${(CAP / (CAP * 1.25)) * 100}%` }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-[#8A8C90] mt-1">
+              <span>0</span>
+              <span>cap +{CAP}%</span>
+            </div>
+            {wasted > 0 && <p className="text-[11px] text-amber-700 mt-2">+{fmt(wasted)} points of boost exceed the cap and add nothing; their maintenance still costs money.</p>}
+          </div>
+
+          <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-4 text-xs space-y-1.5">
+            <h3 className="text-sm font-bold text-[#1F2022] mb-1">Does this quarter's plan pay back?</h3>
+            {capex === 0 ? (
+              <p className="text-[#6C6D70]">Plan chargers below to see the estimate.</p>
+            ) : (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-[#6C6D70]">Extra demand a quarter</span>
+                  <span className="font-mono">~{Math.round(addedUnits).toLocaleString("en-IN")} units</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6C6D70]">Gross margin on it</span>
+                  <span className="font-mono">Rs. {fmt(addedMargin)} L</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-[#6C6D70]">Added maintenance</span>
+                  <span className="font-mono">− Rs. {fmt(addedMaintenance, 2)} L</span>
+                </div>
+                <div className="flex justify-between border-t border-[#EFEBE3] pt-1.5 font-semibold">
+                  <span>Payback on Rs. {fmt(capex, 2)} L</span>
+                  <span className={`font-mono ${payback && payback <= 4 ? "text-emerald-700" : "text-amber-700"}`}>{payback ? `${fmt(payback)} quarters` : "does not pay back"}</span>
+                </div>
+                <p className="text-[10px] text-[#8A8C90] pt-1">Estimate from last quarter's demand ({demand.toLocaleString("en-IN")} units) and your average unit margin. Extra demand only turns into sales if the plant can build it.</p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-[#E5E1D8] rounded-xl shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#E5E1D8] flex justify-between gap-3 items-center">
+          <div>
+            <h2 className="text-sm font-bold text-[#1F2022]">Q{quarter} deployment plan</h2>
+            <p className="text-[11px] text-[#686b70]">Costs in Rs. lakh. Boost = chargers × the type's weight; the whole network's boost is capped at +{CAP}%.</p>
+          </div>
+        </div>
+        <div className="divide-y divide-[#F0ECE5]">
+          {plan.map((row) => {
+            const c = perCity.find((x) => x.region === row.region);
+            return (
+              <div key={row.region} className="px-4 py-3 grid gap-3 sm:grid-cols-[1fr_1.4fr_0.8fr_1fr] items-end">
+                <div>
+                  <div className="font-bold text-sm">{row.region}</div>
+                  <div className="text-[11px] text-[#686b70]">
+                    {c.built} built · +{fmt(row.demand_boost_pct, 2)}% planned
+                  </div>
+                </div>
+                <label className="text-[11px] text-[#5A5C60]">
+                  Charger type
+                  <select value={row.charger_type} onChange={(event) => updateInvestment(row.region, { charger_type: event.target.value })} className="mt-1 w-full border border-[#D8D3C9] rounded-md p-2 text-xs bg-[#FAF8F5]">
+                    {Object.entries(CHARGER_TYPES).map(([type, config]) => (
+                      <option key={type} value={type}>
+                        {type} · {config.weight}% each · Rs. {config.installationCost} L
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-[11px] text-[#5A5C60]">
+                  New chargers
+                  <input type="number" min="0" step="1" value={row.charger_count} onChange={(event) => updateInvestment(row.region, { charger_count: event.target.value })} className="mt-1 w-full border border-[#D8D3C9] rounded-md p-2 text-xs bg-[#FAF8F5] font-mono" />
+                </label>
+                <div className="text-[11px] text-[#5A5C60]">
+                  Install <strong className="font-mono text-[#1F2022]">Rs. {fmt(row.installation_cost, 2)} L</strong>
+                  <br />
+                  Upkeep <strong className="font-mono text-[#1F2022]">Rs. {fmt(row.quarterly_maintenance, 2)} L</strong> / qtr
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 py-3 bg-[#FAF8F5] flex flex-wrap justify-between gap-3 items-center text-xs">
+          <span className="text-[#5A5C60]">Installation is capital spending; maintenance is an operating expense charged every quarter the chargers stay in service.</span>
+          <button type="button" onClick={save} disabled={status === "saving" || status === "loading"} className="bg-[#1F2022] text-white rounded-md px-4 py-2 font-semibold flex items-center gap-2 disabled:opacity-50">
+            {status === "saved" ? <Check size={15} /> : <Save size={15} />}
+            {status === "saving" ? "Saving..." : status === "saved" ? "Saved" : "Save deployment"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
 }
-
-function Metric({ label, value, icon }) { return <div className="bg-white border border-[#E5E1D8] rounded-lg p-4"><div className="text-[#9e263d] mb-2">{icon}</div><div className="text-xs text-[#686b70]">{label}</div><strong className="text-lg text-[#1F2022]">{value}</strong></div>; }

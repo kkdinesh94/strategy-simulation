@@ -4,7 +4,7 @@
  */
 import { buildCompetitiveBenchmark, COMPETITIVE_BENCHMARK_REGION_COST } from "../../src/lib/competitiveBenchmark";
 import { runQuarterWorkflow } from "../../src/lib/processQuarter";
-import { SEGMENTS } from "../../src/engine/catalog";
+import { SEGMENTS, CHARGER_TYPES } from "../../src/engine/catalog";
 import { projectBatteryLifecycle, type BatteryDisposition } from "../../src/lib/batteryLifecycle";
 import { reliabilityOf } from "../../src/engine/simulationEngine";
 import {
@@ -1211,7 +1211,12 @@ export async function onRequest(context: { request: Request; env: Env; params: {
         const rows = await env.DB.prepare("SELECT * FROM charging_network WHERE team_id = ? AND quarter <= ? ORDER BY quarter, region").bind(teamId, quarter).all();
         return new Response(JSON.stringify({ investments: rows.results || [] }), { status: 200, headers: corsHeaders });
       }
-      const typeConfig: Record<string, [number, number, number]> = { "Level 2 AC": [0.08, 0.12, 0.006], "DC Fast Charge": [0.18, 0.35, 0.014], "Ultra-rapid 350kW": [0.3, 0.7, 0.025] };
+      // Chargers can only be planned for the quarter being played: an earlier quarter's row would
+      // add its demand boost from then on without its installation ever being charged.
+      const chargingState: any = await env.DB.prepare("SELECT game_state FROM universes WHERE id = ?").bind(chargingUniverse).first();
+      const liveQuarter = Number(JSON.parse(chargingState?.game_state || "{}")?.quarter);
+      if (Number.isInteger(liveQuarter) && quarter !== liveQuarter) return new Response(JSON.stringify({ error: `Chargers can only be planned for the current quarter (Q${liveQuarter}).` }), { status: 409, headers: corsHeaders });
+      const typeConfig: Record<string, [number, number, number]> = Object.fromEntries(Object.entries(CHARGER_TYPES).map(([k, c]) => [k, [c.weight, c.installationCost, c.maintenance]]));
       const investments = Array.isArray(body.investments) ? body.investments : [];
       if (!investments.length) return new Response(JSON.stringify({ error: "At least one regional investment is required." }), { status: 400, headers: corsHeaders });
       await env.DB.batch(investments.map((investment: any) => {

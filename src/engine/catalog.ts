@@ -228,6 +228,17 @@ export const HR_PACKAGES = {
 };
 export const CENTRE = { open: 40, opex: 8 };
 
+/**
+ * Charger types: demand boost per charger (percent), installation (Rs. L, once) and maintenance
+ * (Rs. L a quarter). The whole network's boost is capped at BALANCE.maxChargingBoost. Costs are
+ * set so a charger pays back in a few quarters when the plant can supply the extra demand.
+ */
+export const CHARGER_TYPES: Record<string, { weight: number; installationCost: number; maintenance: number; description: string }> = {
+  "Level 2 AC": { weight: 0.08, installationCost: 1.2, maintenance: 0.06, description: "Workplaces and destination charging" },
+  "DC Fast Charge": { weight: 0.18, installationCost: 3.5, maintenance: 0.14, description: "Corridor and fleet-ready charging" },
+  "Ultra-rapid 350kW": { weight: 0.3, installationCost: 7, maintenance: 0.25, description: "Premium high-throughput charging" }
+};
+
 // D2C web storefront: one-time setup the first quarter it is switched on, then a running
 // cost every active quarter. It adds `reach` to the team's distribution reach.
 export const WEB_STORE = { setup: 15, opex: 5, reach: 0.12, maxReach: 0.98 };

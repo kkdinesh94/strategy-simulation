@@ -140,3 +140,15 @@ test("the board advisor sees only the asking team's own decisions and is capped 
     delete env.GEMINI_API_KEY;
   }
 });
+
+test("chargers can only be planned for the current quarter, at the server's prices", async () => {
+  const plan = (quarter: number) => ({ teamId: 0, quarter, investments: [{ region: "Delhi-NCR", charger_type: "DC Fast Charge", charger_count: 10, installation_cost: 0 }] });
+  // A row dated to an earlier quarter would earn its boost without its installation ever being charged
+  assert.equal((await api("playerA", "POST", "/api/charging-network", plan(0))).status, 400);
+  const state = JSON.parse((raw.prepare("SELECT game_state FROM universes WHERE id = ?").get("cohortA") as any).game_state);
+  assert.equal((await api("playerA", "POST", "/api/charging-network", plan(state.quarter + 3))).status, 409);
+  assert.equal((await api("playerA", "POST", "/api/charging-network", plan(state.quarter))).status, 200);
+  const saved = await api("playerA", "GET", `/api/charging-network?teamId=0&quarter=${state.quarter}`);
+  const row = saved.data.investments.find((r: any) => r.region === "Delhi-NCR");
+  assert.ok(row.installation_cost > 30, "installation is priced by the server, not taken from the request");
+});

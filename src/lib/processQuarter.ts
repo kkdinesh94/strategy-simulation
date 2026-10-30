@@ -47,9 +47,10 @@ export type ChargingCosts = Record<string, { maintenance: number; installation: 
 
 const batteryRanges: Record<string, number> = { BC1: 100, BC2: 80, BC3: 75, BC4: 65, BC5: 50 };
 
-function meetsEligibility(model: any, condition: string | null): boolean {
+export function meetsEligibility(model: any, condition: string | null): boolean {
   if (!condition) return true;
-  const match = condition.trim().match(/^([a-z_]+)\s*(>=|<=|=|>|<)\s*([\d.]+)\s*km?$/i);
+  // The unit is optional: "battery_range >= 75km" and "charging_score >= 7" both parse
+  const match = condition.trim().match(/^([a-z_]+)\s*(>=|<=|=|>|<)\s*([\d.]+)\s*(?:km)?$/i);
   if (!match) return false;
   const [, field, operator, rawValue] = match;
   const metrics: Record<string, number> = {
@@ -63,7 +64,7 @@ function meetsEligibility(model: any, condition: string | null): boolean {
 }
 
 /** Regions where a team sells: "Global" plus the regions and cities of its stores. */
-function teamRegions(team: TeamState): Set<string> {
+export function teamRegions(team: TeamState): Set<string> {
   const out = new Set<string>(["Global"]);
   for (const id of team.storeCities || []) {
     const market = MARKETS.find((m) => m.id === id);
@@ -75,13 +76,39 @@ function teamRegions(team: TeamState): Set<string> {
   return out;
 }
 
+const normRegion = (s: string) => s.toLowerCase().replace(/[\/\s]+/g, "-");
+
+/**
+ * Whether a policy event's region covers this team: "Global" always does; otherwise the team needs
+ * a store in the named region or city. Event regions are often written with a label around the
+ * city, e.g. "Metro West (Mumbai/Pune)" for the Mumbai-Pune market.
+ */
+export function inPolicyRegion(team: TeamState, region: string): boolean {
+  const regions = teamRegions(team);
+  if (regions.has(region)) return true;
+  const target = normRegion(region);
+  return [...regions].some((r) => r !== "Global" && target.includes(normRegion(r)));
+}
+
+/** The model metric a policy condition tests, e.g. battery_range for "battery_range >= 75". */
+export function policyMetric(model: any, condition: string | null): { field: string; actual: number } | null {
+  const field = condition?.trim().match(/^([a-z_]+)/i)?.[1]?.toLowerCase();
+  if (!field) return null;
+  const actual =
+    field === "battery_range"
+      ? batteryRanges[model?.cfg?.battery] || Number(model?.range) || 0
+      : field === "charging_score"
+      ? Number(model?.chargingScore) || ({ BC1: 10, BC2: 7.5, BC3: 6, BC4: 5, BC5: 4 } as Record<string, number>)[model?.cfg?.battery] || 0
+      : NaN;
+  return { field, actual };
+}
+
 /** Combined demand impact (fraction, e.g. 0.1 = +10%) of this quarter's policy events on one model in one segment. */
 export function policyImpact(team: TeamState, model: ScooterModel, segmentId: string, quarter: number, policies: PolicyEvent[]): number {
   if (!policies.length) return 0;
   const segment = SEGMENTS.find((s) => s.id === segmentId);
-  const regions = teamRegions(team);
   return policies
-    .filter((event) => Number(event.quarter) === quarter && regions.has(event.region))
+    .filter((event) => Number(event.quarter) === quarter && inPolicyRegion(team, event.region))
     .filter((event) => !event.eligible_segment || event.eligible_segment === segmentId || event.eligible_segment.toLowerCase() === segment?.name.toLowerCase())
     .filter((event) => meetsEligibility(model, event.eligibility_condition))
     .reduce((impact, event) => impact + Number(event.demand_impact_pct || 0), 0);

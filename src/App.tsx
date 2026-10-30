@@ -781,11 +781,11 @@ export default function App() {
         )}
 
         {currentTab === "charging" && (
-          <ChargingStrategy teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
+          <ChargingStrategy teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} team={currentTeam} />
         )}
 
         {currentTab === "battery" && (
-          <BatteryLifecycle universeId={universe.id} teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} />
+          <BatteryLifecycle universeId={universe.id} teamId={currentTeam.i} quarter={gameState.quarter} onNotify={showNotification} team={currentTeam} totalQuarters={gameState.cfg.quarters} />
         )}
 
         {currentTab === "performance" && (
@@ -793,7 +793,7 @@ export default function App() {
         )}
 
         {currentTab === "policy" && (
-          <PolicyEvents universeId={universe.id} quarter={gameState.quarter} onNotify={showNotification} />
+          <PolicyEvents universeId={universe.id} quarter={gameState.quarter} onNotify={showNotification} team={currentTeam} />
         )}
 
         {currentTab === "roster" && (
