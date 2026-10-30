@@ -7,6 +7,7 @@ import { fmtL } from "../engine/catalog";
 import QuarterChecklist from "./QuarterChecklist";
 import { StrategySummary } from "./StrategyWizard";
 import { NewsText } from "./NewsText";
+import { CompanyAtAGlance, QuarterJourney } from "./CompanyAtAGlance";
 import type { TabKey } from "./Navbar";
 
 interface HomeDashboardProps {
@@ -103,6 +104,10 @@ export function HomeDashboard({ team, gameState, universe, readOnly, onNavigate,
           tone={last ? (last.profit >= 0 ? "good" : "bad") : "default"}
         />
       </section>
+
+      {!gameOver && <CompanyAtAGlance team={team} gameState={gameState} onNavigate={onNavigate} />}
+
+      <QuarterJourney team={team} gameState={gameState} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section className="min-w-0">

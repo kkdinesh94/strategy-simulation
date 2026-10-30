@@ -18,6 +18,7 @@ import { DecisionAuditor } from "../DecisionAuditor";
 import { FinancingPanel } from "../FinancingPanel";
 import { DecisionComparison } from "../DecisionComparison";
 import ABCReport from "../ABCReport";
+import { CashBridge, FinanceHistory } from "../CashBridge";
 import {
   Landmark,
   Sparkles,
@@ -44,7 +45,7 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
   universeId
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc" | "financing"
+    "proforma" | "equity" | "workbench" | "auditor" | "abc" | "debt" | "vc" | "financing" | "compare"
   >("proforma");
   const isLocked = team.dec.locked;
 
@@ -138,7 +139,18 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
 
   return (
     <div className="space-y-6 font-sans">
-      <DecisionComparison team={team} gameState={gameState} />
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-3">
+        <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-4">
+          <h3 className="text-sm font-bold text-[#1F2022]">Q{gameState.quarter} cash bridge</h3>
+          <p className="text-[11px] text-[#6C6D70] mb-2">Where this quarter's plan takes your cash, using the auditor's own projection.</p>
+          <CashBridge team={team} gameState={gameState} />
+        </div>
+        <div className="bg-white rounded-xl border border-[#E5E1D8] shadow-sm p-4">
+          <h3 className="text-sm font-bold text-[#1F2022]">Track record</h3>
+          <p className="text-[11px] text-[#6C6D70] mb-2">Revenue, profit and closing cash by quarter (Rs. lakh).</p>
+          <FinanceHistory team={team} />
+        </div>
+      </div>
 
       <SectionTabs
         ariaLabel="Finance views"
@@ -156,9 +168,11 @@ export const FinanceTab: React.FC<FinanceTabProps> = ({
             { key: "equity", label: "Shares and capital" },
             ...(gameState.quarter === gameState.cfg.vcQuarter ? [{ key: "vc" as const, label: "Venture capital", badge: "This quarter" }] : [])
           ] },
-          { label: "Analysis", tabs: [{ key: "abc", label: "Activity-based costing" }] }
+          { label: "Analysis", tabs: [{ key: "abc", label: "Activity-based costing" }, { key: "compare", label: "Versus last quarter" }] }
         ]}
       />
+
+      {activeSubTab === "compare" && <DecisionComparison team={team} gameState={gameState} />}
 
       {activeSubTab === "financing" && (
         <FinancingPanel team={team} gameState={gameState} onChange={onChange} isLocked={isLocked} />

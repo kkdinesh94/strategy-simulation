@@ -717,6 +717,28 @@ export function claimAudit(t: TeamState, claims: string[]): Record<string, strin
   return out;
 }
 
+/**
+ * Share of scheduled units the line actually delivers: changeover losses grow with the number
+ * of models and how different their specifications are, then plant productivity (pay relative
+ * to the industry) scales the result.
+ */
+export function lineEfficiencyOf(st: GameState, t: TeamState, plantMult = hrMults(st, t).plant) {
+  const cats = Object.keys(CATALOG);
+  const n = t.models.length;
+  let changeover = 1;
+  if (n > 1) {
+    let diff = 0,
+      pairs = 0;
+    for (let i = 0; i < n; i++)
+      for (let j = i + 1; j < n; j++) {
+        pairs++;
+        diff += cats.filter((c) => (t.models[i].cfg as any)[c] !== (t.models[j].cfg as any)[c]).length / cats.length;
+      }
+    changeover = 1 - 0.1 * (n - 1) * (0.4 + 0.6 * (diff / (pairs || 1)));
+  }
+  return { changeover, plant: plantMult, eff: changeover * plantMult };
+}
+
 /** Awareness response: spend per segment saturates against AD_K; unfed awareness decays by AW_DECAY. */
 export const AD_K = 120;
 export const AW_DECAY = 0.1;
@@ -794,24 +816,12 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
     }
   }
 
-  const cats = Object.keys(CATALOG);
   for (const t of st.teams) {
-    const n = t.models.length;
-    let ch = 1;
-    if (n > 1) {
-      let diff = 0,
-        pairs = 0;
-      for (let i = 0; i < n; i++)
-        for (let j = i + 1; j < n; j++) {
-          pairs++;
-          diff += cats.filter((c) => (t.models[i].cfg as any)[c] !== (t.models[j].cfg as any)[c]).length / cats.length;
-        }
-      ch = 1 - 0.1 * (n - 1) * (0.4 + 0.6 * (diff / (pairs || 1)));
-    }
+    const { changeover: ch, eff } = lineEfficiencyOf(st, t, (t as any)._hrM.plant);
     (t as any)._ch = ch;
     const sched = t.models.reduce((x, m) => x + (t.dec.prod[m.id] || 0), 0);
     (t as any)._sched = sched;
-    (t as any)._eff = ch * (t as any)._hrM.plant;
+    (t as any)._eff = eff;
     (t as any)._chLoss = Math.round(sched * (1 - (t as any)._eff));
     (t as any)._produced = Math.round(sched * (t as any)._eff);
   }

@@ -1,7 +1,7 @@
 import React from "react";
 import { TeamState, GameState } from "../../types/simulation";
 import { CAP_BLOCK, fmtRs } from "../../engine/catalog";
-import { reliabilityOf } from "../../engine/simulationEngine";
+import { reliabilityOf, lineEfficiencyOf } from "../../engine/simulationEngine";
 import { Factory, ShieldCheck, AlertTriangle, ArrowUpRight } from "lucide-react";
 import { AssemblyLine } from "../AssemblyLine";
 import { SectionTabs } from "../SectionTabs";
@@ -83,9 +83,10 @@ export const OperationsTab: React.FC<OperationsTabProps> = ({
 
   const [drawer, setDrawer] = React.useState<"schedule" | "capacity" | "site" | "cost">("schedule");
   const util = team.capacity > 0 ? scheduledTotal / team.capacity : 0;
+  const line = lineEfficiencyOf(gameState, team);
 
   const kpis = [
-    { label: "Scheduled", value: scheduledTotal.toLocaleString("en-IN"), note: `of ${team.capacity.toLocaleString("en-IN")} capacity`, tone: isOverCapacity ? "text-red-600" : "text-[#1F2022]" },
+    { label: "Scheduled → built", value: `${scheduledTotal.toLocaleString("en-IN")} → ${Math.round(scheduledTotal * line.eff).toLocaleString("en-IN")}`, note: `changeover x${line.changeover.toFixed(2)} · productivity x${line.plant.toFixed(2)}`, tone: isOverCapacity ? "text-red-600" : "text-[#1F2022]" },
     { label: "Utilisation", value: `${Math.round(util * 100)}%`, note: util > 1 ? "over capacity" : util >= 0.97 ? "running at capacity" : util < 0.6 ? "idle lines still carry fixed cost" : "healthy load", tone: util > 1 ? "text-red-600" : util < 0.6 ? "text-amber-700" : "text-emerald-700" },
     { label: "Expansion", value: `+${((team.dec.expBlocks || 0) * CAP_BLOCK.units).toLocaleString("en-IN")}`, note: `Rs. ${(team.dec.expBlocks || 0) * CAP_BLOCK.cost} L capex, ready next quarter`, tone: "text-[#1F2022]" },
     { label: "Reliability", value: `${(reliab * 100).toFixed(0)} / 100`, note: reliab >= 0.85 ? "low recall risk" : reliab >= 0.7 ? "moderate recall risk" : "high recall risk", tone: reliab >= 0.85 ? "text-emerald-700" : reliab >= 0.7 ? "text-amber-700" : "text-red-600" }
