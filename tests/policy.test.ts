@@ -49,3 +49,37 @@ test("a team without a store in the region gets nothing from a regional event", 
   assert.equal(inPolicyRegion(team, "Metro North (Delhi-NCR)"), true);
   assert.equal(inPolicyRegion(team, "Global"), true);
 });
+
+test("a cost event changes what each unit sold costs, and the books still balance", async () => {
+  const { processQuarterState } = await import("../src/lib/processQuarter");
+  const { simulateQuarter, debtOf, equityOf } = await import("../src/engine/simulationEngine");
+  const { competent, league } = await import("./helpers");
+  const play = (policies: PolicyEvent[]) => {
+    const st = league();
+    for (let q = 1; q <= 3; q += 1) {
+      for (const t of st.teams) if (!t.isBot) competent(t, st);
+      if (q < 3) simulateQuarter(st);
+      else processQuarterState(st, "u", { policies });
+    }
+    return st.teams[0];
+  };
+  const tariff: PolicyEvent = { event_id: "t", quarter: 3, region: "Global", event_type: "Import Tariff", description: "", demand_impact_pct: 0, cost_impact_pct: 0.1, eligible_segment: null, eligibility_condition: null };
+  const base = play([]);
+  const hit = play([tariff]);
+  const rb = base.hist[base.hist.length - 1];
+  const rh = hit.hist[hit.hist.length - 1];
+  assert.equal(rh.units, rb.units, "a pure cost event leaves demand alone");
+  assert.ok(Math.abs(rh.cogs - rb.cogs * 1.1) < 0.5, `cogs ${rh.cogs.toFixed(1)} should be 10% above ${rb.cogs.toFixed(1)}`);
+  assert.ok(Math.abs(hit.cash + rh.invValue + hit.ppe - (debtOf(hit) + equityOf(hit))) < 1, "balance sheet still balances");
+});
+
+test("a regional event touches only that region's share of the team's store footprint", async () => {
+  const { policyRegionShare, policyCostImpact } = await import("../src/lib/processQuarter");
+  const st = newState([{ name: "T", arch: "premium", isBot: false }], 12);
+  const team = st.teams[0];
+  team.storeCities = ["del", "bom", "blr", "ccu"]; // 480k, 520k, 400k, 220k units a year
+  assert.ok(Math.abs(policyRegionShare(team, "Metro West (Mumbai/Pune)") - 520 / 1620) < 1e-9);
+  assert.equal(policyRegionShare(team, "Global"), 1);
+  const credit: PolicyEvent = { event_id: "c", quarter: 3, region: "Metro West (Mumbai/Pune)", event_type: "Tax Credit", description: "", demand_impact_pct: 0, cost_impact_pct: -0.05, eligible_segment: null, eligibility_condition: null };
+  assert.ok(Math.abs(policyCostImpact(team, team.models[0], 3, [credit]) - -0.05 * (520 / 1620)) < 1e-9);
+});

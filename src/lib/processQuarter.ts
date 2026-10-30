@@ -84,10 +84,22 @@ const normRegion = (s: string) => s.toLowerCase().replace(/[\/\s]+/g, "-");
  * city, e.g. "Metro West (Mumbai/Pune)" for the Mumbai-Pune market.
  */
 export function inPolicyRegion(team: TeamState, region: string): boolean {
-  const regions = teamRegions(team);
-  if (regions.has(region)) return true;
+  return policyRegionShare(team, region) > 0;
+}
+
+/**
+ * Share of the team's business a policy event's region covers: 1 for "Global", otherwise the
+ * market size of the team's stores in that region over the market size of all its stores. Sales
+ * are not tracked by city, so a regional subsidy or tax touches only this share of the team.
+ */
+export function policyRegionShare(team: TeamState, region: string): number {
+  if (region === "Global") return 1;
   const target = normRegion(region);
-  return [...regions].some((r) => r !== "Global" && target.includes(normRegion(r)));
+  const stores = MARKETS.filter((m) => (team.storeCities || []).includes(m.id));
+  const total = stores.reduce((x, m) => x + m.marketSize, 0);
+  if (!total) return 0;
+  const covered = stores.filter((m) => m.region === region || m.city === region || target.includes(normRegion(m.city)));
+  return covered.reduce((x, m) => x + m.marketSize, 0) / total;
 }
 
 /** The model metric a policy condition tests, e.g. battery_range for "battery_range >= 75". */
@@ -111,7 +123,19 @@ export function policyImpact(team: TeamState, model: ScooterModel, segmentId: st
     .filter((event) => Number(event.quarter) === quarter && inPolicyRegion(team, event.region))
     .filter((event) => !event.eligible_segment || event.eligible_segment === segmentId || event.eligible_segment.toLowerCase() === segment?.name.toLowerCase())
     .filter((event) => meetsEligibility(model, event.eligibility_condition))
-    .reduce((impact, event) => impact + Number(event.demand_impact_pct || 0), 0);
+    .reduce((impact, event) => impact + Number(event.demand_impact_pct || 0) * policyRegionShare(team, event.region), 0);
+}
+
+/**
+ * Combined cost impact (fraction, e.g. 0.1 = +10%) of this quarter's policy events on one model.
+ * A cost effect hits production, so it applies to every unit of a qualifying model whatever the
+ * segment: the team must sell in the event's region and the model must meet its condition.
+ */
+export function policyCostImpact(team: TeamState, model: ScooterModel, quarter: number, policies: PolicyEvent[]): number {
+  return policies
+    .filter((event) => Number(event.quarter) === quarter && inPolicyRegion(team, event.region))
+    .filter((event) => meetsEligibility(model, event.eligibility_condition))
+    .reduce((impact, event) => impact + Number(event.cost_impact_pct || 0) * policyRegionShare(team, event.region), 0);
 }
 
 /** Total charging boost for a team as a fraction, capped so infrastructure cannot buy unlimited demand. */
@@ -194,6 +218,7 @@ export function processQuarterState(state: GameState, universeId = "pending", in
   }
   const effects: QuarterEffects = {
     demandMult: (team, model, segmentId) => (1 + policyImpact(team, model, segmentId, quarter, policies)) * (1 + chargingBoostOf(chargingBoost, team.i)),
+    costMult: (team, model) => 1 + policyCostImpact(team, model, quarter, policies),
     extraOpex,
     extraCapex,
     licence: inputs.licence || {},

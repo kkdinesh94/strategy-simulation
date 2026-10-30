@@ -216,7 +216,13 @@ export const BALANCE = {
    * Plant productivity recovers changeover losses but never builds more than was scheduled
    * (and so never beyond capacity). Off: productivity above 1x adds output on top of the schedule.
    */
-  capOutputAtSchedule: true
+  capOutputAtSchedule: true,
+  /**
+   * How strongly productivity follows relative pay (1 = one-for-one). Plant output responds less
+   * than one-for-one, as in efficiency-wage evidence: 15% below market costs about 6% of output.
+   */
+  salesPayElasticity: 1,
+  plantPayElasticity: 0.5
 };
 
 export const HR = { salesCost: 3.5, plantRate: 0.012, min: 80, max: 130 };

@@ -137,11 +137,15 @@ Assign roles on the Strategy page. Anyone on the team can edit decisions, so agr
       },
       {
         title: "Sales staff",
-        body: `You need at least 4 sales staff and no more than 8 per store. Pay for sales and plant staff is set on the HR page. A package's value compared with other teams' sets productivity (between 0.75x and 1.25x), and its value compared with the default package sets payroll, so better pay costs more. Sales productivity multiplies the reach each salesperson adds, which only helps if you can supply the extra demand. Plant productivity below 1x loses output; above 1x it wins back output lost to model changeovers, but the line never builds more than you scheduled.`
+        body: `You need at least 4 sales staff and no more than 8 per store. Pay for sales and plant staff is set on the HR page. A package's value compared with other teams' sets productivity (between 0.75x and 1.25x), and its value compared with the default package sets payroll, so better pay costs more. Sales productivity follows relative pay one-for-one and multiplies the reach each salesperson adds, which only helps if you can supply the extra demand. Plant output responds about half as strongly: paying 10% below the market costs roughly 5% of output, while paying above it wins back output lost to model changeovers. The line never builds more than you scheduled.`
       },
       {
         title: "Charging network",
         body: `Chargers raise demand for your scooters by a small amount each, up to +${Math.round(BALANCE.maxChargingBoost * 100)}% in total. Installation is a one-off capital cost; maintenance is charged every quarter the chargers stay in service.`
+      },
+      {
+        title: "Policy events",
+        body: `Subsidies, taxes and regulations appear in some quarters. An event reaches you only if you have a store in its region (Global events reach everyone) and your model meets its condition, such as a minimum battery range. A demand effect changes how many buyers in the named segment choose your model; a cost effect changes the unit cost of every qualifying scooter you sell that quarter. The Policy page shows, model by model, which events reach you and why.`
       }
     ]
   },

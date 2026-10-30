@@ -1,11 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BarChart3, Factory, ShieldCheck, Users } from "lucide-react";
-import { lineEfficiencyOf, marketBonusOf, payFactorsOf, payrollOf, reachOf, withWebStore } from "../engine/simulationEngine";
-
-const DEFAULTS = {
-  sales: { salary: 3.5, benefits: 8, vacation: 15, bonus: 10 },
-  production: { salary: 2.5, benefits: 8, vacation: 18, bonus: 8, safetyBonus: 5 }
-};
+import { HR_PACKAGES as DEFAULTS } from "../engine/catalog";
+import { lineEfficiencyOf, marketBonusOf, packageValue, payFactorsOf, payPackageOf as packageFor, payrollOf, payScore, reachOf, withWebStore } from "../engine/simulationEngine";
 
 const LIMITS = {
   salary: [0, 10, 0.1],
@@ -27,15 +23,6 @@ function numberOr(value, fallback) {
   return Number.isFinite(Number(value)) ? Number(value) : fallback;
 }
 
-function packageValue(pkg, kind) {
-  const safety = kind === "production" ? numberOr(pkg.safetyBonus, 0) : 0;
-  return numberOr(pkg.salary, 0) * (1 + numberOr(pkg.benefits, 0) / 100 + numberOr(pkg.bonus, 0) / 100 + safety / 100) + numberOr(pkg.vacation, 0) * 0.03;
-}
-
-function packageFor(team, kind) {
-  return { ...DEFAULTS[kind], ...(team?.hrCompensation?.[kind] || {}) };
-}
-
 function scoreFor(pkg, teams, kind) {
   const packages = (teams || []).map((team) => packageFor(team, kind));
   const values = packages.map((teamPackage) => packageValue(teamPackage, kind));
@@ -44,8 +31,8 @@ function scoreFor(pkg, teams, kind) {
     average[field] = packages.reduce((sum, teamPackage) => sum + numberOr(teamPackage[field], DEFAULTS[kind][field]), 0) / Math.max(1, packages.length);
     return average;
   }, {});
-  const score = benchmark > 0 ? packageValue(pkg, kind) / benchmark : 1;
-  return { benchmark, benchmarkPackage, score: Math.max(0.75, Math.min(1.25, score)) };
+  // The engine's own productivity rule, so the gauges show what the quarter will apply
+  return { benchmark, benchmarkPackage, score: payScore(packageValue(pkg, kind), benchmark, kind) };
 }
 
 function Slider({ field, value, benchmark, onChange, disabled }) {

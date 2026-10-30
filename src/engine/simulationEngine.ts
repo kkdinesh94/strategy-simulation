@@ -45,6 +45,8 @@ export interface QuarterEffects {
   extraCapex?: Record<number, number>;
   /** Licence fees settled outside the in-game contract list, Rs. L. */
   licence?: Record<number, { paid: number; recd: number }>;
+  /** Multiplier on a model's unit cost this quarter (1 = no effect), e.g. a tariff or a subsidy. */
+  costMult?: (team: TeamState, model: ScooterModel) => number;
   /** End-of-first-life battery choice per team (defaults to warranty replacement). */
   battery?: Record<number, BatteryDisposition>;
 }
@@ -349,11 +351,17 @@ export function payrollOf(t: TeamState, staff: number) {
   return { sales: staff * HR.salesCost * f.sales, plant: t.capacity * HR.plantRate * f.plant };
 }
 
+/** Productivity from a package's value relative to the industry benchmark, bounded 0.75x to 1.25x. */
+export function payScore(value: number, benchmark: number, kind: PayKind): number {
+  const e = kind === "sales" ? BALANCE.salesPayElasticity : BALANCE.plantPayElasticity;
+  return clamp(1 + e * (value / Math.max(0.0001, benchmark) - 1), 0.75, 1.25);
+}
+
 export function hrMults(st: GameState, t: TeamState): { sales: number; plant: number } {
   if (t.hrCompensation) {
     const score = (kind: PayKind) => {
       const benchmark = st.teams.reduce((sum, team) => sum + packageValue(payPackageOf(team, kind), kind), 0) / Math.max(1, st.teams.length);
-      return clamp(packageValue(payPackageOf(t, kind), kind) / Math.max(0.0001, benchmark), 0.75, 1.25);
+      return payScore(packageValue(payPackageOf(t, kind), kind), benchmark, kind);
     };
     return { sales: score("sales"), plant: score("production") };
   }
@@ -859,7 +867,7 @@ export function simulateQuarter(st: GameState, effects: QuarterEffects = {}) {
         t,
         m,
         scores: scoreModel(m, t),
-        cost: unitCost(m),
+        cost: unitCost(m) * (effects.costMult ? Math.max(0.5, effects.costMult(t, m)) : 1),
         orders: {},
         sales: {},
         made: madeThisQ,
